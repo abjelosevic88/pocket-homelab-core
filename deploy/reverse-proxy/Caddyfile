@@ -1,0 +1,10 @@
+# Core must be reachable at BASE_URL exactly: it is the OIDC issuer and the
+# address inside every pairing QR code.
+core.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
+
+# Optional: one hostname per app, all behind the same box.
+habits.example.com {
+	reverse_proxy 127.0.0.1:8169
+}

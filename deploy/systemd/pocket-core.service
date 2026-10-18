@@ -1,0 +1,23 @@
+[Unit]
+Description=Pocket Core — app registry, event bus, OIDC provider and device pairing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pocket-core
+Group=pocket-core
+ExecStart=/usr/local/bin/pocket-core
+Environment=DATA_DIR=/var/lib/pocket-core
+Environment=PORT=8080
+Environment=BASE_URL=https://core.example.com
+Environment=SECURE_COOKIES=true
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pocket-core
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
