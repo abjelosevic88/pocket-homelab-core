@@ -96,6 +96,10 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
+	if !s.appAdmits(r.Context(), cl.AppID, u) {
+		oidcRedirectErr(w, r, redirect, state, "access_denied", "this app is not shared with you")
+		return
+	}
 	code := &store.OIDCCode{ClientID: cl.ClientID, UserID: u.ID, RedirectURI: redirect, Scope: scope, Nonce: q.Get("nonce"), CodeChallenge: challenge}
 	if err := s.store.CreateOIDCCode(r.Context(), code, codeTTL); err != nil {
 		oidcRedirectErr(w, r, redirect, state, "server_error", err.Error())

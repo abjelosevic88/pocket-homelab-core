@@ -37,7 +37,12 @@ const serviceCols = `id, type, name, url, public_url, fields, app_id, enabled, n
 
 // VisibleTo reports whether a user receives this service in their profile.
 func (sv *Service) VisibleTo(u *User) bool {
-	if !sv.Enabled || u == nil {
+	return sv.Enabled && sv.InAudience(u)
+}
+
+// InAudience reports whether a user is in the service's audience, enabled or not.
+func (sv *Service) InAudience(u *User) bool {
+	if u == nil {
 		return false
 	}
 	switch sv.Audience {

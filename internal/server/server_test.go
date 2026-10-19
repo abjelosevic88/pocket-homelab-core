@@ -345,6 +345,36 @@ func TestAudienceAndOverrides(t *testing.T) {
 			t.Fatalf("launcher leaked %+v", m)
 		}
 	}
+	// An app whose service is for admins only refuses the member's token.
+	var settings struct {
+		RegistrationKey string `json:"registration_key"`
+	}
+	e.do("GET", "/api/v1/settings", "", nil, &settings)
+	var reg struct {
+		App   store.App `json:"app"`
+		Token string    `json:"token"`
+	}
+	if c := e.do("POST", "/api/v1/apps/register", settings.RegistrationKey, map[string]any{"slug": "subtitles", "name": "Pocket Subtitles", "url": "http://subs"}, &reg); c != 201 {
+		t.Fatalf("register %d", c)
+	}
+	var intro map[string]any
+	e.do("POST", "/api/v1/auth/introspect", reg.Token, map[string]string{"token": prof.Token}, &intro)
+	if intro["active"] != true {
+		t.Fatalf("audience all should admit the member: %+v", intro)
+	}
+	var subs []map[string]any
+	e.do("GET", "/api/v1/services", "", nil, &subs)
+	for _, sv := range subs {
+		if sv["app_id"] != nil && int64(sv["app_id"].(float64)) == reg.App.ID {
+			if c := e.do("PUT", "/api/v1/services/"+itoa(int64(sv["id"].(float64))), "", map[string]any{"audience": "admins"}, nil); c != 200 {
+				t.Fatalf("set audience %d", c)
+			}
+		}
+	}
+	e.do("POST", "/api/v1/auth/introspect", reg.Token, map[string]string{"token": prof.Token}, &intro)
+	if intro["active"] != false {
+		t.Fatalf("admins-only app admitted a member: %+v", intro)
+	}
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

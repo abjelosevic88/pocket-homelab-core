@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -400,6 +401,19 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 // handleIntrospect lets a Pocket app validate any Core-issued token: device
 // tokens from paired phones, personal tokens, OIDC access tokens. Apps call
 // this (with their own pca_ token) instead of keeping their own user list.
+// appAdmits reports whether a person may use a registered app: the audience of
+// the service mirroring that app decides. Apps without a mirrored service admit everyone.
+func (s *Server) appAdmits(ctx context.Context, appID int64, u *store.User) bool {
+	if appID == 0 {
+		return true
+	}
+	sv, err := s.store.GetServiceByApp(ctx, appID)
+	if errors.Is(err, store.ErrNotFound) {
+		return true
+	}
+	return err == nil && sv.InAudience(u)
+}
+
 func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 	caller := principalFrom(r.Context())
 	if caller.App == nil && !caller.IsAdmin() {
@@ -416,6 +430,11 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 	p, err := s.resolveToken(r.Context(), in.Token, "")
 	if err != nil || p == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"active": false})
+		return
+	}
+	// An app only accepts people its service's audience includes.
+	if caller.App != nil && p.User != nil && !s.appAdmits(r.Context(), caller.App.ID, p.User) {
+		writeJSON(w, http.StatusOK, map[string]any{"active": false, "reason": "not_in_audience"})
 		return
 	}
 	out := map[string]any{"active": true, "kind": p.Kind, "scope": p.Scope}

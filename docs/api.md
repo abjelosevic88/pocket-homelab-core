@@ -10,7 +10,7 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | GET | `/auth/status` | – | `needs_setup`, `auth_mode`, `authenticated`, `user`, `version`, `title`, `box_name` |
 | POST | `/auth/setup` · `/auth/login` · `/auth/logout` | – | `{email, password, name, box_name}` for setup |
 | GET/PUT | `/auth/me` | anyone | the calling principal (`kind`, `user`, `app`, `device`); PUT `{name, password, current_password}` |
-| POST | `/auth/introspect` | app, admin | `{token}` → `{active, kind, scope, user, device, app}` |
+| POST | `/auth/introspect` | app, admin | `{token}` → `{active, kind, scope, user, device, app}`; when an app asks about a person outside the audience of the service mirroring it, `{active: false, reason: "not_in_audience"}` |
 | GET/POST/DELETE | `/tokens`, `/tokens/{id}` | user | personal access tokens; POST returns `{token, secret}` once |
 | GET/POST/PUT/DELETE | `/users`, `/users/{id}` | admin | `{email, name, password, role, disabled}` |
 
@@ -29,7 +29,7 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 |---|---|---|---|
 | GET | `/catalog` | – | every service type with its env prefix and fields |
 | GET | `/services` · `/services/{id}` | admin, app | secrets masked as `••••••••`; a masked value sent back in a PUT means "keep" |
-| POST/PUT/DELETE | `/services`, `/services/{id}` | admin | `{type, name, url, public_url, fields:{API_KEY:…}, enabled, notes, audience: all\|admins\|users, audience_users:[ids]}`; services that mirror a registered app cannot be deleted or re-typed |
+| POST/PUT/DELETE | `/services`, `/services/{id}` | admin | `{type, name, url, public_url, fields:{API_KEY:…}, enabled, notes, audience: all\|admins\|users, audience_users:[ids]}`; services that mirror a registered app cannot be deleted or re-typed. For a registered app the audience is enforced, not just hidden: `/oidc/authorize` answers `access_denied` and introspection reports the token inactive for anyone outside it |
 | GET | `/me/services` | user | the services in the caller's profile as launcher links: `{id, type, name, group, url, icon, pocket}`; their URL override if set, else the public URL; no credentials |
 | GET | `/users/{id}/credentials` | owner, admin | every service with that person's overrides (masked); members do not see box-wide values |
 | PUT/DELETE | `/users/{id}/credentials/{sid}` | owner, admin | `{url?, fields?}` per-person override merged over the service in that person's profile |
