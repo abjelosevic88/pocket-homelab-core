@@ -4,6 +4,7 @@ import type { CatalogEntry, ConnectorListItem, Service, User } from '../lib/type
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
 import { ConnectorModal } from '../components/ConnectorPanel'
+import { Select } from '../components/Select'
 
 type TestResult = { ok: boolean; status?: number; ms?: number; error?: string; busy?: boolean }
 
@@ -205,11 +206,11 @@ function ServiceForm({ entry, initial, onSubmit, onClose }: { entry: CatalogEntr
         <input type={f.secret ? 'password' : 'text'} value={fields[f.key] || ''} onChange={e => setFields(v => ({ ...v, [f.key]: e.target.value }))} autoComplete="off" placeholder={entry.pocket && f.key === 'API_KEY' ? 'leave empty = device token' : ''} />
       </Field>)}
       <Field label="Who receives it" help="What a paired phone gets in its profile. Admin keys (NAS, DNS, the arr apps) should not go to every household member.">
-        <select value={audience} onChange={e => setAudience(e.target.value as Service['audience'])}>
-          <option value="all">Everyone on the box</option>
-          <option value="admins">Admins only</option>
-          <option value="users">Specific people</option>
-        </select>
+        <Select ariaLabel="Who receives it" value={audience} onChange={v => setAudience(v as Service['audience'])} options={[
+          { value: 'all', label: 'Everyone on the box' },
+          { value: 'admins', label: 'Admins only' },
+          { value: 'users', label: 'Specific people', hint: 'pick below' },
+        ]} />
       </Field>
       {audience === 'users' && <Field label="People" group><div className="chips">{(users || []).map(u => <button type="button" key={u.id} className={`chip ${audUsers.includes(u.id) ? 'active' : ''}`} onClick={() => setAudUsers(a => a.includes(u.id) ? a.filter(x => x !== u.id) : [...a, u.id])}>{u.name || u.email}</button>)}</div></Field>}
       <Field label="Notes"><input value={notes} onChange={e => setNotes(e.target.value)} /></Field>

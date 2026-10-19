@@ -5,6 +5,7 @@ import type { OIDCClient, Settings as S, SystemInfo } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { CredentialsModal, Tokens } from './Users'
+import { Select } from '../components/Select'
 
 export default function Settings() {
   const { user, refresh } = useApp()
@@ -101,7 +102,7 @@ function OIDCClients() {
           <Field label="Name"><input required value={edit.name} onChange={e => setEdit(v => v && ({ ...v, name: e.target.value }))} placeholder="Immich" /></Field>
           <Field label="Client id" help="Optional; generated when empty"><input value={edit.client_id || ''} disabled={!!edit.id} onChange={e => setEdit(v => v && ({ ...v, client_id: e.target.value }))} /></Field>
           <Field label="Redirect URIs" help="One per line, exact match"><textarea required value={edit.redirect_uris} onChange={e => setEdit(v => v && ({ ...v, redirect_uris: e.target.value }))} placeholder={'https://photos.example.com/auth/login\napp.immich:///oauth-callback'} /></Field>
-          {!edit.id && <Field label="Client type"><select value={edit.public ? 'public' : 'confidential'} onChange={e => setEdit(v => v && ({ ...v, public: e.target.value === 'public' }))}><option value="confidential">Confidential (client secret)</option><option value="public">Public (PKCE, no secret)</option></select></Field>}
+          {!edit.id && <Field label="Client type"><Select ariaLabel="Client type" value={edit.public ? 'public' : 'confidential'} onChange={v => setEdit(x => x && ({ ...x, public: v === 'public' }))} options={[{ value: 'confidential', label: 'Confidential', hint: 'client secret' }, { value: 'public', label: 'Public', hint: 'PKCE, no secret' }]} /></Field>}
           <div className="form-actions"><button type="button" className="btn" onClick={() => setEdit(null)}>Cancel</button><button className="btn primary">Save</button></div>
         </form></Modal>}
       {secret && <Modal title="Client credentials" onClose={() => setSecret(null)}>

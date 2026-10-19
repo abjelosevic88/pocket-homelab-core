@@ -5,6 +5,7 @@ import type { APIToken, Credential, User, UserConnector } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Avatar, Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { StatusBadge } from '../components/ConnectorPanel'
+import { Select } from '../components/Select'
 
 export default function Users() {
   const { user: me } = useApp()
@@ -40,8 +41,8 @@ export default function Users() {
           <Field label="Email"><input type="email" required value={edit.email || ''} onChange={e => setEdit(v => ({ ...v, email: e.target.value }))} /></Field>
           <Field label="Password" help={edit.id ? 'Leave empty to keep' : 'At least 8 characters'}><input type="password" value={edit.password || ''} onChange={e => setEdit(v => ({ ...v, password: e.target.value }))} autoComplete="new-password" minLength={edit.id ? 0 : 8} required={!edit.id} /></Field>
           <div className="two-col tight">
-            <Field label="Role"><select value={edit.role || 'member'} onChange={e => setEdit(v => ({ ...v, role: e.target.value as User['role'] }))} disabled={edit.id === me?.id}><option value="member">member</option><option value="admin">admin</option></select></Field>
-            {edit.id && edit.id !== me?.id && <Field label="Disabled"><select value={edit.disabled ? '1' : '0'} onChange={e => setEdit(v => ({ ...v, disabled: e.target.value === '1' }))}><option value="0">no</option><option value="1">yes</option></select></Field>}
+            <Field label="Role"><Select ariaLabel="Role" value={edit.role || 'member'} onChange={v => setEdit(x => ({ ...x, role: v as User['role'] }))} disabled={edit.id === me?.id} options={[{ value: 'member', label: 'Member', hint: 'own devices and logins' }, { value: 'admin', label: 'Admin', hint: 'manages the box' }]} /></Field>
+            {edit.id && edit.id !== me?.id && <Field label="Disabled"><Select ariaLabel="Disabled" value={edit.disabled ? '1' : '0'} onChange={v => setEdit(x => ({ ...x, disabled: v === '1' }))} options={[{ value: '0', label: 'No', hint: 'can sign in' }, { value: '1', label: 'Yes', hint: 'every token revoked' }]} /></Field>}
           </div>
           <div className="form-actions"><button type="button" className="btn" onClick={() => setEdit(null)}>Cancel</button><button className="btn primary">Save</button></div>
         </form></Modal>}
