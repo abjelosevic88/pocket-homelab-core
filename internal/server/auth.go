@@ -307,12 +307,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	u, err := s.store.GetUserByEmail(r.Context(), strings.TrimSpace(strings.ToLower(in.Email)))
+	email := strings.TrimSpace(strings.ToLower(in.Email))
+	ip := clientIP(r)
+	if s.loginLimit.blocked(ip) || s.loginLimit.blocked("email:"+email) {
+		writeErr(w, http.StatusTooManyRequests, "too many failed sign-ins; try again in 15 minutes")
+		return
+	}
+	u, err := s.store.GetUserByEmail(r.Context(), email)
 	if err != nil || u.Disabled || u.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
+		s.loginLimit.fail(ip)
+		s.loginLimit.fail("email:" + email)
 		time.Sleep(300 * time.Millisecond)
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+	s.loginLimit.clear(ip)
+	s.loginLimit.clear("email:" + email)
 	id, err := s.store.CreateSession(r.Context(), u.ID, s.cfg.SessionTTL)
 	if err != nil {
 		s.fail(w, err, "create session")

@@ -98,7 +98,11 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 		}
 		byToken = a
 		existing = a
+	} else if ip := clientIP(r); s.regLimit.blocked(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many bad registration keys; try again in 15 minutes")
+		return
 	} else if tok != st.RegistrationKey || st.RegistrationKey == "" {
+		s.regLimit.fail(ip)
 		time.Sleep(300 * time.Millisecond)
 		writeErr(w, http.StatusUnauthorized, "registration key rejected")
 		return

@@ -58,6 +58,18 @@ habits, _ := core.Resolve(ctx, "habits")                  // habits.URL
 
 Every call is a no-op error when `CORE_URL` is empty, so the same binary runs on a lab that has no Core. Manifest format, response and the introspection contract: [docs/manifest.md](docs/manifest.md).
 
+## Security notes
+
+Core holds every credential on the box, so a few choices are deliberate:
+
+- Service credentials are AES-GCM encrypted with `DATA_DIR/secret.key`; every token Core issues is stored as a SHA-256 hash. Back up the key with the database and keep `DATA_DIR` at mode 0700. Point `SECRET_PATH` somewhere else if you want the key on different storage.
+- Sign-in, pairing claims and app registration lock an IP (and, for sign-in, the account) for 15 minutes after 10 failures. Pairing codes are single-use and expire in 10 minutes.
+- Session cookies are `HttpOnly`, `SameSite=Lax`, `Secure` behind HTTPS, and state-changing cookie requests must come from Core's own origin. Bearer tokens are exempt because a cross-site form cannot attach one.
+- There is no consent screen: one box, one household. Do not point strangers' relying parties at it.
+- Core is meant to sit on a LAN or tailnet. If you expose it to the internet, put it behind HTTPS and keep `BASE_URL` on that name.
+
+Report anything you find privately before opening an issue.
+
 ## Docs
 
 | | |
@@ -68,6 +80,7 @@ Every call is a no-op error when `CORE_URL` is empty, so the same binary runs on
 | [docs/pairing.md](docs/pairing.md) | the QR flow and the profile format |
 | [docs/oidc.md](docs/oidc.md) | endpoints, claims, relying-party recipes |
 | [docs/api.md](docs/api.md) | the whole REST surface |
+| [docs/spec.md](docs/spec.md) | the versioned contract: tokens, manifest, events, profile, OIDC |
 | [deploy/nix](deploy/nix) | Nix package and `services.pocket.core` NixOS module |
 | [docs/roadmap.md](docs/roadmap.md) | where the box is going |
 

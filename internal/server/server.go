@@ -43,14 +43,19 @@ type Server struct {
 	requests atomic.Int64
 	errors   atomic.Int64
 	http     *http.Client
+
+	loginLimit *limiter // per IP and per email: 10 failures / 15 min
+	pairLimit  *limiter // per IP: 10 bad codes / 15 min
+	regLimit   *limiter // per IP: 10 bad registration keys / 15 min
 }
 
 // New creates a server.
 func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Server {
 	ua := "PocketCore/" + Version + " (+https://github.com/abjelosevic88/pocket-homelab-core)"
 	return &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(),
-		hub:  events.New(st, log, cfg.WebhookAttempts, ua),
-		http: &http.Client{Timeout: 8 * time.Second}}
+		hub:        events.New(st, log, cfg.WebhookAttempts, ua),
+		http:       &http.Client{Timeout: 8 * time.Second},
+		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute)}
 }
 
 // Bootstrap seeds the first admin (if configured), the registration key and
@@ -162,6 +167,7 @@ func (s *Server) Router() http.Handler {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.Timeout(120 * time.Second))
+		r.Use(s.sameOrigin)
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/setup", s.handleSetup)
 		r.Get("/auth/status", s.handleAuthStatus)

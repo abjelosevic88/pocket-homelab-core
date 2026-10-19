@@ -131,12 +131,19 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "code required")
 		return
 	}
+	ip := clientIP(r)
+	if s.pairLimit.blocked(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many bad codes; try again in 15 minutes")
+		return
+	}
 	pr, err := s.store.PeekPairing(r.Context(), in.Code)
 	if err != nil {
+		s.pairLimit.fail(ip)
 		time.Sleep(500 * time.Millisecond)
 		writeErr(w, http.StatusNotFound, "code unknown, expired or already used")
 		return
 	}
+	s.pairLimit.clear(ip)
 	if in.Name == "" {
 		in.Name = "Device"
 	}

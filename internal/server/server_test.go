@@ -229,3 +229,50 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("services after delete: %d", len(svcs))
 	}
 }
+
+func TestLockoutsAndSameOrigin(t *testing.T) {
+	e := newEnv(t)
+	e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "a@b.c", "password": "password123"}, nil)
+	// 10 wrong passwords lock the account for the window; the right one is then refused too.
+	for i := 0; i < 10; i++ {
+		if c := e.do("POST", "/api/v1/auth/login", "", map[string]string{"email": "a@b.c", "password": "wrong"}, nil); c != 401 {
+			t.Fatalf("attempt %d: %d", i, c)
+		}
+	}
+	if c := e.do("POST", "/api/v1/auth/login", "", map[string]string{"email": "a@b.c", "password": "password123"}, nil); c != 429 {
+		t.Fatalf("locked login should be 429, got %d", c)
+	}
+	// Pairing claims: 10 bad codes then 429.
+	for i := 0; i < 10; i++ {
+		e.do("POST", "/api/v1/pair/claim", "", map[string]string{"code": "NOPE"}, nil)
+	}
+	if c := e.do("POST", "/api/v1/pair/claim", "", map[string]string{"code": "NOPE"}, nil); c != 429 {
+		t.Fatalf("pair lockout: %d", c)
+	}
+	// Cross-site POST with the session cookie is refused; same-origin passes.
+	req, _ := http.NewRequest("POST", e.srv.URL+"/api/v1/pair", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	for _, c := range e.cj {
+		req.AddCookie(c)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 403 {
+		t.Fatalf("cross-site should be 403, got %d", res.StatusCode)
+	}
+	req2, _ := http.NewRequest("POST", e.srv.URL+"/api/v1/pair", strings.NewReader("{}"))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Origin", e.srv.URL)
+	for _, c := range e.cj {
+		req2.AddCookie(c)
+	}
+	res2, _ := http.DefaultClient.Do(req2)
+	res2.Body.Close()
+	if res2.StatusCode != 201 {
+		t.Fatalf("same-origin should pass, got %d", res2.StatusCode)
+	}
+}

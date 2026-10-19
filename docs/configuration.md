@@ -43,6 +43,10 @@ Everything is read from environment variables; every value has a default so a ba
 
 All of them go in `Authorization: Bearer …` (or `X-API-Key`). Core stores only hashes.
 
+## Lockouts
+
+Ten failed sign-ins from one IP or against one account, ten bad pairing codes from one IP, or ten bad registration keys from one IP block that key for 15 minutes (in memory; a restart clears it). Cookie-authenticated POST/PUT/DELETE requests must carry an `Origin` or `Referer` on Core's own host; bearer-token calls are not subject to this.
+
 ## CLI
 
 ```
