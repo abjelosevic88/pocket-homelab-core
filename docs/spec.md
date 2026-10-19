@@ -31,7 +31,7 @@ Delivery:
 - Webhook POST of the stored event as JSON with `X-Pocket-Event` (topic), `X-Pocket-Event-ID`, and `X-Pocket-Signature: sha256=<hex HMAC-SHA256(body, secret)>` when a secret is set. Any non-2xx is retried with exponential backoff (10 s doubling, cap 1 h, 8 attempts by default). Deliveries are at-least-once; consumers dedupe on the event id.
 - Topic patterns: `*`, `prefix.*`, exact, comma-separated.
 
-Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|revoked`, `core.test`.
+Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|revoked`, `core.connector.provisioned`, `core.test`. Connectors publish `<service type>.<event>` with source `connector:<type>` and `payload.user_email` when the event belongs to a person (`immich.user_created|assets_added|assets_removed`).
 
 ## 4. Profile (`POST /api/v1/pair/claim`, `GET /api/v1/pair/profile`)
 
@@ -48,7 +48,7 @@ Discovery at `/.well-known/openid-configuration`. Authorization code with PKCE (
 
 ## 5a. Households
 
-A box has admins and members. Members own devices, pair, and manage their own credential overrides; they cannot read the service list, the registry or the bus. A service's `audience` (`all`, `admins`, `users` + ids) decides whose profile it lands in. The SDK persists the OIDC client Core mints for an app next to the app token (`OIDCFile`), so an app can offer "Sign in with <box>" with zero configuration.
+A box has admins and members. Members own devices, pair, and manage their own credential overrides; they cannot read the service list, the registry or the bus. A service's `audience` (`all`, `admins`, `users` + ids) decides whose profile it lands in. The SDK persists the OIDC client Core mints for an app next to the app token (`OIDCFile`), so an app can offer "Sign in with <box>" with zero configuration. A service's audience is enforced, not just hidden, for the OIDC client of a registered app and for a client a connector made for the service (`service_id`): `/oidc/authorize` answers `access_denied`, `/oidc/token` `invalid_grant`. A per-person override has a `source`: `user` (set by hand) or `connector` (written by a [connector](connectors.md), which never replaces a `user` override).
 
 ## 6. Compatibility promise
 

@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -44,6 +45,11 @@ type Server struct {
 	requests atomic.Int64
 	errors   atomic.Int64
 	http     *http.Client
+	connHTTP *http.Client    // connectors talking to third-party apps
+	ctx      context.Context // lives as long as the server; background work hangs off it
+	polling  sync.Map        // service id → struct{}: a poll is running
+	nextPoll sync.Map        // service id → time.Time: when the scheduler polls next
+	provMu   sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
 
 	loginLimit *limiter // per IP and per email: 10 failures / 15 min
 	pairLimit  *limiter // per IP: 10 bad codes / 15 min
@@ -57,6 +63,8 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		hub:        events.New(st, log, cfg.WebhookAttempts, ua),
 		sso:        &ssoProvider{issuerURL: cfg.SSOIssuer},
 		http:       &http.Client{Timeout: 8 * time.Second},
+		connHTTP:   &http.Client{Timeout: 30 * time.Second},
+		ctx:        context.Background(),
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute)}
 }
 
@@ -112,8 +120,10 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 		}
 	}
 	_ = s.store.PurgeExpired(ctx)
+	s.ctx = ctx
 	go s.hub.Run(ctx)
 	go s.janitor(ctx)
+	go s.connectorScheduler(ctx)
 	return nil
 }
 
@@ -255,6 +265,15 @@ func (s *Server) Router() http.Handler {
 				r.Post("/oidc/clients", s.handleCreateOIDCClient)
 				r.Put("/oidc/clients/{id}", s.handleUpdateOIDCClient)
 				r.Delete("/oidc/clients/{id}", s.handleDeleteOIDCClient)
+
+				r.Get("/connectors", s.handleListConnectors)
+				r.Get("/services/{id}/connector", s.handleGetConnector)
+				r.Put("/services/{id}/connector", s.handlePutConnector)
+				r.Post("/services/{id}/connector/test", s.handleTestConnector)
+				r.Post("/services/{id}/connector/poll", s.handlePollConnector)
+				r.Post("/services/{id}/connector/provision", s.handleProvisionConnector)
+				r.Get("/services/{id}/connector/accounts", s.handleConnectorAccounts)
+				r.Get("/users/{id}/connectors", s.handleUserConnectors)
 
 				r.Get("/settings", s.handleGetSettings)
 				r.Put("/settings", s.handlePutSettings)

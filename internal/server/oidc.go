@@ -96,7 +96,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
-	if !s.appAdmits(r.Context(), cl.AppID, u) {
+	if !s.clientAdmits(r.Context(), cl, u) {
 		oidcRedirectErr(w, r, redirect, state, "access_denied", "this app is not shared with you")
 		return
 	}
@@ -190,6 +190,10 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.GetUser(ctx, userID)
 	if err != nil || u.Disabled {
 		tokenErr(w, 400, "invalid_grant", "user gone")
+		return
+	}
+	if !s.clientAdmits(ctx, cl, u) { // the audience may have changed since the code or refresh token was issued
+		tokenErr(w, 400, "invalid_grant", "this app is not shared with you")
 		return
 	}
 	access, err := s.store.CreateOIDCToken(ctx, &store.OIDCToken{Kind: "access", ClientID: cl.ClientID, UserID: u.ID, Scope: scope}, accessTTL)

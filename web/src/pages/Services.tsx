@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { api, V1 } from '../lib/api'
-import type { CatalogEntry, Service, User } from '../lib/types'
+import type { CatalogEntry, ConnectorListItem, Service, User } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, useAsync, useToast } from '../components/ui'
+import { ConnectorModal } from '../components/ConnectorPanel'
 
 export default function Services() {
   const { toast } = useToast()
@@ -10,6 +11,9 @@ export default function Services() {
   const admin = user?.role === 'admin'
   const { data, loading, reload } = useAsync(() => api.get<Service[]>(`${V1}/services`), [])
   const { data: catalog } = useAsync(() => api.get<CatalogEntry[]>(`${V1}/catalog`), [])
+  const { data: conns, reload: reloadConns } = useAsync(() => admin ? api.get<ConnectorListItem[]>(`${V1}/connectors`).catch(() => [] as ConnectorListItem[]) : Promise.resolve([] as ConnectorListItem[]), [admin])
+  const [conn, setConn] = useState<Service | null>(null)
+  const connFor = (s: Service) => (conns || []).find(c => c.type === s.type && c.service_id === s.id)
   const [adding, setAdding] = useState(false)
   const [edit, setEdit] = useState<Service | null>(null)
   const [del, setDel] = useState<Service | null>(null)
@@ -36,15 +40,16 @@ export default function Services() {
             <table className="table">
               <tbody>{items.map(s => <tr key={s.id} className={s.enabled ? '' : 'muted'}>
                 <td style={{ width: 44 }}><Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} /></td>
-                <td><b>{s.name || s.catalog.name}</b>{s.app_id ? <span className="badge cat" style={{ marginLeft: 6 }}>app</span> : null}{s.audience === 'admins' && <span className="badge warn" style={{ marginLeft: 6 }}>admins</span>}{s.audience === 'users' && <span className="badge" style={{ marginLeft: 6 }}>{s.audience_users.length} people</span>}<div className="muted small mono">{s.catalog.prefix}_{s.catalog.url_key}{s.catalog.fields.length ? ' · ' + s.catalog.fields.map(f => s.catalog.prefix + '_' + f.key).join(' · ') : ''}</div></td>
+                <td><b>{s.name || s.catalog.name}</b>{s.app_id ? <span className="badge cat" style={{ marginLeft: 6 }}>app</span> : null}{s.audience === 'admins' && <span className="badge warn" style={{ marginLeft: 6 }}>admins</span>}{s.audience === 'users' && <span className="badge" style={{ marginLeft: 6 }}>{s.audience_users.length} people</span>}{connFor(s)?.connector?.enabled && <span className={`badge ${connFor(s)?.connector?.last_error ? 'err' : 'ok'}`} style={{ marginLeft: 6 }} title={connFor(s)?.connector?.last_error || 'Connector on'}>connector</span>}<div className="muted small mono">{s.catalog.prefix}_{s.catalog.url_key}{s.catalog.fields.length ? ' · ' + s.catalog.fields.map(f => s.catalog.prefix + '_' + f.key).join(' · ') : ''}</div></td>
                 <td className="mono small">{s.public_url || s.url || <span className="muted">no url</span>}{s.public_url && s.url && s.public_url !== s.url && <div className="muted">internal {s.url}</div>}</td>
                 <td className="small">{Object.entries(s.fields).filter(([, v]) => v).map(([k, v]) => <div key={k}><span className="muted">{k}</span> {v}</div>)}</td>
-                <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn sm" onClick={() => test(s)}>Test</button> {admin && <button className="btn sm" onClick={() => setEdit(s)}>Edit</button>} {admin && !s.app_id && <button className="btn sm ghost danger-text" onClick={() => setDel(s)}>✕</button>}</td>
+                <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn sm" onClick={() => test(s)}>Test</button> {admin && connFor(s) && <button className="btn sm" onClick={() => setConn(s)}>Connector</button>} {admin && <button className="btn sm" onClick={() => setEdit(s)}>Edit</button>} {admin && !s.app_id && <button className="btn sm ghost danger-text" onClick={() => setDel(s)}>✕</button>}</td>
               </tr>)}</tbody>
             </table>
           </Card>
         </div>)}
       {adding && catalog && <AddService catalog={catalog.filter(c => !list.some(s => s.type === c.type))} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
+      {conn && <ConnectorModal service={conn} onClose={() => { setConn(null); reloadConns() }} />}
       {edit && <EditService s={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}
       {del && <Confirm title="Remove service" message={<>Remove <b>{del.name}</b>? Paired devices lose it on their next profile refresh.</>} onConfirm={remove} onCancel={() => setDel(null)} />}
     </>

@@ -12,7 +12,7 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | GET/PUT | `/auth/me` | anyone | the calling principal (`kind`, `user`, `app`, `device`); PUT `{name, password, current_password}` |
 | POST | `/auth/introspect` | app, admin | `{token}` → `{active, kind, scope, user, device, app}`; when an app asks about a person outside the audience of the service mirroring it, `{active: false, reason: "not_in_audience"}` |
 | GET/POST/DELETE | `/tokens`, `/tokens/{id}` | user | personal access tokens; POST returns `{token, secret}` once |
-| GET/POST/PUT/DELETE | `/users`, `/users/{id}` | admin | `{email, name, password, role, disabled}` |
+| GET/POST/PUT/DELETE | `/users`, `/users/{id}` | admin | `{email, name, password, role, disabled}`; creating a person runs every connector set to *create accounts for new people* in the background |
 
 ## Registry
 | Method | Path | Who | Notes |
@@ -34,6 +34,22 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | GET | `/users/{id}/credentials` | owner, admin | every service with that person's overrides (masked); members do not see box-wide values |
 | PUT/DELETE | `/users/{id}/credentials/{sid}` | owner, admin | `{url?, fields?}` per-person override merged over the service in that person's profile |
 | POST | `/services/{id}/test` | admin | plain reachability of `url` |
+
+## Connectors
+Core acting on a third-party service: accounts, sign-in, events. See [connectors.md](connectors.md). All **admin** only; members and apps get `403 admin only`, like the other admin service endpoints.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/connectors` | admin | every connector Core has: `{type, name, capabilities:{provision, sso, events}, service_id?, connector?}` |
+| GET | `/services/{id}/connector` | admin | `{enabled, provision_on_create, sso_enabled, events_enabled, poll_interval_s, last_poll_at, last_error, type, capabilities, configured, redirects, issuer, oidc_client, polling}`; 404 when the service type has no connector |
+| PUT | `/services/{id}/connector` | admin | any of `{enabled, provision_on_create, sso_enabled, events_enabled, poll_interval_s}`. Flipping `sso_enabled` configures the app immediately and answers `502 {error}` (switch unchanged) when the app refused; turning it on needs `enabled`. Turning `events_enabled` on starts a new baseline |
+| POST | `/services/{id}/connector/test` | admin | read-only check → `{ok, info:{version, admin, users, permissions, detail}, ms}` or `{ok:false, error}` |
+| POST | `/services/{id}/connector/poll` | admin | poll now → `{ok, events, baseline}` / `{ok:false, error}`; `409` while a poll runs; needs `enabled` |
+| POST | `/services/{id}/connector/provision` | admin | `{user_id}` or `{all:true}` → `{results:[{user_id, email, status: ok\|linked\|error\|skipped, remote_id, error, note, credential: connector\|own\|none}]}`; needs `enabled` |
+| GET | `/services/{id}/connector/accounts` | admin | everyone in the audience (and anyone with an account row): `{user_id, email, name, in_audience, status: ok\|linked\|error\|"", remote_id, error, credential: connector\|own\|""}` |
+| GET | `/users/{id}/connectors` | admin | that person's status in every connected service |
+
+`GET /users/{id}/credentials` items carry `source: user|connector` for overrides that are set.
 
 ## Events
 See [events.md](events.md). `POST /events`, `GET /events`, `/events/{id}`, `/events/topics`, `/events/stream`; `GET/POST /webhooks`, `PUT/DELETE /webhooks/{id}`, `POST /webhooks/{id}/test`, `GET /webhooks/{id}/deliveries` (admin, or the app that owns the webhook).
@@ -59,7 +75,7 @@ See [events.md](events.md). `POST /events`, `GET /events`, `/events/{id}`, `/eve
 | GET | `/healthz` · `/readyz` · `/metrics` | – | liveness, readiness, Prometheus |
 
 ## OpenID Connect
-Outside `/api/v1`: `/.well-known/openid-configuration`, `/oidc/authorize`, `/oidc/token`, `/oidc/userinfo`, `/oidc/jwks`, `/oidc/logout`. Clients: `GET/POST /api/v1/oidc/clients`, `PUT/DELETE /api/v1/oidc/clients/{id}` (admin; PUT `{rotate_secret:true}` mints a new secret). See [oidc.md](oidc.md).
+Outside `/api/v1`: `/.well-known/openid-configuration`, `/oidc/authorize`, `/oidc/token`, `/oidc/userinfo`, `/oidc/jwks`, `/oidc/logout`. Clients: `GET/POST /api/v1/oidc/clients`, `PUT/DELETE /api/v1/oidc/clients/{id}` (admin; PUT `{rotate_secret:true}` mints a new secret). A client a connector made carries `service_id`; that service's audience is enforced at `/oidc/authorize` and `/oidc/token`. See [oidc.md](oidc.md).
 
 ## Homepage widget
 

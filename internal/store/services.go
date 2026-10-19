@@ -185,12 +185,19 @@ type Override struct {
 	UserID    int64             `json:"user_id"`
 	URL       string            `json:"url"`
 	Fields    map[string]string `json:"fields"`
+	Source    string            `json:"source"` // user (set by hand) | connector (written by a connector)
 	UpdatedAt string            `json:"updated_at"`
 }
 
+// Override sources.
+const (
+	OverrideByUser      = "user"
+	OverrideByConnector = "connector"
+)
+
 // ListOverrides returns a user's overrides keyed by service id.
 func (s *Store) ListOverrides(ctx context.Context, userID int64) (map[int64]Override, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT service_id, user_id, url, fields, updated_at FROM service_overrides WHERE user_id = ?`, userID)
+	rows, err := s.DB.QueryContext(ctx, `SELECT service_id, user_id, url, fields, source, updated_at FROM service_overrides WHERE user_id = ?`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +206,7 @@ func (s *Store) ListOverrides(ctx context.Context, userID int64) (map[int64]Over
 	for rows.Next() {
 		var o Override
 		var f string
-		if err := rows.Scan(&o.ServiceID, &o.UserID, &o.URL, &f, &o.UpdatedAt); err != nil {
+		if err := rows.Scan(&o.ServiceID, &o.UserID, &o.URL, &f, &o.Source, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
 		raw := map[string]string{}
@@ -218,7 +225,11 @@ func (s *Store) ListOverrides(ctx context.Context, userID int64) (map[int64]Over
 }
 
 // SaveOverride upserts; an override with no URL and no fields is deleted.
+// Source defaults to OverrideByUser.
 func (s *Store) SaveOverride(ctx context.Context, o *Override, secret func(string) bool) error {
+	if o.Source != OverrideByConnector {
+		o.Source = OverrideByUser
+	}
 	clean := map[string]string{}
 	for k, v := range o.Fields {
 		if v != "" {
@@ -228,9 +239,9 @@ func (s *Store) SaveOverride(ctx context.Context, o *Override, secret func(strin
 	if o.URL == "" && len(clean) == 0 {
 		return s.DeleteOverride(ctx, o.ServiceID, o.UserID)
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO service_overrides (service_id, user_id, url, fields, updated_at) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(service_id, user_id) DO UPDATE SET url = excluded.url, fields = excluded.fields, updated_at = excluded.updated_at`,
-		o.ServiceID, o.UserID, o.URL, s.sealFields(clean, secret), Now())
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO service_overrides (service_id, user_id, url, fields, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(service_id, user_id) DO UPDATE SET url = excluded.url, fields = excluded.fields, source = excluded.source, updated_at = excluded.updated_at`,
+		o.ServiceID, o.UserID, o.URL, s.sealFields(clean, secret), o.Source, Now())
 	return err
 }
 

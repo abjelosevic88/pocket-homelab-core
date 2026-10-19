@@ -22,9 +22,15 @@ type env struct {
 	t   *testing.T
 	srv *httptest.Server
 	cj  []*http.Cookie
+	st  *store.Store
+	s   *Server
+	dir string
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvLog(t, io.Discard) }
+
+// newEnvLog is newEnv with the server's log written to w.
+func newEnvLog(t *testing.T, w io.Writer) *env {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
@@ -33,7 +39,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	box, err := crypto.LoadBox(cfg.SecretPath)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +54,7 @@ func newEnv(t *testing.T) *env {
 	if err := s.Bootstrap(ctx); err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, srv: httptest.NewServer(s.Router())}
+	e := &env{t: t, srv: httptest.NewServer(s.Router()), st: st, s: s, dir: dir}
 	t.Cleanup(e.srv.Close)
 	t.Cleanup(func() { st.Close() })
 	return e

@@ -176,6 +176,8 @@ input.num { width: 90px; text-align: right; }
 .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .badge.warn { background: var(--warning-soft); color: var(--warning); }
 .badge.cat { background: var(--accent-soft); color: var(--accent-hover); }
+.badge.ok { background: var(--success-soft); color: var(--success); }
+.badge.err { background: var(--danger-soft); color: var(--danger); }
 .badge.tag::before { content: "#"; opacity: .6; }
 a.badge:hover { text-decoration: none; color: var(--accent-hover); }
 .avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; background: var(--accent); }

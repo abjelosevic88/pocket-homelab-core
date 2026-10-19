@@ -47,6 +47,9 @@ func main() {
 		case "pair":
 			runPair(os.Args[2:])
 			return
+		case "connector":
+			runConnector(os.Args[2:])
+			return
 		case "help", "--help", "-h":
 			fmt.Println(`pocket-core — the hub of a Pocket Box: app registry, event bus, OIDC provider, device pairing
 
@@ -57,6 +60,9 @@ Usage:
                                      set a user's password (default: first user, random password printed)
   pocket-core registration-key       print the key apps use to register themselves
   pocket-core pair [-email USER]     print a pairing code (and its URL) for a user, from the console
+  pocket-core connector [-token T] <type> <action>
+                                     drive a connector (test, enable-events, enable-sso, provision <email>, status…)
+                                     through the running server's admin API; "pocket-core connector -h" for actions
   pocket-core version                print version
 
 Configuration is read from environment variables, see docs/configuration.md.`)

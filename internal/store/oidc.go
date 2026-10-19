@@ -18,6 +18,7 @@ type OIDCClient struct {
 	Name         string   `json:"name"`
 	RedirectURIs []string `json:"redirect_uris"`
 	AppID        int64    `json:"app_id,omitempty"`
+	ServiceID    int64    `json:"service_id,omitempty"` // set when a connector made it; the service's audience applies
 	CreatedAt    string   `json:"created_at"`
 }
 
@@ -34,18 +35,21 @@ func (c *OIDCClient) AllowsRedirect(uri string) bool {
 	return false
 }
 
-const oidcClientCols = `id, client_id, secret_hash, name, redirect_uris, app_id, created_at`
+const oidcClientCols = `id, client_id, secret_hash, name, redirect_uris, app_id, created_at, service_id`
 
 func scanOIDCClient(sc interface{ Scan(...any) error }) (*OIDCClient, error) {
 	var c OIDCClient
 	var uris string
-	var appID sql.NullInt64
-	if err := sc.Scan(&c.ID, &c.ClientID, &c.SecretHash, &c.Name, &uris, &appID, &c.CreatedAt); err != nil {
+	var appID, svcID sql.NullInt64
+	if err := sc.Scan(&c.ID, &c.ClientID, &c.SecretHash, &c.Name, &uris, &appID, &c.CreatedAt, &svcID); err != nil {
 		return nil, notFound(err)
 	}
 	c.HasSecret = c.SecretHash != ""
 	if appID.Valid {
 		c.AppID = appID.Int64
+	}
+	if svcID.Valid {
+		c.ServiceID = svcID.Int64
 	}
 	for _, u := range strings.Split(uris, "\n") {
 		if u = strings.TrimSpace(u); u != "" {
@@ -94,6 +98,10 @@ func (s *Store) SaveOIDCClient(ctx context.Context, c *OIDCClient, newSecret boo
 	if c.AppID > 0 {
 		appID = c.AppID
 	}
+	var svcID any
+	if c.ServiceID > 0 {
+		svcID = c.ServiceID
+	}
 	plain := ""
 	if newSecret {
 		plain = crypto.Token("pcs_", 32)
@@ -103,9 +111,9 @@ func (s *Store) SaveOIDCClient(ctx context.Context, c *OIDCClient, newSecret boo
 		if c.ClientID == "" {
 			c.ClientID = crypto.Token("", 12)
 		}
-		res, err := s.DB.ExecContext(ctx, `INSERT INTO oidc_clients (client_id, secret_hash, name, redirect_uris, app_id) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(client_id) DO UPDATE SET name = excluded.name, redirect_uris = excluded.redirect_uris, app_id = COALESCE(excluded.app_id, oidc_clients.app_id), secret_hash = CASE WHEN excluded.secret_hash = '' THEN oidc_clients.secret_hash ELSE excluded.secret_hash END`,
-			c.ClientID, c.SecretHash, c.Name, uris, appID)
+		res, err := s.DB.ExecContext(ctx, `INSERT INTO oidc_clients (client_id, secret_hash, name, redirect_uris, app_id, service_id) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(client_id) DO UPDATE SET name = excluded.name, redirect_uris = excluded.redirect_uris, app_id = COALESCE(excluded.app_id, oidc_clients.app_id), service_id = COALESCE(excluded.service_id, oidc_clients.service_id), secret_hash = CASE WHEN excluded.secret_hash = '' THEN oidc_clients.secret_hash ELSE excluded.secret_hash END`,
+			c.ClientID, c.SecretHash, c.Name, uris, appID, svcID)
 		if err != nil {
 			return "", conflict(err)
 		}
@@ -113,8 +121,8 @@ func (s *Store) SaveOIDCClient(ctx context.Context, c *OIDCClient, newSecret boo
 			c.ID = id
 		}
 	} else {
-		_, err := s.DB.ExecContext(ctx, `UPDATE oidc_clients SET name = ?, redirect_uris = ?, app_id = ?, secret_hash = CASE WHEN ? = '' THEN secret_hash ELSE ? END WHERE id = ?`,
-			c.Name, uris, appID, c.SecretHash, c.SecretHash, c.ID)
+		_, err := s.DB.ExecContext(ctx, `UPDATE oidc_clients SET name = ?, redirect_uris = ?, app_id = ?, service_id = ?, secret_hash = CASE WHEN ? = '' THEN secret_hash ELSE ? END WHERE id = ?`,
+			c.Name, uris, appID, svcID, c.SecretHash, c.SecretHash, c.ID)
 		if err != nil {
 			return "", conflict(err)
 		}

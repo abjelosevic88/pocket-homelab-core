@@ -1,0 +1,171 @@
+// Package connectors lets Core act on a third-party app it knows about: make
+// or find a person's account there and hand back that person's own
+// credential, turn on "Sign in with Pocket Core" in the app, and turn what
+// happens in the app into events on Core's bus.
+//
+// A connector only talks HTTP to its app. It never imports the store or the
+// server: Core hands it a Target (where the app is, the decrypted service
+// fields, an HTTP client with timeouts and a directory for backups) and
+// stores whatever comes back. See docs/connectors.md.
+package connectors
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Account status values, stored per person in connector_accounts.
+const (
+	StatusOK     = "ok"     // Core made the account (or found it) and holds the person's credential
+	StatusLinked = "linked" // an account with the person's email already existed; no credential minted
+	StatusError  = "error"  // the last attempt failed; Error says why
+)
+
+// Capabilities says what a connector can do.
+type Capabilities struct {
+	Provision bool `json:"provision"`
+	SSO       bool `json:"sso"`
+	Events    bool `json:"events"`
+}
+
+// Target is one configured instance of the app.
+type Target struct {
+	BaseURL   string            // URL Core reaches the app at (the service's internal URL)
+	PublicURL string            // URL people's browsers and phones use
+	Fields    map[string]string // decrypted service fields (API_KEY…), box-wide admin values
+	HTTP      *http.Client      // with timeouts; never nil
+	DataDir   string            // where a connector may write backups (DATA_DIR/connectors)
+	Now       func() time.Time  // clock, for backup names; nil = time.Now
+}
+
+// Clock returns the target's clock.
+func (t Target) Clock() time.Time {
+	if t.Now != nil {
+		return t.Now()
+	}
+	return time.Now()
+}
+
+// Info is what Test learned about the app.
+type Info struct {
+	Version     string   `json:"version"`
+	Admin       bool     `json:"admin"`                 // the stored credential has admin rights
+	Users       int      `json:"users"`                 // accounts the admin read returned
+	Permissions []string `json:"permissions,omitempty"` // what the stored key may do, when the app says
+	Detail      string   `json:"detail,omitempty"`
+}
+
+// Person is the Core user an account is made for.
+type Person struct {
+	Email string
+	Name  string
+	// KeepOwnCredential: the person already set their own credential for
+	// this service in Core. Make or find the account but mint nothing.
+	KeepOwnCredential bool
+}
+
+// Account is the result of provisioning one person.
+type Account struct {
+	RemoteID string            `json:"remote_id"`
+	Status   string            `json:"status"`         // StatusOK or StatusLinked
+	Fields   map[string]string `json:"-"`              // the person's own credential (catalog field keys); never logged
+	Note     string            `json:"note,omitempty"` // human explanation, e.g. why nothing was minted
+	Created  bool              `json:"created"`        // the remote account was created just now
+}
+
+// SSOConfig is what Core asks the app to use for "Sign in with Pocket Core".
+type SSOConfig struct {
+	Enabled      bool
+	Issuer       string
+	ClientID     string
+	ClientSecret string
+	ButtonText   string
+}
+
+// Event is one thing that happened in the app. Core publishes it as
+// "<type>.<Name>" with source "connector:<type>".
+type Event struct {
+	Name      string         // e.g. assets_added
+	Subject   string         // free identifier; Core falls back to UserEmail
+	UserEmail string         // set when the event belongs to a person; copied into the payload as user_email
+	Payload   map[string]any // event body
+}
+
+// Connector is implemented once per app type.
+type Connector interface {
+	Type() string
+	Capabilities() Capabilities
+	// Test checks reachability and that the stored credential can do the admin work.
+	Test(ctx context.Context, t Target) (Info, error)
+	// Provision finds the person's account by email (linking it) or creates it,
+	// and returns the person's own credential when it could mint one.
+	Provision(ctx context.Context, t Target, p Person) (Account, error)
+	// ConfigureSSO turns the app's OpenID Connect login on or off.
+	ConfigureSSO(ctx context.Context, t Target, c SSOConfig) error
+	// SSORedirects lists the redirect URIs the app will use with Core.
+	SSORedirects(publicURL string) []string
+	// Poll returns what changed since state. An empty state is the first
+	// poll: record a baseline and return no events.
+	Poll(ctx context.Context, t Target, state json.RawMessage) ([]Event, json.RawMessage, error)
+}
+
+var (
+	mu       sync.RWMutex
+	registry = map[string]Connector{}
+)
+
+// Register adds a connector; the last registration of a type wins.
+func Register(c Connector) {
+	mu.Lock()
+	registry[strings.ToLower(c.Type())] = c
+	mu.Unlock()
+}
+
+// Get returns the connector for a service type.
+func Get(typ string) (Connector, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	c, ok := registry[strings.ToLower(strings.TrimSpace(typ))]
+	return c, ok
+}
+
+// All lists registered connectors by type.
+func All() []Connector {
+	mu.RLock()
+	out := make([]Connector, 0, len(registry))
+	for _, c := range registry {
+		out = append(out, c)
+	}
+	mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].Type() < out[j].Type() })
+	return out
+}
+
+// RandomPassword returns a strong throwaway password (letters, digits, symbols).
+func RandomPassword(n int) string {
+	const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789-_.!@#%^*+="
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	for i := range b {
+		b[i] = alphabet[int(b[i])%len(alphabet)]
+	}
+	return string(b)
+}
+
+// redact removes every secret from s; error bodies sometimes echo requests.
+func redact(s string, secrets ...string) string {
+	for _, sec := range secrets {
+		if sec != "" {
+			s = strings.ReplaceAll(s, sec, "[redacted]")
+		}
+	}
+	return s
+}

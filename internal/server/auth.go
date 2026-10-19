@@ -414,6 +414,22 @@ func (s *Server) appAdmits(ctx context.Context, appID int64, u *store.User) bool
 	return err == nil && sv.InAudience(u)
 }
 
+// clientAdmits extends appAdmits to every OIDC client: a registered app's
+// client follows the app's service; a client a connector made for a service
+// follows that service's audience; hand-made clients admit everyone.
+func (s *Server) clientAdmits(ctx context.Context, cl *store.OIDCClient, u *store.User) bool {
+	if cl.AppID > 0 && !s.appAdmits(ctx, cl.AppID, u) {
+		return false
+	}
+	if cl.ServiceID > 0 {
+		sv, err := s.store.GetService(ctx, cl.ServiceID)
+		if err != nil || !sv.InAudience(u) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 	caller := principalFrom(r.Context())
 	if caller.App == nil && !caller.IsAdmin() {
@@ -496,6 +512,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "create user")
 		return
 	}
+	s.provisionNewUser(u.ID)
 	writeJSON(w, http.StatusCreated, u)
 }
 

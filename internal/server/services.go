@@ -48,13 +48,7 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) entryForCtx(r *http.Request, sv *store.Service) catalog.Entry {
-	prefix := ""
-	if sv.AppID > 0 {
-		if a, err := s.store.GetApp(r.Context(), sv.AppID); err == nil {
-			prefix = a.EnvPrefix
-		}
-	}
-	return catalog.Resolve(sv.Type, sv.Name, prefix, sv.AppID > 0)
+	return s.entryFor(r.Context(), sv)
 }
 
 func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +170,7 @@ type overrideOut struct {
 	URL     string            `json:"url"`
 	Fields  map[string]string `json:"fields"` // masked
 	Set     bool              `json:"set"`
+	Source  string            `json:"source,omitempty"` // user | connector, when set
 	Visible bool              `json:"visible"`
 }
 
@@ -213,7 +208,7 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 			o.Service.URL, o.Service.PublicURL = "", ""
 		}
 		if ov, ok := ovs[sv.ID]; ok {
-			o.Set, o.URL = true, ov.URL
+			o.Set, o.URL, o.Source = true, ov.URL, ov.Source
 			for k, v := range ov.Fields {
 				if e.IsSecret(k) && v != "" {
 					o.Fields[k] = masked

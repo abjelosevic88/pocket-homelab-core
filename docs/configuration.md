@@ -65,10 +65,14 @@ pocket-core backup [-o FILE]       write a consistent SQLite backup
 pocket-core reset-password [-email USER] [-password NEW]
 pocket-core registration-key       print the key apps use to register
 pocket-core pair [-email USER]     print a pairing code from the console
+pocket-core connector [-url URL] [-token TOKEN] <type> <action>
+                                   drive a connector through the running server (see docs/connectors.md)
 pocket-core version
 ```
 
-Inside the container: `docker exec pocket-core pocket-core pair`.
+Inside the container: `docker exec pocket-core pocket-core pair`. `connector` talks to the running server's admin API with an admin's personal token (`-token` or `POCKET_CORE_TOKEN`), so it never writes the database itself.
+
+`DATA_DIR/connectors/` holds the backups connectors write before they change an app's settings (e.g. Immich's system config); they contain that app's secrets.
 
 ## What to back up
 

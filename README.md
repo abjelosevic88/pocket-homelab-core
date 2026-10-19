@@ -22,6 +22,7 @@ Every Pocket app is a small Go server with its own SQLite file. They already tal
 - **Pairing.** Tap *Pair a device*, scan the QR with Pocket Homelab, done: the phone receives every service on the box with its own token, in exactly the env-file shape the client already imports. Revoke the device later and the token dies everywhere at once.
 - **A service catalog** mirroring the client's 44 integrations. Add Jellyfin with its API key once; every paired device gets `JELLYFIN_URL` and `JELLYFIN_API_KEY`. Secrets are encrypted at rest.
 - **A household, not a user.** Admins and members. Each service says who receives it, so the NAS key never lands on a kid's phone, and every person can carry their own Jellyfin or Navidrome login while the rest stays shared. Members see their devices and their logins, nothing else.
+- **Connectors.** Core can make each person's account in a third-party app and hand them their own key, switch on “Sign in with Pocket Core” there, and turn what happens in it into events. Immich first; off until you switch it on.
 - **Device tokens apps can trust.** A phone calls Pocket Habits with the token Core gave it; Habits asks Core “is this real?” (`/auth/introspect`) instead of keeping its own user list. The Go SDK does this in one middleware.
 
 Core is not a cloud. It runs on the box, next to the apps, and the only thing it ever talks to outside the LAN is whatever you point a webhook at.
@@ -80,6 +81,7 @@ Report anything you find privately before opening an issue.
 | [docs/events.md](docs/events.md) | publishing, SSE, webhooks and signatures |
 | [docs/pairing.md](docs/pairing.md) | the QR flow and the profile format |
 | [docs/oidc.md](docs/oidc.md) | endpoints, claims, relying-party recipes |
+| [docs/connectors.md](docs/connectors.md) | Core acting on third-party apps: accounts, sign-in, events (Immich first); how to write one |
 | [docs/api.md](docs/api.md) | the whole REST surface |
 | [docs/spec.md](docs/spec.md) | the versioned contract: tokens, manifest, events, profile, OIDC |
 | [deploy/nix](deploy/nix) | Nix package and `services.pocket.core` NixOS module |

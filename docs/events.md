@@ -11,7 +11,8 @@ POST /api/v1/events
 
 - Topics are lowercase dotted words. An app may only publish under its own slug (`kitchen.*`); users and devices may publish anything (source = their email / device name).
 - `subject` is a free identifier for the thing the event is about; `payload` is any JSON up to 256 KiB.
-- Core itself publishes `core.app.registered`, `core.app.removed`, `core.app.ok`, `core.app.down`, `core.device.paired`, `core.device.revoked`.
+- Core itself publishes `core.app.registered`, `core.app.removed`, `core.app.ok`, `core.app.down`, `core.device.paired`, `core.device.revoked`, `core.connector.provisioned`.
+- [Connectors](connectors.md) publish what they see in third-party apps as `<type>.<event>` with source `connector:<type>` and `user_email` in the payload when the event belongs to a person: `immich.user_created`, `immich.assets_added`, `immich.assets_removed`.
 
 ## Read
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
-import type { APIToken, Credential, User } from '../lib/types'
+import type { APIToken, Credential, User, UserConnector } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Avatar, Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
+import { StatusBadge } from '../components/ConnectorPanel'
 
 export default function Users() {
   const { user: me } = useApp()
@@ -70,6 +71,8 @@ export function Tokens() {
 export function CredentialsModal({ user, onClose }: { user: User; onClose: () => void }) {
   const { toast } = useToast()
   const { data, loading, reload } = useAsync(() => api.get<Credential[]>(`${V1}/users/${user.id}/credentials`), [user.id])
+  const { user: me } = useApp()
+  const { data: conns } = useAsync(() => me?.role === 'admin' ? api.get<UserConnector[]>(`${V1}/users/${user.id}/connectors`).catch(() => [] as UserConnector[]) : Promise.resolve([] as UserConnector[]), [user.id, me?.role])
   const [open, setOpen] = useState<number | null>(null)
   const [form, setForm] = useState<{ url: string; fields: Record<string, string> }>({ url: '', fields: {} })
   const start = (c: Credential) => { setOpen(c.service.id); setForm({ url: c.url, fields: { ...c.fields } }) }
@@ -81,7 +84,7 @@ export function CredentialsModal({ user, onClose }: { user: User; onClose: () =>
       <p className="muted small">Services this person receives, with their own login where it differs from the box-wide one. Leave a service alone to hand out the shared credential.</p>
       {loading ? <Loading /> : list.length === 0 ? <p className="muted">Nothing is visible to this user yet. Set a service's audience under Services.</p> :
         <table className="table compact mt"><tbody>{list.map(c => <tr key={c.service.id}>
-          <td><b>{c.service.name || c.service.catalog.name}</b>{c.set && <span className="badge cat" style={{ marginLeft: 6 }}>own</span>}{!c.visible && <span className="badge warn" style={{ marginLeft: 6 }}>hidden</span>}
+          <td><b>{c.service.name || c.service.catalog.name}</b>{c.set && <span className="badge cat" style={{ marginLeft: 6 }} title={c.source === 'connector' ? 'Made by Core through the connector' : 'Set by hand'}>{c.source === 'connector' ? 'own · by Core' : 'own'}</span>}{!c.visible && <span className="badge warn" style={{ marginLeft: 6 }}>hidden</span>}
             {open === c.service.id && <div className="grid mt-sm" style={{ gap: 8 }}>
               <Field label={`${c.service.catalog.prefix}_${c.service.catalog.url_key}`} help="Empty = the box-wide URL"><input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} /></Field>
               {c.service.catalog.fields.map(f => <Field key={f.key} label={`${c.service.catalog.prefix}_${f.key}`}><input type={f.secret ? 'password' : 'text'} autoComplete="off" value={form.fields[f.key] || ''} onChange={e => setForm(v => ({ ...v, fields: { ...v.fields, [f.key]: e.target.value } }))} placeholder="empty = box-wide value" /></Field>)}
@@ -90,6 +93,15 @@ export function CredentialsModal({ user, onClose }: { user: User; onClose: () =>
           </td>
           <td className="right">{open !== c.service.id && <button className="btn sm" onClick={() => start(c)}>{c.set ? 'Edit' : 'Set own'}</button>}</td>
         </tr>)}</tbody></table>}
+      {(conns || []).length > 0 && <>
+        <div className="mt"><b>Connected services</b></div>
+        <p className="muted small">Accounts Core made or linked for this person through a service's connector (Services → Connector).</p>
+        <table className="table compact mt-sm"><tbody>{(conns || []).map(c => <tr key={c.service_id} className={c.in_audience ? '' : 'muted'}>
+          <td><b>{c.service_name}</b>{!c.enabled && <span className="badge" style={{ marginLeft: 6 }}>connector off</span>}{!c.in_audience && <span className="badge warn" style={{ marginLeft: 6 }}>outside audience</span>}</td>
+          <td><StatusBadge status={c.status} />{c.error && <div className="small" style={{ color: 'var(--danger)', maxWidth: 380 }}>{c.error}</div>}</td>
+          <td className="small muted" title={when(c.updated_at)}>{c.remote_id && <span className="mono">{c.remote_id}</span>}{c.updated_at && <div>{ago(c.updated_at)}</div>}</td>
+        </tr>)}</tbody></table>
+      </>}
     </Modal>
   )
 }
