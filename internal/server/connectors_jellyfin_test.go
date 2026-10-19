@@ -21,7 +21,7 @@ type fakeJellyfin struct {
 	users      []map[string]any
 	passwords  map[string]string // name → password sent at creation
 	sessions   map[string]string // access token → user id
-	ssoPlugin  string // "" = not installed, else its status (Active, Restart)
+	ssoPlugin  string            // "" = not installed, else its status (Active, Restart)
 	providers  map[string]map[string]any
 	disclaimer string
 	activity   []map[string]any
