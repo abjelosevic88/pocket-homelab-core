@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { ago } from '../lib/format'
-import type { Overview } from '../lib/types'
+import type { MyService, Overview } from '../lib/types'
 import { Card, Dot, Empty, Loading, PageHeader, useAsync } from '../components/ui'
 import PairModal from '../components/PairModal'
 
@@ -14,9 +14,10 @@ export default function Home() {
   const d = data
   if (d.member) return (
     <>
-      <PageHeader title={d.box_name} sub="Your devices on this box." actions={<button className="btn primary" onClick={() => setPair(true)}>Pair a device</button>} />
-      <div className="stats"><Link to="/devices" className="stat"><div className="n">{d.devices.length}</div><div className="l">Your devices</div></Link><Link to="/settings" className="stat"><div className="n">{d.services_enabled}</div><div className="l">Services in your profile</div></Link></div>
-      <Card title="Your own logins"><p className="muted small">Under Settings you can set your own Jellyfin, Navidrome or Audiobookshelf login; otherwise your phone receives the household one.</p></Card>
+      <PageHeader title={d.box_name} sub="Your services and devices on this box." actions={<button className="btn primary" onClick={() => setPair(true)}>Pair a device</button>} />
+      <div className="stats"><Link to="/devices" className="stat"><div className="n">{d.devices.length}</div><div className="l">Your devices</div></Link><a href="#services" className="stat"><div className="n">{d.services_enabled}</div><div className="l">Services in your profile</div></a></div>
+      <MyServices />
+      <Card title="Your own logins"><p className="muted small">Under <Link to="/settings">Settings</Link> you can set your own Jellyfin, Navidrome or Audiobookshelf login; otherwise your phone receives the household one.</p></Card>
       {pair && <PairModal onClose={() => { setPair(false); reload() }} />}
     </>
   )
@@ -49,4 +50,37 @@ export default function Home() {
       {pair && <PairModal onClose={() => { setPair(false); reload() }} />}
     </>
   )
+}
+
+// MyServices is the member's launcher: every service their profile holds, as a link.
+function MyServices() {
+  const { data, loading, error } = useAsync(() => api.get<MyService[]>(`${V1}/me/services`), [])
+  if (loading && !data) return <Card title="Your services"><Loading /></Card>
+  if (error || !data) return <div className="callout danger">{error || 'Failed to load services'}</div>
+  if (data.length === 0) return <Card title="Your services"><Empty title="Nothing shared with you yet">Ask the person who runs this box to add you to a service.</Empty></Card>
+  const groups: [string, MyService[]][] = []
+  for (const sv of data) {
+    const g = sv.group || 'Other'
+    const hit = groups.find(x => x[0] === g)
+    if (hit) hit[1].push(sv); else groups.push([g, [sv]])
+  }
+  return (
+    <div id="services" className="my-services">
+      {groups.map(([g, list]) => (
+        <Card key={g} title={g}>
+          <div className="app-grid">{list.map(sv => (
+            <a key={sv.id} href={sv.url} target="_blank" rel="noreferrer" className="app-card">
+              <ServiceIcon sv={sv} />
+              <span className="grow"><span className="name">{sv.name}</span><span className="meta block">{sv.url.replace(/^https?:\/\//, '')}</span></span>
+            </a>))}</div>
+        </Card>))}
+    </div>
+  )
+}
+
+function ServiceIcon({ sv }: { sv: MyService }) {
+  const [src, setSrc] = useState(sv.icon || `${sv.url}/favicon.ico`)
+  const [failed, setFailed] = useState(false)
+  const fallback = () => { if (src !== `${sv.url}/favicon.ico` && !failed) setSrc(`${sv.url}/favicon.ico`); else setFailed(true) }
+  return <span className="icon">{failed ? sv.name[0] : <img src={src} alt="" onError={fallback} />}</span>
 }

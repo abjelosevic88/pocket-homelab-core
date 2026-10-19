@@ -194,6 +194,7 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/system", s.handleSystem)
 			r.Get("/overview", s.handleOverview)
+			r.Get("/me/services", s.handleMyServices)
 
 			r.Get("/users/{id}/credentials", s.handleListCredentials)
 			r.Put("/users/{id}/credentials/{sid}", s.handlePutCredential)

@@ -329,3 +329,61 @@ func (s *Server) handleTestService(w http.ResponseWriter, r *http.Request) {
 	res.Body.Close()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": res.StatusCode < 500, "status": res.StatusCode, "ms": time.Since(start).Milliseconds()})
 }
+
+// myService is one launcher tile: where to open a service in a browser.
+// No credentials, only what a household member may already see.
+type myService struct {
+	ID     int64  `json:"id"`
+	Type   string `json:"type"`
+	Name   string `json:"name"`
+	Group  string `json:"group"`
+	URL    string `json:"url"`
+	Icon   string `json:"icon"`
+	Pocket bool   `json:"pocket"`
+}
+
+// handleMyServices lists the services in the signed-in person's profile, as
+// links: their own URL override if set, else the public URL. Services that
+// point at the same address (an API alias of an app) appear once.
+func (s *Server) handleMyServices(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	p := principalFrom(ctx)
+	if p == nil || p.User == nil {
+		writeErr(w, http.StatusForbidden, "people only")
+		return
+	}
+	list, err := s.store.ListServices(ctx)
+	if err != nil {
+		s.fail(w, err, "list services")
+		return
+	}
+	ovs, _ := s.store.ListOverrides(ctx, p.User.ID)
+	out := []myService{}
+	seen := map[string]bool{}
+	for _, sv := range list {
+		if !sv.VisibleTo(p.User) {
+			continue
+		}
+		u := sv.EffectivePublicURL()
+		if ov, ok := ovs[sv.ID]; ok && ov.URL != "" {
+			u = ov.URL
+		}
+		u = strings.TrimRight(u, "/")
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		e := s.entryForCtx(r, &sv)
+		m := myService{ID: sv.ID, Type: sv.Type, Name: sv.Name, Group: e.Group, URL: u, Pocket: e.Pocket}
+		if sv.AppID > 0 {
+			if a, err := s.store.GetApp(ctx, sv.AppID); err == nil && a.Icon != "" {
+				m.Icon = a.Icon
+				if !strings.HasPrefix(a.Icon, "http") {
+					m.Icon = u + "/" + strings.TrimLeft(a.Icon, "/")
+				}
+			}
+		}
+		out = append(out, m)
+	}
+	writeJSON(w, http.StatusOK, out)
+}

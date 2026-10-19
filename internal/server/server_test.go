@@ -335,6 +335,16 @@ func TestAudienceAndOverrides(t *testing.T) {
 	if ov["member"] != true || len(ov["apps"].([]any)) != 0 {
 		t.Fatalf("member overview %+v", ov)
 	}
+	// The launcher lists exactly the member's services as links, no secrets.
+	var mine []map[string]any
+	if c := e.do("GET", "/api/v1/me/services", prof.Token, nil, &mine); c != 200 || len(mine) != 2 {
+		t.Fatalf("member launcher %d %+v", c, mine)
+	}
+	for _, m := range mine {
+		if m["type"] == "truenas" || m["fields"] != nil {
+			t.Fatalf("launcher leaked %+v", m)
+		}
+	}
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

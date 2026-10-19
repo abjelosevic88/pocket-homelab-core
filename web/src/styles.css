@@ -441,6 +441,7 @@ html, body { overflow-x: hidden; }
 .app-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); color: inherit; }
 .app-card:hover { border-color: var(--accent); text-decoration: none; }
 .app-card .icon { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); display: grid; place-items: center; font-size: 18px; flex-shrink: 0; overflow: hidden; }
+.my-services { display: grid; gap: 16px; margin-bottom: 16px; }
 .app-card .icon img { width: 100%; height: 100%; object-fit: cover; }
 .app-card .name { font-weight: 650; display: flex; align-items: center; gap: 8px; }
 .app-card .meta { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-all; }

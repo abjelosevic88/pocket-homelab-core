@@ -27,4 +27,5 @@ export interface Overview {
   box_name: string; version: string; apps: App[]; apps_up: number; services_total: number; services_enabled: number
   devices: Device[]; recent_events: Event[]; deliveries: Record<string, number>; listeners: number; member?: boolean
 }
+export interface MyService { id: number; type: string; name: string; group: string; url: string; icon: string; pocket: boolean }
 export interface SystemInfo { version: string; go: string; os: string; uptime_s: number; started_at: string; base_url: string; issuer: string; auth_mode: string; data_dir: string; counts: Record<string, number>; listeners: number; box_name: string; health_interval_s: number; event_retention_h: number }
