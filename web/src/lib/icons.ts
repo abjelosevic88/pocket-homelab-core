@@ -41,6 +41,20 @@ const FILES: Record<string, string> = {
   "speedtest": "speedtest.png",
   "ssh": "ssh.svg",
   "truenas": "truenas.svg",
+  // Pocket apps: their own favicons, for when the app isn't running yet
+  "bookshelf": "pocket-bookshelf.svg",
+  "clips": "pocket-clips.svg",
+  "collaborator": "pocket-collaborator.svg",
+  "day": "pocket-day.svg",
+  "garage": "pocket-garage.svg",
+  "habits": "pocket-habits.svg",
+  "inventory": "pocket-inventory.svg",
+  "invoicing": "pocket-invoicing.svg",
+  "kitchen": "pocket-kitchen.svg",
+  "money": "pocket-money.svg",
+  "split": "pocket-split.svg",
+  "subtitles": "pocket-subtitles.svg",
+  "travel": "pocket-travel.svg",
 }
 
 /** The bundled icon for a catalog type, or "". */

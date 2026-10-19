@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
-import type { CatalogEntry, ConnectorListItem, Service, User } from '../lib/types'
+import type { CatalogEntry, ConnectorCaps, ConnectorListItem, Service, User } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
 import { ConnectorModal } from '../components/ConnectorPanel'
@@ -8,6 +8,11 @@ import { Select } from '../components/Select'
 import { bundledIcon, iconCandidates } from '../lib/icons'
 
 type TestResult = { ok: boolean; status?: number; ms?: number; error?: string; busy?: boolean }
+
+// Missing: a Pocket app that hasn't registered, or a service Core has a
+// connector for that nobody added yet. Shown greyed out so a fresh box isn't
+// an empty page; nothing is stored and devices never see it.
+type Missing = { entry: CatalogEntry; kind: 'pocket' | 'connector'; caps?: ConnectorCaps }
 
 export default function Services() {
   const { user } = useApp()
@@ -17,7 +22,8 @@ export default function Services() {
   const { data: conns, reload: reloadConns } = useAsync(() => admin ? api.get<ConnectorListItem[]>(`${V1}/connectors`).catch(() => [] as ConnectorListItem[]) : Promise.resolve([] as ConnectorListItem[]), [admin])
   const [conn, setConn] = useState<Service | null>(null)
   const connFor = (s: Service) => (conns || []).find(c => c.type === s.type && c.service_id === s.id)
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState<boolean | CatalogEntry>(false)
+  const [howTo, setHowTo] = useState<CatalogEntry | null>(null)
   const [edit, setEdit] = useState<Service | null>(null)
   const [del, setDel] = useState<Service | null>(null)
   const [q, setQ] = useState('')
@@ -25,15 +31,33 @@ export default function Services() {
   const [tests, setTests] = useState<Record<number, TestResult>>({})
   const list = data || []
   const pocketBases = list.filter(s => s.catalog.pocket || s.app_id).map(s => s.public_url || s.url)
+  const missing = useMemo<Missing[]>(() => {
+    if (!admin || !catalog) return []
+    const have = new Set(list.map(s => s.type))
+    const out: Missing[] = []
+    for (const c of catalog) {
+      if (have.has(c.type) || c.type === 'core') continue
+      const k = (conns || []).find(x => x.type === c.type)
+      if (c.pocket) out.push({ entry: c, kind: 'pocket' })
+      else if (k) out.push({ entry: c, kind: 'connector', caps: k.capabilities })
+    }
+    return out
+  }, [admin, catalog, list, conns])
   const groups = useMemo(() => {
-    const g = new Map<string, Service[]>()
+    const g = new Map<string, { svcs: Service[]; missing: Missing[] }>()
+    const at = (k: string) => { if (!g.has(k)) g.set(k, { svcs: [], missing: [] }); return g.get(k)! }
+    const match = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase())
     for (const s of list) {
-      if (q && !(s.name + s.type + s.url + s.public_url).toLowerCase().includes(q.toLowerCase())) continue
+      if (!match(s.name + s.type + s.url + s.public_url)) continue
       if ((show === 'on' && !s.enabled) || (show === 'off' && s.enabled) || (show === 'conn' && !connFor(s))) continue
-      const k = s.catalog.group; g.set(k, [...(g.get(k) || []), s])
+      at(s.catalog.group).svcs.push(s)
+    }
+    for (const m of missing) {
+      if (show === 'on' || show === 'off' || (show === 'conn' && m.kind !== 'connector') || !match(m.entry.name + m.entry.type)) continue
+      at(m.entry.group).missing.push(m)
     }
     return [...g.entries()]
-  }, [list, q, show, conns]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [list, missing, q, show, conns]) // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = async (s: Service, on: boolean) => { await api.put(`${V1}/services/${s.id}`, { enabled: on }); await reload() }
   const test = async (s: Service) => {
     setTests(t => ({ ...t, [s.id]: { ok: false, busy: true } }))
@@ -49,14 +73,14 @@ export default function Services() {
         actions={<><a className="btn" href={`${V1}/pair/profile?format=env`} download>Download env</a>{admin && <button className="btn primary" onClick={() => setAdding(true)}>Add service</button>}</>} />
       <div className="toolbar">
         <div className="search"><span className="ico">⌕</span><input placeholder="Search services…" value={q} onChange={e => setQ(e.target.value)} /></div>
-        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length}` }] : [])]} />
+        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length + missing.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length + missing.filter(m => m.kind === 'connector').length}` }] : [])]} />
         <button className="btn sm" onClick={testAll} title="Check every service in the profile">Test all</button>
       </div>
-      {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} pocketBases={pocketBases} onOpen={setConn} />}
-      {list.length === 0 ? <Card><Empty title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
+      {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} pocketBases={pocketBases} onOpen={setConn} onAdd={type => { const e = catalog?.find(c => c.type === type); if (e) setAdding(e) }} />}
+      {list.length === 0 && missing.length === 0 ? <Card><Empty title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
         groups.length === 0 ? <Card><Empty title="No match">Nothing matches this search.</Empty></Card> :
-        groups.map(([g, items]) => <section key={g} className="svc-group">
-          <div className="svc-group-head"><span>{g}</span><span className="count">{items.length}</span></div>
+        groups.map(([g, { svcs: items, missing: absent }]) => <section key={g} className="svc-group">
+          <div className="svc-group-head"><span>{g}</span><span className="count">{items.length}</span>{absent.length > 0 && <span className="count muted">+{absent.length} not set up</span>}</div>
           <div className="svc-list">{items.map(s => {
             const c = connFor(s)?.connector
             const href = s.public_url || s.url
@@ -99,9 +123,10 @@ export default function Services() {
                 <Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} />
               </div>
             )
-          })}</div>
+          })}{absent.map(m => <MissingRow key={m.entry.type} m={m} onAdd={() => setAdding(m.entry)} onHowTo={() => setHowTo(m.entry)} />)}</div>
         </section>)}
-      {adding && catalog && <AddService catalog={catalog.filter(c => !list.some(s => s.type === c.type))} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
+      {adding && catalog && <AddService catalog={catalog.filter(c => !list.some(s => s.type === c.type))} initial={adding === true ? undefined : adding} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
+      {howTo && <PocketHowTo entry={howTo} onClose={() => setHowTo(null)} />}
       {conn && <ConnectorModal service={conn} onClose={() => { setConn(null); reloadConns() }} />}
       {edit && <EditService s={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}
       {del && <Confirm title="Remove service" message={<>Remove <b>{del.name}</b>? Paired devices lose it on their next profile refresh.</>} onConfirm={remove} onCancel={() => setDel(null)} />}
@@ -121,8 +146,46 @@ function ConnectorLine({ c, onOpen }: { c?: ConnectorListItem['connector']; onOp
   )
 }
 
+// MissingRow: a greyed-out row for something not set up yet. The tooltip
+// says what's missing; the visible line says the same for phones.
+function MissingRow({ m, onAdd, onHowTo }: { m: Missing; onAdd: () => void; onHowTo: () => void }) {
+  const pocket = m.kind === 'pocket'
+  const name = m.entry.name
+  const caps = m.caps ? [m.caps.provision && 'accounts', m.caps.sso && 'sign-in with Core', m.caps.events && 'events'].filter(Boolean).join(', ') : ''
+  const tip = pocket
+    ? `${name} isn't running on this box. Start it with CORE_URL and the registration key from Settings; it registers itself and this row comes alive.`
+    : `${name} isn't added yet. Add its address and an admin API key to use its connector${caps ? ` (${caps})` : ''}.`
+  const icon = bundledIcon(m.entry.type)
+  return (
+    <div className="svc-row off missing" title={tip}>
+      {icon ? <span className="svc-icon"><img src={icon} alt="" /></span> : <span className="svc-icon letter" style={{ background: `hsl(${hue(name)} 70% 92%)`, color: `hsl(${hue(name)} 55% 35%)` }}>{name[0]}</span>}
+      <div className="svc-main">
+        <div className="svc-name"><b>{name}</b><span className="badge cat">{pocket ? 'Pocket app' : 'Connector'}</span></div>
+        <div className="svc-sub"><span>{pocket ? 'Registers itself once it runs with CORE_URL' : `Add it to use ${caps || 'its connector'}`}</span></div>
+      </div>
+      <div className="svc-foot">
+        <div className="svc-status"><span className="pill">{pocket ? 'Not installed' : 'Not added'}</span></div>
+        <div className="svc-actions">{pocket ? <button className="btn sm ghost" onClick={onHowTo}>How to</button> : <button className="btn sm" onClick={onAdd}>Add</button>}</div>
+      </div>
+      <Switch on={false} onChange={() => {}} disabled title={pocket ? 'Install it first' : 'Add it first'} />
+    </div>
+  )
+}
+
+// PocketHowTo: the two lines a Pocket app needs to find this box.
+function PocketHowTo({ entry, onClose }: { entry: CatalogEntry; onClose: () => void }) {
+  const { data: st } = useAsync(() => api.get<{ registration_key: string }>(`${V1}/settings`), [])
+  return (
+    <Modal title={`Connect ${entry.name}`} onClose={onClose}>
+      <p className="muted small">Add these to {entry.name}'s environment and restart it. It registers with Core, shows up here by itself, and paired phones get it with their device token.</p>
+      {st ? <pre>{`CORE_URL=${window.location.origin}\nCORE_REGISTRATION_KEY=${st.registration_key}`}</pre> : <Loading />}
+      <div className="form-actions"><button className="btn" onClick={onClose}>Close</button></div>
+    </Modal>
+  )
+}
+
 // ConnectorsOverview: every connector Core ships, at the top of the page.
-function ConnectorsOverview({ conns, services, pocketBases, onOpen }: { conns: ConnectorListItem[]; services: Service[]; pocketBases: string[]; onOpen: (s: Service) => void }) {
+function ConnectorsOverview({ conns, services, pocketBases, onOpen, onAdd }: { conns: ConnectorListItem[]; services: Service[]; pocketBases: string[]; onOpen: (s: Service) => void; onAdd: (type: string) => void }) {
   return (
     <section className="svc-group">
       <div className="svc-group-head"><span>Connectors</span><span className="count">{conns.length}</span><span className="muted" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>create accounts, sign people in with Core, listen to events</span></div>
@@ -142,7 +205,7 @@ function ConnectorsOverview({ conns, services, pocketBases, onOpen }: { conns: C
               {k.capabilities.sso && <span className={`conn-part ${c?.enabled && c.sso_enabled ? 'on' : ''}`}>Sign-in</span>}
               {k.capabilities.events && <span className={`conn-part ${c?.enabled && c.events_enabled ? 'on' : ''}`}>Events</span>}
               <span className="grow" />
-              {svc && <button className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button>}
+              {svc ? <button className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button> : <button className="btn sm" onClick={() => onAdd(k.type)} title={`Add ${k.name}'s address and API key first`}>Add</button>}
             </div>
           </div>
         )
@@ -225,8 +288,8 @@ function ServiceForm({ entry, initial, onSubmit, onClose }: { entry: CatalogEntr
   )
 }
 
-function AddService({ catalog, onClose, onSaved }: { catalog: CatalogEntry[]; onClose: () => void; onSaved: () => void }) {
-  const [entry, setEntry] = useState<CatalogEntry | null>(null)
+function AddService({ catalog, initial, onClose, onSaved }: { catalog: CatalogEntry[]; initial?: CatalogEntry; onClose: () => void; onSaved: () => void }) {
+  const [entry, setEntry] = useState<CatalogEntry | null>(initial || null)
   const [q, setQ] = useState('')
   const [custom, setCustom] = useState('')
   const items = catalog.filter(c => !c.pocket || c.type === 'core' ? !c.pocket : false).filter(c => !q || (c.name + c.type + c.group).toLowerCase().includes(q.toLowerCase()))

@@ -490,6 +490,10 @@ html, body { overflow-x: hidden; }
 .svc-row:last-child { border-bottom: 0; }
 .svc-row:hover { background: var(--surface-2); }
 .svc-row.off .svc-icon, .svc-row.off .svc-main, .svc-row.off .svc-status { opacity: .45; }
+.svc-row.missing .svc-icon { filter: grayscale(1); }
+.svc-row.missing .svc-sub { color: var(--muted); }
+.svc-group-head .count.muted { background: transparent; font-weight: 500; padding: 1px 0; }
+.switch:disabled { cursor: not-allowed; opacity: .5; }
 .svc-icon { width: 40px; height: 40px; border-radius: 11px; background: var(--surface-2); display: grid; place-items: center; overflow: hidden; border: 1px solid var(--border); }
 .svc-icon img { width: 26px; height: 26px; object-fit: contain; }
 .svc-icon.letter { font-weight: 700; font-size: 17px; border: 0; }

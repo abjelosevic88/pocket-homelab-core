@@ -109,8 +109,8 @@ export function useDebounce<T>(value: T, ms = 300): T {
 
 export function Dot({ status }: { status: string }) { return <span className={`dot ${status}`} title={status} /> }
 
-export function Switch({ on, onChange, title }: { on: boolean; onChange: (v: boolean) => void; title?: string }) {
-  return <button type="button" role="switch" aria-checked={on} title={title} className={`switch ${on ? 'on' : ''}`} onClick={() => onChange(!on)} />
+export function Switch({ on, onChange, title, disabled }: { on: boolean; onChange: (v: boolean) => void; title?: string; disabled?: boolean }) {
+  return <button type="button" role="switch" aria-checked={on} title={title} disabled={disabled} className={`switch ${on ? 'on' : ''}`} onClick={() => onChange(!on)} />
 }
 
 export function Secret({ value, label = 'Copy' }: { value: string; label?: string }) {
