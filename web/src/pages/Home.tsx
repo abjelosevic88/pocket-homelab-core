@@ -69,7 +69,7 @@ function MyServices() {
       {groups.map(([g, list]) => (
         <Card key={g} title={g}>
           <div className="app-grid">{list.map(sv => (
-            <a key={sv.id} href={sv.url} target="_blank" rel="noreferrer" className="app-card">
+            <a key={sv.id} href={sv.open_url || sv.url} target="_blank" rel="noreferrer" className="app-card" title={sv.open_url !== sv.url ? 'Opens signed in with your Pocket Core account' : undefined}>
               <ServiceIcon sv={sv} />
               <span className="grow"><span className="name">{sv.name}</span><span className="meta block">{sv.url.replace(/^https?:\/\//, '')}</span></span>
             </a>))}</div>

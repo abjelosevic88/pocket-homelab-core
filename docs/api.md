@@ -30,7 +30,7 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | GET | `/catalog` | – | every service type with its env prefix and fields |
 | GET | `/services` · `/services/{id}` | admin, app | secrets masked as `••••••••`; a masked value sent back in a PUT means "keep" |
 | POST/PUT/DELETE | `/services`, `/services/{id}` | admin | `{type, name, url, public_url, fields:{API_KEY:…}, enabled, notes, audience: all\|admins\|users, audience_users:[ids]}`; services that mirror a registered app cannot be deleted or re-typed. For a registered app the audience is enforced, not just hidden: `/oidc/authorize` answers `access_denied` and introspection reports the token inactive for anyone outside it |
-| GET | `/me/services` | user | the services in the caller's profile as launcher links: `{id, type, name, group, url, icon, pocket}`; their URL override if set, else the public URL; no credentials |
+| GET | `/me/services` | user | the services in the caller's profile as launcher links: `{id, type, name, group, url, open_url, icon, pocket}`; `open_url` is the app's `…/auth/oidc/start` (derived from its registered callback) so a click lands signed in, else `url`; their URL override if set, else the public URL; no credentials |
 | GET | `/users/{id}/credentials` | owner, admin | every service with that person's overrides (masked); members do not see box-wide values |
 | PUT/DELETE | `/users/{id}/credentials/{sid}` | owner, admin | `{url?, fields?}` per-person override merged over the service in that person's profile |
 | POST | `/services/{id}/test` | admin | plain reachability of `url` |

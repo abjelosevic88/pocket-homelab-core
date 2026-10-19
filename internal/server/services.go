@@ -338,6 +338,7 @@ type myService struct {
 	Name   string `json:"name"`
 	Group  string `json:"group"`
 	URL    string `json:"url"`
+	Open   string `json:"open_url"` // where a click goes: the app's own Core sign-in when it has one
 	Icon   string `json:"icon"`
 	Pocket bool   `json:"pocket"`
 }
@@ -358,6 +359,18 @@ func (s *Server) handleMyServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ovs, _ := s.store.ListOverrides(ctx, p.User.ID)
+	// A registered app's callback .../auth/oidc/callback has a sibling .../auth/oidc/start
+	// that signs the visitor in through Core and lands them in the app as themselves.
+	starts := map[int64][]string{}
+	if clients, err := s.store.ListOIDCClients(ctx); err == nil {
+		for _, c := range clients {
+			for _, cb := range c.RedirectURIs {
+				if c.AppID > 0 && strings.HasSuffix(cb, "/auth/oidc/callback") {
+					starts[c.AppID] = append(starts[c.AppID], strings.TrimSuffix(cb, "/callback")+"/start")
+				}
+			}
+		}
+	}
 	out := []myService{}
 	seen := map[string]bool{}
 	for _, sv := range list {
@@ -365,8 +378,9 @@ func (s *Server) handleMyServices(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		u := sv.EffectivePublicURL()
+		own := false
 		if ov, ok := ovs[sv.ID]; ok && ov.URL != "" {
-			u = ov.URL
+			u, own = ov.URL, true
 		}
 		u = strings.TrimRight(u, "/")
 		if u == "" || seen[u] {
@@ -374,7 +388,15 @@ func (s *Server) handleMyServices(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[u] = true
 		e := s.entryForCtx(r, &sv)
-		m := myService{ID: sv.ID, Type: sv.Type, Name: sv.Name, Group: e.Group, URL: u, Pocket: e.Pocket}
+		m := myService{ID: sv.ID, Type: sv.Type, Name: sv.Name, Group: e.Group, URL: u, Open: u, Pocket: e.Pocket}
+		if !own && sv.AppID > 0 {
+			for _, st := range starts[sv.AppID] {
+				if strings.HasPrefix(st, u+"/") {
+					m.Open = st
+					break
+				}
+			}
+		}
 		if sv.AppID > 0 {
 			if a, err := s.store.GetApp(ctx, sv.AppID); err == nil && a.Icon != "" {
 				m.Icon = a.Icon

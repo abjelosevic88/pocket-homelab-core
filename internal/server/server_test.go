@@ -345,6 +345,32 @@ func TestAudienceAndOverrides(t *testing.T) {
 			t.Fatalf("launcher leaked %+v", m)
 		}
 	}
+	// A registered app with a Core sign-in opens through it, signed in.
+	var regApp struct {
+		App store.App `json:"app"`
+	}
+	var st0 struct {
+		RegistrationKey string `json:"registration_key"`
+	}
+	e.do("GET", "/api/v1/settings", "", nil, &st0)
+	e.do("POST", "/api/v1/apps/register", st0.RegistrationKey, map[string]any{"slug": "kitchen", "name": "Pocket Kitchen", "url": "http://kitchen", "public_url": "https://kitchen.example",
+		"oidc": map[string]any{"redirect_uris": []string{"https://kitchen.example/api/v1/auth/oidc/callback"}}}, &regApp)
+	mine = nil
+	e.do("GET", "/api/v1/me/services", prof.Token, nil, &mine)
+	found := false
+	for _, m := range mine {
+		if m["name"] == "Pocket Kitchen" {
+			found = true
+			if m["open_url"] != "https://kitchen.example/api/v1/auth/oidc/start" || m["url"] != "https://kitchen.example" {
+				t.Fatalf("pocket app should open through its Core sign-in: %+v", m)
+			}
+		} else if m["open_url"] != m["url"] {
+			t.Fatalf("third-party service got a sign-in link: %+v", m)
+		}
+	}
+	if !found {
+		t.Fatalf("kitchen missing from launcher %+v", mine)
+	}
 	// An app whose service is for admins only refuses the member's token.
 	var settings struct {
 		RegistrationKey string `json:"registration_key"`
