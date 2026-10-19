@@ -88,10 +88,12 @@ export default function Services() {
                     {t && <span className={`pill ${t.busy ? '' : t.ok ? 'ok' : 'err'}`} title={t.error || ''}>{t.busy ? 'Testing…' : t.ok ? `${t.status} · ${t.ms} ms` : 'Unreachable'}</span>}
                   </div>
                   <div className="svc-actions">
-                    <button className="btn sm ghost" onClick={() => test(s)} disabled={t?.busy}>Test</button>
-                    {admin && connFor(s) && <button className={`btn sm ${c?.enabled ? 'conn-btn on' : 'ghost'}`} onClick={() => setConn(s)}>Connector</button>}
                     {admin && <button className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
-                    {admin && !s.app_id && <RowMenu items={[{ label: 'Remove', danger: true, onClick: () => setDel(s) }]} />}
+                    <RowMenu items={[
+                      { label: t?.busy ? 'Testing…' : 'Test connection', onClick: () => { if (!t?.busy) test(s) } },
+                      ...(admin && connFor(s) ? [{ label: 'Connector…', onClick: () => setConn(s) }] : []),
+                      ...(admin && !s.app_id ? [{ label: 'Remove', danger: true, onClick: () => setDel(s) }] : []),
+                    ]} />
                   </div>
                 </div>
                 <Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} />
