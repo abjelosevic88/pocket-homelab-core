@@ -9,6 +9,7 @@ const nav = [
   { to: '/apps', label: 'Apps', ico: '▦' },
   { to: '/services', label: 'Services', ico: '⚙' },
   { to: '/events', label: 'Events', ico: '⚡' },
+  { to: '/links', label: 'Links', ico: '⇄' },
   { to: '/devices', label: 'Devices', ico: '📱' },
   { to: '/users', label: 'Users', ico: '👤' },
   { to: '/settings', label: 'Settings', ico: '⋯' },
@@ -46,7 +47,7 @@ export default function Layout() {
         </header>
         <main className="content"><Outlet /></main>
         <nav className="tabbar">
-          {items.filter(n => !['/users', '/settings'].includes(n.to)).map(n => <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => isActive ? 'active' : ''}><span className="ico">{n.ico}</span><span>{n.label}</span></NavLink>)}
+          {items.filter(n => !['/users', '/settings', '/links'].includes(n.to)).map(n => <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => isActive ? 'active' : ''}><span className="ico">{n.ico}</span><span>{n.label}</span></NavLink>)}
         </nav>
       </div>
     </div>

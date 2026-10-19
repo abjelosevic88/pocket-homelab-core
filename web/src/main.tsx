@@ -13,6 +13,7 @@ import Events from './pages/Events'
 import Devices from './pages/Devices'
 import Users from './pages/Users'
 import Settings from './pages/Settings'
+import Links from './pages/Links'
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { status, user } = useApp()
@@ -34,6 +35,7 @@ function App() {
         <Route path="/apps/:slug" element={<Apps />} />
         <Route path="/services" element={<Services />} />
         <Route path="/events" element={<Events />} />
+        <Route path="/links" element={<Links />} />
         <Route path="/devices" element={<Devices />} />
         <Route path="/users" element={<Users />} />
         <Route path="/settings" element={<Settings />} />

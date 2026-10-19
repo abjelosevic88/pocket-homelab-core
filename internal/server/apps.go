@@ -37,6 +37,8 @@ type Manifest struct {
 		RedirectURIs []string `json:"redirect_uris"`
 		Public       bool     `json:"public,omitempty"`
 	} `json:"oidc,omitempty"`
+	Offers []Offer `json:"offers,omitempty"` // what other apps may do here for a person
+	Uses   []Use   `json:"uses,omitempty"`   // what this app does in other apps for a person
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
@@ -81,6 +83,8 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	m.EnvPrefix = strings.ToUpper(m.EnvPrefix)
+	m.Offers = cleanOffers(m.Offers)
+	wants := cleanUses(m.Slug, m.Uses)
 	raw, _ := json.Marshal(m)
 
 	st, _ := s.store.GetSettings(ctx)
@@ -160,6 +164,11 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.SaveWebhook(ctx, wh); err != nil {
 			s.log.Warn("manifest webhook", "app", app.Slug, "url", u, "err", err)
 		}
+	}
+
+	// App links from the manifest's "uses": new ones start switched on.
+	if err := s.store.SyncAppLinks(ctx, app.ID, wants); err != nil {
+		s.log.Warn("manifest links", "app", app.Slug, "err", err)
 	}
 
 	// OIDC client from the manifest; the secret is returned only when minted.

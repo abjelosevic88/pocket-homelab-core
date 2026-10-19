@@ -710,3 +710,13 @@ html, body { overflow-x: hidden; }
 .collapse.show { grid-template-rows: 1fr; opacity: 1; }
 .collapse > .collapse-inner { min-height: 0; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .collapse { transition: none; } }
+
+/* App links */
+.link-pair { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.link-pair:first-of-type { padding-top: 0; }
+.link-pair:last-child { border-bottom: 0; padding-bottom: 0; }
+.link-pair-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.link-reason { margin: 4px 0 0; }
+.link-scopes { margin-top: 8px; display: grid; gap: 8px; }
+.link-scope { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.link-scope .grow { flex: 1; min-width: 0; }

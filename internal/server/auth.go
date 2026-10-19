@@ -126,6 +126,9 @@ func bearer(r *http.Request) string {
 // resolveToken identifies any Core-issued token by prefix.
 func (s *Server) resolveToken(ctx context.Context, tok, ip string) (*Principal, error) {
 	switch {
+	case strings.HasPrefix(tok, "pcx_"):
+		// Link tokens are for the target app only, never for Core's own API.
+		return nil, store.ErrNotFound
 	case strings.HasPrefix(tok, "pca_"):
 		a, err := s.store.GetAppByToken(ctx, tok)
 		if err != nil {
@@ -441,6 +444,10 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &in); err != nil || in.Token == "" {
 		writeErr(w, http.StatusBadRequest, "token required")
+		return
+	}
+	if strings.HasPrefix(in.Token, "pcx_") {
+		s.introspectLinkToken(w, r, caller, in.Token)
 		return
 	}
 	p, err := s.resolveToken(r.Context(), in.Token, "")

@@ -23,7 +23,9 @@ Content-Type: application/json
   "subscribes": [
     { "topics": "habits.*,inventory.adjusted", "url": "/api/v1/core/events", "secret": "a-shared-hmac-key" }
   ],
-  "oidc": { "redirect_uris": ["https://kitchen.example.com/auth/oidc/callback"] }
+  "oidc": { "redirect_uris": ["https://kitchen.example.com/auth/oidc/callback"] },
+  "offers": [{ "scope": "recipes:read", "name": "See recipes" }],
+  "uses": [{ "app": "inventory", "scopes": ["items:write"], "reason": "Take cooked ingredients off the pantry" }]
 }
 ```
 
@@ -38,6 +40,8 @@ Content-Type: application/json
 | `publishes` | no | Informational list of topics. |
 | `subscribes` | no | Webhooks Core should create. `url` may be relative to `url`. Deliveries carry `X-Pocket-Signature: sha256=<hmac>` when `secret` is set. Idempotent on `url`. |
 | `oidc` | no | Ask for an OpenID Connect client `pocket-<slug>`. `public: true` makes a PKCE-only client without a secret. |
+| `offers` | no | Scopes other apps may use here for a person: `{scope, name, description}`. Shown to admins and people on the Links page. See [links](links.md). |
+| `uses` | no | What this app does in other apps for a person: `{app, scopes, reason}`. Core creates one link per scope, switched on; dropping a use deletes it. |
 
 ## The response
 
@@ -64,7 +68,8 @@ Persist `token`. Afterwards register with it instead of the key; Core updates th
 2. Mirrors it as a **service** so every paired device gets `<PREFIX>_URL` and `<PREFIX>_API_KEY` in its profile, the latter being the device's own Core token.
 3. Creates the webhooks from `subscribes`.
 4. Creates the OIDC client from `oidc`.
-5. Publishes `core.app.registered`.
+5. Creates or removes the app's links from `uses`.
+6. Publishes `core.app.registered`.
 
 ## Accepting device tokens
 

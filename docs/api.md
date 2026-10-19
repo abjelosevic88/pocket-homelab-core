@@ -24,6 +24,10 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | PUT/DELETE | `/apps/{slug}` | admin | edit descriptive fields / remove (cascades to service, webhooks, OIDC client) |
 | POST | `/apps/{slug}/rotate` · `/apps/{slug}/check` | admin | new token (shown once) / health check now |
 
+## App links
+
+See [links](links.md): `POST /links/token` and `GET /links/status` (app), `GET /links` · `PUT /links/{id}` (admin), `GET /me/links` · `PUT /me/links/{id}` (person). For a `pcx_` token, `/auth/introspect` answers `{active, kind: "delegated", scope, audience, user, app}` only to the target app.
+
 ## Services & catalog
 | Method | Path | Who | Notes |
 |---|---|---|---|

@@ -52,6 +52,24 @@ type Manifest struct {
 	Publishes   []string       `json:"publishes,omitempty"`
 	Subscribes  []Subscription `json:"subscribes,omitempty"`
 	OIDC        *OIDCRequest   `json:"oidc,omitempty"`
+	// Offers are scopes other apps may use here for a person (see docs/links.md).
+	Offers []Offer `json:"offers,omitempty"`
+	// Uses are what this app does in other apps for a person.
+	Uses []Use `json:"uses,omitempty"`
+}
+
+// Offer is one scope an app lets linked apps use for a person.
+type Offer struct {
+	Scope       string `json:"scope"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// Use asks for scopes in another app; Core creates one link per scope.
+type Use struct {
+	App    string   `json:"app"`
+	Scopes []string `json:"scopes"`
+	Reason string   `json:"reason,omitempty"`
 }
 
 // Subscription asks Core to POST matching events to a URL (relative to the app URL allowed).
@@ -109,9 +127,12 @@ type Resolved struct {
 // Introspection is Core's verdict on a token.
 type Introspection struct {
 	Active bool   `json:"active"`
-	Kind   string `json:"kind"`
+	Kind   string `json:"kind"` // user | device | app | delegated
 	Scope  string `json:"scope"`
-	User   *struct {
+	// Audience is the app a delegated (pcx_) token is for; App is the app acting.
+	Audience string `json:"audience,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	User     *struct {
 		ID    int64  `json:"id"`
 		Email string `json:"email"`
 		Name  string `json:"name"`
@@ -163,6 +184,7 @@ type Client struct {
 	token string
 	oidc  OIDCClient
 	cache map[string]cached
+	links map[string]*LinkToken
 }
 
 type cached struct {
@@ -172,7 +194,7 @@ type cached struct {
 
 // New creates a client. An empty base URL yields a client whose calls return ErrNotConfigured.
 func New(baseURL string, opts Options) *Client {
-	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}}
+	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}, links: map[string]*LinkToken{}}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -447,6 +469,148 @@ func (c *Client) Introspect(ctx context.Context, token string) (*Introspection, 
 
 // IsCoreToken reports whether a bearer token looks like one Core issued, so
 // an app can route it to Introspect instead of its own token table.
+//
+// Link tokens (pcx_) are deliberately not included: they carry a scope that
+// the app has to enforce, so an app opts in with IsLinkToken.
 func IsCoreToken(tok string) bool {
 	return strings.HasPrefix(tok, "pcd_") || strings.HasPrefix(tok, "pcu_") || strings.HasPrefix(tok, "pco_")
+}
+
+// IsLinkToken reports whether a bearer token is a pcx_ token another app
+// obtained to act for a person here. Only apps that declare Offers get them.
+func IsLinkToken(tok string) bool { return strings.HasPrefix(tok, "pcx_") }
+
+// Delegated reports whether the verdict is for a link token.
+func (in *Introspection) Delegated() bool { return in != nil && in.Kind == "delegated" }
+
+// HasScope reports whether a delegated verdict covers a scope.
+func (in *Introspection) HasScope(scope string) bool {
+	if in == nil {
+		return false
+	}
+	for _, s := range strings.Fields(in.Scope) {
+		if s == scope {
+			return true
+		}
+	}
+	return false
+}
+
+// LinkToken is a short-lived token to act for a person in another app.
+type LinkToken struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+	Scope       string `json:"scope"`
+	App         string `json:"app"`
+	URL         string `json:"url"`
+	PublicURL   string `json:"public_url"`
+	expires     time.Time
+}
+
+// LinkError is Core refusing a link token; Reason is machine-readable
+// (off_admin, off_person, not_declared, not_offered, target_missing,
+// not_in_audience, unknown_user).
+type LinkError struct {
+	Reason  string
+	Message string
+}
+
+func (e *LinkError) Error() string { return "pocket core: " + e.Message }
+
+// ActAs returns a token (and the target's address) to call app `target` as
+// the person with this email, for the scopes. Tokens are cached until a
+// minute before they expire.
+func (c *Client) ActAs(ctx context.Context, email, target string, scopes ...string) (*LinkToken, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+	key := strings.ToLower(email) + "|" + target + "|" + strings.Join(scopes, " ")
+	c.mu.RLock()
+	if t, ok := c.links[key]; ok && time.Now().Before(t.expires) {
+		c.mu.RUnlock()
+		return t, nil
+	}
+	c.mu.RUnlock()
+	body := map[string]any{"user": email, "app": target, "scopes": scopes}
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/v1/links/token", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token())
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.opts.UserAgent)
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode >= 300 {
+		var e struct {
+			Error  string `json:"error"`
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		if e.Reason != "" {
+			return nil, &LinkError{Reason: e.Reason, Message: e.Error}
+		}
+		return nil, fmt.Errorf("core: HTTP %d: %s", res.StatusCode, e.Error)
+	}
+	var t LinkToken
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return nil, err
+	}
+	t.expires = time.Now().Add(time.Duration(t.ExpiresIn)*time.Second - time.Minute)
+	c.mu.Lock()
+	if len(c.links) > 500 {
+		c.links = map[string]*LinkToken{}
+	}
+	c.links[key] = &t
+	c.mu.Unlock()
+	return &t, nil
+}
+
+// LinkState is one of the app's links as it stands for a person.
+type LinkState struct {
+	App    string `json:"app"`
+	Scope  string `json:"scope"`
+	State  string `json:"state"`
+	On     bool   `json:"on"`
+	Detail string `json:"detail"`
+}
+
+// LinkStatus lists the app's links for a person (optionally one target app)
+// without issuing a token, e.g. to decide whether to offer an option.
+func (c *Client) LinkStatus(ctx context.Context, email, target string) ([]LinkState, error) {
+	q := url.Values{"user": {email}}
+	if target != "" {
+		q.Set("app", target)
+	}
+	var out []LinkState
+	_, err := c.do(ctx, http.MethodGet, "/api/v1/links/status?"+q.Encode(), c.Token(), nil, &out)
+	return out, err
+}
+
+// LinkOn reports whether every scope is linked for the person in target.
+func (c *Client) LinkOn(ctx context.Context, email, target string, scopes ...string) (bool, string) {
+	list, err := c.LinkStatus(ctx, email, target)
+	if err != nil {
+		return false, err.Error()
+	}
+	on := map[string]LinkState{}
+	for _, l := range list {
+		on[l.Scope] = l
+	}
+	for _, sc := range scopes {
+		l, ok := on[sc]
+		if !ok {
+			return false, "not_declared"
+		}
+		if !l.On {
+			return false, l.State
+		}
+	}
+	return true, ""
 }

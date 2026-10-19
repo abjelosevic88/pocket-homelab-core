@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context'
 import { Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { CredentialsModal, Tokens } from './Users'
 import { Select } from '../components/Select'
+import { MyLinks } from './Links'
 
 export default function Settings() {
   const { user, refresh } = useApp()
@@ -42,6 +43,7 @@ export default function Settings() {
               <div className="form-actions"><button className="btn primary">Save</button></div>
             </form>
           </Card>
+          <MyLinks />
           {!admin && user && <MyCredentials user={user} />}
           {!admin && <Tokens />}
         </div>

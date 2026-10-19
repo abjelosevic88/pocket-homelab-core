@@ -11,12 +11,15 @@ This is the part of Core other software builds against. Anything here changes on
 | `pcd_` | device token, one per paired phone or Mac | `Authorization: Bearer` on device → Core and device → app calls |
 | `pcu_` | personal token | same |
 | `pco_` / `pcr_` | OIDC access / refresh token | OAuth 2 bearer / refresh grant |
+| `pcx_` | link token: one app acting for a person in another, 5 minutes, scoped | `Authorization: Bearer` on acting app → target app calls ([links](links.md)) |
 
 An app decides where a bearer token goes by prefix: `pcd_`, `pcu_`, `pco_` → ask Core (`POST /api/v1/auth/introspect` with the app's own `pca_`); anything else → the app's own table. Core returns `{"active": bool, "kind": "user|device|app", "user": {...}, "device": {...}, "scope": ""}`. An app maps `user.email` to its local account and may create one on first sight.
 
+`pcx_` tokens go to introspection too, but only in apps that declare `offers`. Core answers `active: true` only to the target app, with `kind: "delegated"`, `app` (the acting app), `audience` and `scope`. The target must allow nothing beyond the scope.
+
 ## 2. Manifest (`POST /api/v1/apps/register`)
 
-Required: `slug` (`^[a-z0-9][a-z0-9-]{0,40}$`, stable forever), `name`, `url` (absolute). Optional: `description`, `icon`, `version`, `public_url`, `health_path` (default `/healthz`), `env_prefix` (default: catalog entry for the slug, else upper-cased slug), `publishes` (list of topics), `subscribes` (list of `{topics, url, secret}`), `oidc` (`{redirect_uris, public}`).
+Required: `slug` (`^[a-z0-9][a-z0-9-]{0,40}$`, stable forever), `name`, `url` (absolute). Optional: `description`, `icon`, `version`, `public_url`, `health_path` (default `/healthz`), `env_prefix` (default: catalog entry for the slug, else upper-cased slug), `publishes` (list of topics), `subscribes` (list of `{topics, url, secret}`), `oidc` (`{redirect_uris, public}`), `offers` (list of `{scope, name, description}`), `uses` (list of `{app, scopes, reason}`); see [links](links.md).
 
 Response: `{app, token?, core: {base_url, events_url, stream_url, introspect_url, issuer}, oidc?: {client_id, client_secret?, issuer, discovery}}`. `token` and `client_secret` appear only when minted; persist them. Registering again with the app token updates the record; registering with the registration key for an existing slug re-keys it.
 
@@ -31,7 +34,7 @@ Delivery:
 - Webhook POST of the stored event as JSON with `X-Pocket-Event` (topic), `X-Pocket-Event-ID`, and `X-Pocket-Signature: sha256=<hex HMAC-SHA256(body, secret)>` when a secret is set. Any non-2xx is retried with exponential backoff (10 s doubling, cap 1 h, 8 attempts by default). Deliveries are at-least-once; consumers dedupe on the event id.
 - Topic patterns: `*`, `prefix.*`, exact, comma-separated.
 
-Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|revoked`, `core.connector.provisioned`, `core.test`. Connectors publish `<service type>.<event>` with source `connector:<type>` and `payload.user_email` when the event belongs to a person (`immich.asset_created|asset_processed` pushed by Immich workflows, `immich.user_created`).
+Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|revoked`, `core.link.changed`, `core.connector.provisioned`, `core.test`. Connectors publish `<service type>.<event>` with source `connector:<type>` and `payload.user_email` when the event belongs to a person (`immich.asset_created|asset_processed` pushed by Immich workflows, `immich.user_created`).
 
 ## 4. Profile (`POST /api/v1/pair/claim`, `GET /api/v1/pair/profile`)
 

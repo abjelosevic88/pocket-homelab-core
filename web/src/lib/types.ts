@@ -58,3 +58,24 @@ export interface UserConnector {
 }
 export interface ProvisionResult { user_id: number; email: string; status: ConnectorStatus | 'skipped'; remote_id?: string; error?: string; note?: string; credential: string }
 export interface ConnectorTest { ok: boolean; error?: string; ms: number; info?: { version: string; admin: boolean; users: number; permissions?: string[]; detail?: string } }
+
+export interface AppLink {
+  id: number
+  app_slug: string
+  app_name: string
+  target_slug: string
+  target_name: string
+  target_registered: boolean
+  offered: boolean
+  scope: string
+  scope_name: string
+  scope_description: string
+  reason: string
+  enabled: boolean
+  state: 'on' | 'off_admin' | 'off_person' | 'target_missing' | 'not_offered' | 'not_in_audience'
+  detail: string
+  uses: number
+  last_used_at?: string
+  opt_outs?: number
+  on_for_me?: boolean
+}

@@ -211,6 +211,10 @@ func (s *Server) Router() http.Handler {
 			r.Get("/auth/me", s.handleMe)
 			r.Put("/auth/me", s.handleUpdateMe)
 			r.Post("/auth/introspect", s.handleIntrospect)
+			r.Post("/links/token", s.handleLinkToken)
+			r.Get("/links/status", s.handleLinkStatus)
+			r.Get("/me/links", s.handleMyLinks)
+			r.Put("/me/links/{id}", s.handleUpdateMyLink)
 
 			r.Get("/system", s.handleSystem)
 			r.Get("/overview", s.handleOverview)
@@ -275,6 +279,9 @@ func (s *Server) Router() http.Handler {
 				r.Post("/oidc/clients", s.handleCreateOIDCClient)
 				r.Put("/oidc/clients/{id}", s.handleUpdateOIDCClient)
 				r.Delete("/oidc/clients/{id}", s.handleDeleteOIDCClient)
+
+				r.Get("/links", s.handleListLinks)
+				r.Put("/links/{id}", s.handleUpdateLink)
 
 				r.Get("/connectors", s.handleListConnectors)
 				r.Get("/services/{id}/connector", s.handleGetConnector)

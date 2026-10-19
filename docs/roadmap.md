@@ -10,7 +10,10 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.4** — events by push: connectors can register hooks in their app (`POST /api/v1/connectors/hooks/{id}` with a per-hook secret) that Core creates, heals and deletes with the Events switch, the people and the audience. Immich gets two workflows per connected person (webhook step) and publishes `immich.asset_created` / `immich.asset_processed` per photo or video, replacing the count polling.
 
+**0.5** — [app links](links.md): apps declare `uses` / `offers` in their manifest, Core swaps an app's token for a five-minute `pcx_` token that acts for one person in one target app with the declared scopes, re-checked at every introspection. There's a switch per link for the admin (Links page) and one per person (Settings → Apps acting for me). The SDK gets `ActAs`, `LinkOn` and `IsLinkToken`. First link: Pocket Garage → Pocket Money (book car costs as transactions).
+
 **Next**
+- Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Jellyfin (users + per-user API key / user id), Nextcloud (users + app passwords, `user_oidc`), Paperless (users + tokens), Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
 - Connector clean-up: disable or remove a person's remote account when they are disabled or deleted in Core (opt-in, with a confirmation).
 - Client: native "Pair with a box" screen (QR → `/pair/claim` → Keychain) and a Core card with box health, pending updates and backup status.
