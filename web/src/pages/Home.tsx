@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { ago } from '../lib/format'
-import type { MyService, Overview } from '../lib/types'
+import type { App, MyService, Overview } from '../lib/types'
 import { Card, Dot, Empty, Loading, PageHeader, useAsync } from '../components/ui'
 import PairModal from '../components/PairModal'
 
@@ -21,35 +21,65 @@ export default function Home() {
       {pair && <PairModal onClose={() => { setPair(false); reload() }} />}
     </>
   )
+  const down = d.apps.filter(a => a.status === 'down').length
+  const appByName = new Map(d.apps.map(a => [a.slug, a]))
   return (
     <>
       <PageHeader title={d.box_name} sub="Everything on this box, in one place." actions={<><button className="btn" onClick={reload}>Refresh</button><button className="btn primary" onClick={() => setPair(true)}>Pair a device</button></>} />
-      <div className="stats">
-        <Link to="/apps" className="stat"><div className="n">{d.apps_up}<span className="muted" style={{ fontSize: 14 }}> / {d.apps.length}</span></div><div className="l">Apps up</div></Link>
-        <Link to="/services" className="stat"><div className="n">{d.services_enabled}</div><div className="l">Services in profile</div></Link>
-        <Link to="/devices" className="stat"><div className="n">{d.devices.length}</div><div className="l">Paired devices</div></Link>
-        <Link to="/events" className="stat"><div className="n">{d.listeners}</div><div className="l">Live listeners</div></Link>
-        <Link to="/events" className="stat"><div className="n">{d.deliveries.pending || 0}</div><div className="l">Webhooks pending</div></Link>
+      <div className="kpis">
+        <Kpi to="/apps" icon="▦" tone={down ? 'err' : 'ok'} value={<>{d.apps_up}<span className="of"> / {d.apps.length}</span></>} label={down ? `${down} app${down > 1 ? 's' : ''} down` : 'Apps up'} />
+        <Kpi to="/services" icon="⚙" value={d.services_enabled} label="Services in profile" />
+        <Kpi to="/devices" icon="📱" value={d.devices.length} label="Paired devices" />
+        <Kpi to="/events" icon="⚡" value={d.listeners} label="Live listeners" />
+        <Kpi to="/events" icon="↻" tone={(d.deliveries.pending || 0) > 0 ? 'warn' : ''} value={d.deliveries.pending || 0} label="Webhooks pending" />
       </div>
       <div className="two-col">
-        <Card title="Apps" actions={<Link className="btn sm" to="/apps">All</Link>}>
+        <Card title="Apps" actions={<Link className="btn sm ghost" to="/apps">All apps →</Link>}>
           {d.apps.length === 0 ? <Empty title="No apps yet">Start a Pocket app with CORE_URL and the registration key from Settings and it appears here.</Empty> :
-            <div className="app-grid">{d.apps.map(a => (
-              <Link key={a.id} to={`/apps/${a.slug}`} className="app-card">
-                <span className="icon">{a.icon ? <img src={a.icon.startsWith('http') ? a.icon : a.url + a.icon} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} /> : a.name[0]}</span>
-                <span className="grow"><span className="name"><Dot status={a.status} />{a.name}</span><span className="meta block">{a.version ? `v${a.version} · ` : ''}{a.status === 'down' ? a.last_error || 'down' : `seen ${ago(a.last_seen_at || a.last_check_at)}`}</span></span>
+            <div className="mini-apps">{d.apps.map(a => (
+              <Link key={a.id} to={`/apps/${a.slug}`} className="mini-app" title={a.status === 'down' ? a.last_error || 'down' : `seen ${ago(a.last_seen_at || a.last_check_at)}`}>
+                <AppIcon a={a} />
+                <span className="grow"><span className="name">{a.name.replace(/^Pocket /, '')}</span><span className="meta">{a.version ? `v${a.version}` : ''}{a.status === 'down' ? ' · down' : ` · ${ago(a.last_seen_at || a.last_check_at)}`}</span></span>
+                <span className={`status-dot ${a.status}`} />
               </Link>))}</div>}
         </Card>
-        <Card title="Recent events" actions={<Link className="btn sm" to="/events">Live</Link>} flush>
+        <Card title="Recent events" actions={<Link className="btn sm ghost" to="/events">Live →</Link>} flush>
           {d.recent_events.length === 0 ? <Empty title="Quiet">Nothing published yet.</Empty> :
-            <table className="table compact">
-              <tbody>{d.recent_events.map(e => <tr key={e.id} className="event-row"><td><span className="topic">{e.topic}</span><div className="muted">{e.source}{e.subject ? ` · ${e.subject}` : ''}</div></td><td className="right muted">{ago(e.created_at)}</td></tr>)}</tbody>
-            </table>}
+            <div className="feed">{d.recent_events.map(e => {
+              const src = appByName.get(e.source)
+              return (
+                <Link key={e.id} to="/events" className="feed-row">
+                  {src ? <AppIcon a={src} small /> : <span className="feed-ico"><img src="/favicon.svg" alt="" /></span>}
+                  <span className="grow">
+                    <span className="feed-title">{humanTopic(e.topic)}<span className="muted"> · {src ? src.name.replace(/^Pocket /, '') : e.source}</span></span>
+                    <span className="feed-sub mono">{e.topic}{e.subject ? ` · ${e.subject}` : ''}</span>
+                  </span>
+                  <span className="feed-time">{ago(e.created_at)}</span>
+                </Link>
+              )
+            })}</div>}
         </Card>
       </div>
       {pair && <PairModal onClose={() => { setPair(false); reload() }} />}
     </>
   )
+}
+
+function Kpi({ to, icon, value, label, tone = '' }: { to: string; icon: string; value: React.ReactNode; label: string; tone?: string }) {
+  return <Link to={to} className={`kpi ${tone}`}><span className="kpi-ico">{icon}</span><span><span className="kpi-n">{value}</span><span className="kpi-l">{label}</span></span></Link>
+}
+
+// "clips.clip_created" → "Clip created", "core.app.registered" → "App registered"
+function humanTopic(t: string) {
+  const rest = t.split('.').slice(1).join(' ').replace(/_/g, ' ').trim() || t
+  return rest.charAt(0).toUpperCase() + rest.slice(1)
+}
+
+function AppIcon({ a, small = false }: { a: App; small?: boolean }) {
+  const [ok, setOk] = useState(true)
+  const base = (a.public_url || a.url).replace(/\/$/, '')
+  const src = a.icon ? (a.icon.startsWith('http') ? a.icon : base + (a.icon.startsWith('/') ? '' : '/') + a.icon) : ''
+  return <span className={small ? 'feed-ico' : 'mini-ico'}>{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : a.name.replace(/^Pocket /, '')[0]}</span>
 }
 
 // MyServices is the member's launcher: every service their profile holds, as a link.
