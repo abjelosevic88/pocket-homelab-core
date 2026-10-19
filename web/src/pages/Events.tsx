@@ -77,7 +77,6 @@ function Log() {
             const all = list.length > 1 ? [{ value: `kind:${k}`, label: `All ${title.toLowerCase()}`, hint: String(list.reduce((n, x) => n + x.n, 0)), group: title, icon: <span className="sel-all-ico">▦</span> }] : []
             return [...all, ...list.map(x => ({ value: x.src, label: x.info.label, hint: String(x.n), group: title, icon: <SourceIcon info={x.info} /> }))]
           })} /></div>
-        {source && <button className="btn sm ghost" onClick={() => setSource('')}>Clear</button>}
         <span className="spacer" />
         <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
         <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
