@@ -29,7 +29,7 @@ export interface Overview {
 }
 export interface MyService { id: number; type: string; name: string; group: string; url: string; open_url: string; icon: string; pocket: boolean }
 export interface SystemInfo { version: string; go: string; os: string; uptime_s: number; started_at: string; base_url: string; issuer: string; auth_mode: string; data_dir: string; counts: Record<string, number>; listeners: number; box_name: string; health_interval_s: number; event_retention_h: number }
-export interface ConnectorCaps { provision: boolean; sso: boolean; events: boolean }
+export interface ConnectorCaps { provision: boolean; sso: boolean; events: boolean; link?: boolean }
 export interface ConnectorView {
   service_id: number; enabled: boolean; provision_on_create: boolean; sso_enabled: boolean; events_enabled: boolean; poll_interval_s: number
   last_poll_at?: string; last_error: string; type: string; service_name: string; capabilities: ConnectorCaps; configured: boolean
@@ -50,8 +50,9 @@ export interface ConnectorListItem { type: string; name: string; capabilities: C
 export type ConnectorStatus = '' | 'ok' | 'linked' | 'error'
 export interface ConnectorAccount {
   user_id: number; email: string; name: string; role: string; disabled: boolean; in_audience: boolean
-  status: ConnectorStatus; remote_id: string; error: string; updated_at?: string; credential: '' | 'connector' | 'own'
+  status: ConnectorStatus; remote_id: string; error: string; updated_at?: string; credential: '' | 'connector' | 'own'; manual?: boolean
 }
+export interface RemoteAccount { id: string; name: string; admin: boolean; disabled: boolean }
 export interface UserConnector {
   service_id: number; service_name: string; type: string; enabled: boolean; in_audience: boolean
   status: ConnectorStatus; remote_id: string; error: string; updated_at?: string; credential: '' | 'connector' | 'own'

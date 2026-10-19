@@ -291,6 +291,8 @@ func (s *Server) Router() http.Handler {
 				r.Post("/services/{id}/connector/provision", s.handleProvisionConnector)
 				r.Post("/services/{id}/connector/hooks/recreate", s.handleRecreateHooks)
 				r.Get("/services/{id}/connector/accounts", s.handleConnectorAccounts)
+				r.Put("/services/{id}/connector/accounts/{uid}", s.handleLinkAccount)
+				r.Get("/services/{id}/connector/remote-accounts", s.handleRemoteAccounts)
 				r.Get("/users/{id}/connectors", s.handleUserConnectors)
 
 				r.Get("/settings", s.handleGetSettings)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
-import type { ConnectorAccount, ConnectorPush, ConnectorStatus, ConnectorTest, ConnectorView, HookState, ProvisionResult, Service } from '../lib/types'
+import type { ConnectorAccount, ConnectorPush, ConnectorStatus, ConnectorTest, ConnectorView, HookState, ProvisionResult, RemoteAccount, Service } from '../lib/types'
 import { Avatar, Loading, Modal, Switch, useAsync, useToast } from './ui'
 import { Select } from './Select'
 
@@ -60,6 +60,12 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
   const { data: c, setData, reload } = useAsync(() => api.get<ConnectorView>(base), [service.id])
   const { data: people, reload: reloadPeople } = useAsync(() => api.get<ConnectorAccount[]>(`${base}/accounts`), [service.id])
   const [test, setTest] = useState<ConnectorTest | null>(null)
+  const { data: remote } = useAsync(() => api.get<{ capabilities: { link?: boolean } }>(base).then(v => v.capabilities.link ? api.get<RemoteAccount[]>(`${base}/remote-accounts`).catch(() => null) : null), [service.id])
+  const link = (uid: number, remoteID: string) => run(`l${uid}`, async () => {
+    const r = await api.put<{ note?: string }>(`${base}/accounts/${uid}`, { remote_id: remoteID })
+    toast(remoteID ? r.note || 'Linked' : 'Unlinked')
+    reloadPeople()
+  })
   const [busy, setBusy] = useState('')
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key)
@@ -98,7 +104,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
         <Switch on={c.enabled} onChange={v => save('enabled', { enabled: v }, v ? 'Connector on' : 'Connector off')} title="Master switch" />
       </div>
       {test && (test.ok
-        ? <div className="callout success mt-sm">{c.type === 'immich' ? 'Immich' : c.type} {test.info?.version} · {test.info?.admin ? 'admin key' : 'key'} · {test.info?.users} accounts · {test.ms} ms{test.info?.detail && <div className="mt-sm">{test.info.detail}</div>}</div>
+        ? <div className="callout success mt-sm">{service.name} {test.info?.version} · {test.info?.admin ? 'admin key' : 'key'} · {test.info?.users} accounts · {test.ms} ms{test.info?.detail && <div className="mt-sm">{test.info.detail}</div>}</div>
         : <div className="callout danger mt-sm">{test.error}</div>)}
       {c.last_error && <div className="callout danger mt-sm"><b>Last error</b> · {c.last_error}</div>}
       {off && <p className="muted small mt-sm">Switched off: Core makes no accounts, stops checking and deletes its event workflows. Sign-in stays as {service.name} has it.</p>}
@@ -146,9 +152,12 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
               <div className="grow"><b>{p.name || p.email}</b><div className="muted small">{p.email}</div>
                 {p.error && <div className="small" style={{ color: 'var(--danger)' }}>{p.error}</div>}</div>
               <span className="muted small" title={p.remote_id ? `${service.name} id ${p.remote_id}` : undefined}>{credLabel(p.credential)}</span>
+              {remote && p.in_audience && !p.disabled && <div style={{ width: 170 }} title={`Which ${service.name} account is ${p.name || p.email}'s`}><Select ariaLabel={`${service.name} account`} value={p.remote_id || ''} disabled={off || busy === `l${p.user_id}`} onChange={v => link(p.user_id, v)}
+                options={remote.map(a => ({ value: a.id, label: a.name, hint: a.admin ? 'admin' : a.disabled ? 'disabled' : undefined }))} placeholder="Pick account…" clearLabel="Not linked" /></div>}
               {!p.in_audience && <span className="badge warn">outside audience</span>}
+              {p.manual && <span className="badge" title="Linked by hand; provisioning leaves it alone">by hand</span>}
               <StatusBadge status={p.status} />
-              {p.status !== 'ok' && p.in_audience && !p.disabled ? <button className="btn sm" disabled={off || busy === `p${p.user_id}`} onClick={() => provision({ user_id: p.user_id })}>{busy === `p${p.user_id}` ? '…' : p.status === 'linked' ? 'Re-check' : 'Provision'}</button> : <span className="cx-btn-gap" />}
+              {p.status !== 'ok' && !p.manual && p.in_audience && !p.disabled ? <button className="btn sm" disabled={off || busy === `p${p.user_id}`} onClick={() => provision({ user_id: p.user_id })}>{busy === `p${p.user_id}` ? '…' : p.status === 'linked' ? 'Re-check' : 'Provision'}</button> : <span className="cx-btn-gap" />}
             </div>))}</div>}
       </div>}
     </Modal>

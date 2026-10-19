@@ -317,6 +317,9 @@ func (s *Server) pollConnector(ctx context.Context, sv *store.Service, c connect
 		return 0, baseline, err
 	}
 	for _, ev := range evs {
+		if ev.UserEmail == "" && ev.RemoteUserID != "" {
+			ev.UserEmail = s.personForRemote(ctx, sv, ev.RemoteUserID)
+		}
 		if err := s.publishConnectorEvent(ctx, c, ev); err != nil {
 			s.log.Warn("connector event not published", "type", c.Type(), "event", ev.Name, "err", err)
 			continue
@@ -553,6 +556,9 @@ func (s *Server) provisionOne(ctx context.Context, sv *store.Service, c connecto
 	if a, err := s.store.GetConnectorAccount(ctx, sv.ID, u.ID); err == nil && a.Status == connectors.StatusOK {
 		res.Status, res.RemoteID, res.Note = a.Status, a.RemoteID, "already provisioned"
 		return res
+	} else if err == nil && a.Manual {
+		res.Status, res.RemoteID, res.Note = a.Status, a.RemoteID, "linked by hand; unlink first to provision"
+		return res
 	}
 	pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
@@ -607,6 +613,7 @@ type accountRow struct {
 	Error      string `json:"error"`
 	UpdatedAt  string `json:"updated_at,omitempty"`
 	Credential string `json:"credential"` // connector | own | ""
+	Manual     bool   `json:"manual"`     // linked by hand
 }
 
 func (s *Server) handleConnectorAccounts(w http.ResponseWriter, r *http.Request) {
@@ -639,7 +646,7 @@ func (s *Server) handleConnectorAccounts(w http.ResponseWriter, r *http.Request)
 		}
 		row := accountRow{UserID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, Disabled: u.Disabled, InAudience: in}
 		if has {
-			row.Status, row.RemoteID, row.Error, row.UpdatedAt = a.Status, a.RemoteID, a.Error, a.UpdatedAt
+			row.Status, row.RemoteID, row.Error, row.UpdatedAt, row.Manual = a.Status, a.RemoteID, a.Error, a.UpdatedAt, a.Manual
 		}
 		if ovs, err := s.store.ListOverrides(ctx, u.ID); err == nil {
 			if ov, ok := ovs[sv.ID]; ok {
@@ -700,4 +707,133 @@ func (s *Server) handleUserConnectors(w http.ResponseWriter, r *http.Request) {
 		out = append(out, it)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// personForRemote finds the Core person linked to an app account, for
+// events from apps without emails. Only people who are enabled and in the
+// service's audience are named.
+func (s *Server) personForRemote(ctx context.Context, sv *store.Service, remoteID string) string {
+	accts, err := s.store.ListConnectorAccounts(ctx, sv.ID)
+	if err != nil {
+		return ""
+	}
+	for _, a := range accts {
+		if a.RemoteID != remoteID || a.Status == connectors.StatusError {
+			continue
+		}
+		u, err := s.store.GetUser(ctx, a.UserID)
+		if err != nil || u.Disabled || !sv.InAudience(u) {
+			return ""
+		}
+		return u.Email
+	}
+	return ""
+}
+
+// handleRemoteAccounts lists the app's accounts for linking by hand.
+func (s *Server) handleRemoteAccounts(w http.ResponseWriter, r *http.Request) {
+	sv, c, _, ok := s.loadConnector(w, r)
+	if !ok {
+		return
+	}
+	l, isLinker := c.(connectors.Linker)
+	if !isLinker {
+		writeErr(w, http.StatusBadRequest, "the "+c.Type()+" connector matches people by email; there is nothing to pick")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	list, err := l.RemoteAccounts(ctx, s.connectorTarget(sv))
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleLinkAccount ties a person to an existing app account by hand
+// ({"remote_id": "…"}), or unlinks them ({"remote_id": ""}). A credential
+// the person set themselves is never touched.
+func (s *Server) handleLinkAccount(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	sv, c, row, ok := s.loadConnector(w, r)
+	if !ok {
+		return
+	}
+	l, isLinker := c.(connectors.Linker)
+	if !isLinker {
+		writeErr(w, http.StatusBadRequest, "the "+c.Type()+" connector matches people by email")
+		return
+	}
+	var in struct {
+		RemoteID *string `json:"remote_id"`
+	}
+	if err := decode(r, &in); err != nil || in.RemoteID == nil {
+		writeErr(w, http.StatusBadRequest, `{"remote_id": "…"} required ("" unlinks)`)
+		return
+	}
+	u, err := s.store.GetUser(ctx, idParam(r, "uid"))
+	if err != nil {
+		s.fail(w, err, "get user")
+		return
+	}
+	s.provMu.Lock()
+	defer s.provMu.Unlock()
+	ovs, _ := s.store.ListOverrides(ctx, u.ID)
+	ov, hasOv := ovs[sv.ID]
+	byConnector := hasOv && ov.Source == store.OverrideByConnector
+	remote := strings.TrimSpace(*in.RemoteID)
+	if remote == "" {
+		if err := s.store.DeleteConnectorAccount(ctx, sv.ID, u.ID); err != nil {
+			s.fail(w, err, "unlink")
+			return
+		}
+		if byConnector {
+			_ = s.store.DeleteOverride(ctx, sv.ID, u.ID)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "", "remote_id": ""})
+		return
+	}
+	if !row.Enabled {
+		writeErr(w, http.StatusBadRequest, "turn the connector on first")
+		return
+	}
+	if !sv.InAudience(u) {
+		writeErr(w, http.StatusBadRequest, u.Email+" is not in the audience of "+sv.Name)
+		return
+	}
+	accts, _ := s.store.ListConnectorAccounts(ctx, sv.ID)
+	for _, a := range accts {
+		if a.RemoteID == remote && a.UserID != u.ID && a.Status != connectors.StatusError {
+			writeErr(w, http.StatusConflict, "that account is already linked to someone else; unlink them first")
+			return
+		}
+	}
+	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	acc, err := l.Link(lctx, s.connectorTarget(sv), remote)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	rec := &store.ConnectorAccount{ServiceID: sv.ID, UserID: u.ID, RemoteID: acc.RemoteID, Status: connectors.StatusLinked, Manual: true}
+	if err := s.store.SaveConnectorAccount(ctx, rec); err != nil {
+		s.fail(w, err, "link")
+		return
+	}
+	cred := "none"
+	if hasOv && !byConnector {
+		cred = "own"
+	} else if len(acc.Fields) > 0 {
+		o := &store.Override{ServiceID: sv.ID, UserID: u.ID, Fields: acc.Fields, Source: store.OverrideByConnector}
+		if hasOv {
+			o.URL = ov.URL
+		}
+		if err := s.store.SaveOverride(ctx, o, s.entryFor(ctx, sv).IsSecret); err != nil {
+			s.fail(w, err, "save credential")
+			return
+		}
+		cred = "connector"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": rec.Status, "remote_id": rec.RemoteID, "note": acc.Note, "credential": cred})
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -34,6 +33,9 @@ Actions:
                                   make accounts for people an admin creates from now on
   provision <email>               make or link that person's account now
   provision-all                   everyone in the service's audience who has no account yet
+  remote-accounts                 the app's accounts (connectors that link by hand, e.g. Jellyfin)
+  link <email> <account>          tie that person to an existing app account (name or id); provisioning leaves it alone
+  unlink <email>                  forget the link (and the credential Core saved for it)
 
 Example (inside the container):
   docker exec -e POCKET_CORE_TOKEN=pcu_… pocket-core pocket-core connector immich test`
@@ -182,24 +184,73 @@ func connectorAction(c *coreClient, typ, action string, args []string) error {
 		return put(map[string]any{"provision_on_create": false})
 	case "provision-all":
 		return post("/provision", map[string]any{"all": true})
-	case "provision":
-		if len(args) != 1 {
-			return errors.New("usage: provision <email>")
-		}
-		email := strings.ToLower(strings.TrimSpace(args[0]))
-		var users []struct {
-			ID    int64  `json:"id"`
-			Email string `json:"email"`
-		}
-		if _, err := c.do("GET", "/users", nil, &users); err != nil {
+	case "remote-accounts":
+		var out any
+		if _, err := c.do("GET", base+"/remote-accounts", nil, &out); err != nil {
 			return err
 		}
-		for _, u := range users {
-			if strings.EqualFold(u.Email, email) {
-				return post("/provision", map[string]any{"user_id": u.ID})
+		printJSON(out)
+		return nil
+	case "provision", "link", "unlink":
+		want := map[string]int{"provision": 1, "link": 2, "unlink": 1}[action]
+		if len(args) != want {
+			return fmt.Errorf("usage: %s <email>%s", action, map[bool]string{true: " <account>", false: ""}[action == "link"])
+		}
+		uid, err := userID(c, args[0])
+		if err != nil {
+			return err
+		}
+		switch action {
+		case "provision":
+			return post("/provision", map[string]any{"user_id": uid})
+		case "unlink":
+			var out any
+			if _, err := c.do("PUT", fmt.Sprintf("%s/accounts/%d", base, uid), map[string]string{"remote_id": ""}, &out); err != nil {
+				return err
+			}
+			printJSON(out)
+			return nil
+		}
+		var remote []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		if _, err := c.do("GET", base+"/remote-accounts", nil, &remote); err != nil {
+			return err
+		}
+		pick := ""
+		for _, a := range remote {
+			if a.ID == args[1] || strings.EqualFold(a.Name, args[1]) {
+				pick = a.ID
 			}
 		}
-		return fmt.Errorf("no Core user with email %s: create the person under Users first", email)
+		if pick == "" {
+			return fmt.Errorf("no %s account named or with id %q (see remote-accounts)", typ, args[1])
+		}
+		var out any
+		if _, err := c.do("PUT", fmt.Sprintf("%s/accounts/%d", base, uid), map[string]string{"remote_id": pick}, &out); err != nil {
+			return err
+		}
+		printJSON(out)
+		return nil
 	}
 	return fmt.Errorf("unknown action %q\n\n%s", action, connectorUsage)
+}
+
+// userID finds a Core person by email.
+func userID(c *coreClient, email string) (int64, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	var users []struct {
+		ID    int64  `json:"id"`
+		Email string `json:"email"`
+	}
+	if _, err := c.do("GET", "/users", nil, &users); err != nil {
+		return 0, err
+	}
+	for _, u := range users {
+		if strings.EqualFold(u.Email, email) {
+			return u.ID, nil
+		}
+	}
+	return 0, fmt.Errorf("no Core user with email %s: create the person under Users first", email)
 }

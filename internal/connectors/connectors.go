@@ -32,6 +32,7 @@ type Capabilities struct {
 	Provision bool `json:"provision"`
 	SSO       bool `json:"sso"`
 	Events    bool `json:"events"`
+	Link      bool `json:"link"` // an admin can tie a person to an existing account by hand (Linker)
 }
 
 // Target is one configured instance of the app.
@@ -91,10 +92,30 @@ type SSOConfig struct {
 // Event is one thing that happened in the app. Core publishes it as
 // "<type>.<Name>" with source "connector:<type>".
 type Event struct {
-	Name      string         // e.g. asset_created
-	Subject   string         // free identifier; Core falls back to UserEmail
-	UserEmail string         // set when the event belongs to a person; copied into the payload as user_email
-	Payload   map[string]any // event body
+	Name      string // e.g. asset_created
+	Subject   string // free identifier; Core falls back to UserEmail
+	UserEmail string // set when the event belongs to a person; copied into the payload as user_email
+	// RemoteUserID: the app account the event belongs to, for apps without
+	// emails; Core finds the person through the accounts it linked.
+	RemoteUserID string
+	Payload      map[string]any // event body
+}
+
+// RemoteAccount is an account in the app, offered for linking by hand.
+type RemoteAccount struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Admin    bool   `json:"admin"`
+	Disabled bool   `json:"disabled"`
+}
+
+// Linker is implemented by connectors whose app cannot match people by
+// email: an admin picks the account, Core stores it as linked.
+type Linker interface {
+	RemoteAccounts(ctx context.Context, t Target) ([]RemoteAccount, error)
+	// Link checks the account exists and returns what to store for the
+	// person (Status linked, non-secret fields like USER_ID).
+	Link(ctx context.Context, t Target, remoteID string) (Account, error)
 }
 
 // ---- push: the app calls Core for each thing that happens ----

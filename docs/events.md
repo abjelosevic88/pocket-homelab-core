@@ -39,6 +39,20 @@ What is never on the bus: exact GPS coordinates (only city, state, country), fil
 
 `immich.assets_added` / `immich.assets_removed` (per-poll count differences) were removed in 0.4.0.
 
+### Jellyfin (source `connector:jellyfin`)
+
+Polled every check interval from Jellyfin's activity log and its newest library items. The first check only records a baseline.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `jellyfin.playback_started` | `activity:<id>` | someone started playing (activity `VideoPlayback` / `AudioPlayback`) | `user_email` (when the Jellyfin account is linked to a person), `jellyfin_user_id`, `jellyfin_user`, `media` (`video` \| `audio`), `summary` (Jellyfin's sentence), `detail` (client and device), `at`, `item_id`, `title`, `item_type`, `series`, `season`, `episode`, `year`, `artist`, `url` |
+| `jellyfin.playback_stopped` | `activity:<id>` | playback stopped | same |
+| `jellyfin.item_added` | `item:<id>` | a movie, episode, album, audiobook or book appeared in the library | `item_id`, `title`, `item_type`, `series`, `season`, `episode`, `year`, `artist`, `added_at`, `url` (no `user_email`: the library is shared) |
+| `jellyfin.user_created` · `user_deleted` · `user_locked_out` | `jellyfin-user:<id>` | account changes | `jellyfin_user_id`, `summary`, `at`, plus `user_email` when linked |
+| `jellyfin.login_failed` | `activity:<id>` | a failed sign-in | `summary` (names the address), `detail`, `at` |
+
+Sessions starting and ending are not published.
+
 ## Read
 
 | Method | Path | Notes |

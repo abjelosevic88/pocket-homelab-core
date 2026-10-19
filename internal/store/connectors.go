@@ -116,11 +116,12 @@ type ConnectorAccount struct {
 	RemoteID  string `json:"remote_id"`
 	Status    string `json:"status"` // ok | linked | error
 	Error     string `json:"error"`
+	Manual    bool   `json:"manual"` // linked by hand by an admin
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
 
-const connectorAccountCols = `service_id, user_id, remote_id, status, error, created_at, updated_at`
+const connectorAccountCols = `service_id, user_id, remote_id, status, error, manual, created_at, updated_at`
 
 func (s *Store) listConnectorAccounts(ctx context.Context, where string, arg int64) ([]ConnectorAccount, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+connectorAccountCols+` FROM connector_accounts WHERE `+where+` = ? ORDER BY service_id, user_id`, arg)
@@ -131,7 +132,7 @@ func (s *Store) listConnectorAccounts(ctx context.Context, where string, arg int
 	out := []ConnectorAccount{}
 	for rows.Next() {
 		var a ConnectorAccount
-		if err := rows.Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.Manual, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -153,7 +154,7 @@ func (s *Store) ListUserConnectorAccounts(ctx context.Context, userID int64) ([]
 func (s *Store) GetConnectorAccount(ctx context.Context, serviceID, userID int64) (*ConnectorAccount, error) {
 	var a ConnectorAccount
 	err := s.DB.QueryRowContext(ctx, `SELECT `+connectorAccountCols+` FROM connector_accounts WHERE service_id = ? AND user_id = ?`, serviceID, userID).
-		Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.CreatedAt, &a.UpdatedAt)
+		Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.Manual, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -162,10 +163,10 @@ func (s *Store) GetConnectorAccount(ctx context.Context, serviceID, userID int64
 
 // SaveConnectorAccount upserts; an error keeps the remote id already known.
 func (s *Store) SaveConnectorAccount(ctx context.Context, a *ConnectorAccount) error {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO connector_accounts (service_id, user_id, remote_id, status, error) VALUES (?, ?, ?, ?, ?)
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO connector_accounts (service_id, user_id, remote_id, status, error, manual) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(service_id, user_id) DO UPDATE SET remote_id = CASE WHEN excluded.remote_id = '' THEN connector_accounts.remote_id ELSE excluded.remote_id END,
-		status = excluded.status, error = excluded.error, updated_at = ?`,
-		a.ServiceID, a.UserID, a.RemoteID, a.Status, a.Error, Now())
+		status = excluded.status, error = excluded.error, manual = excluded.manual, updated_at = ?`,
+		a.ServiceID, a.UserID, a.RemoteID, a.Status, a.Error, boolInt(a.Manual), Now())
 	if err != nil {
 		return err
 	}
@@ -173,6 +174,12 @@ func (s *Store) SaveConnectorAccount(ctx context.Context, a *ConnectorAccount) e
 		*a = *n
 	}
 	return nil
+}
+
+// DeleteConnectorAccount forgets a person's account in a service (unlink).
+func (s *Store) DeleteConnectorAccount(ctx context.Context, serviceID, userID int64) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM connector_accounts WHERE service_id = ? AND user_id = ?`, serviceID, userID)
+	return err
 }
 
 // GetOIDCClientByService loads the client a connector made for a service.

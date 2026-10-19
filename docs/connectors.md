@@ -71,6 +71,38 @@ Whose key: a person's own override (the key Core minted at provisioning, or one 
 
 The workflows are visible to the person under Immich → Utilities → Workflows; deleting one there is healed at the next check, so to stop events turn **Events** off in Core. To remove them by hand anyway (Core down for good): delete the two `Pocket Core · …` workflows in each person's Immich account.
 
+## Jellyfin
+
+Needs: the Jellyfin service in Core with its internal URL, its public URL and a Jellyfin **API key** (Dashboard → API Keys; API keys act as an administrator). **Test** shows the version, the number of accounts and whether the SSO Authentication plugin is installed.
+
+| Jellyfin call | Used by | Writes? |
+|---|---|---|
+| `GET /System/Info/Public`, `GET /System/Info` | Test | – |
+| `GET /Users` | Test, Provision, linking by hand, events (names) | – |
+| `POST /Users/New` | Provision: a missing person; name = the part of their email before `@`, a 40-character random password used once and never stored, logged or returned. Jellyfin's default policy for new users applies | **yes** |
+| `POST /Users/AuthenticateByName` | Provision: sign in once as the new account; the session token becomes the person's `API_KEY` (shown under Dashboard → Devices as client *Pocket Core*, device = their email) | **yes** (a session) |
+| `GET /Plugins` | Test, sign-in | – |
+| `GET /sso/OID/Get` | Sign-in on/off: backup | – |
+| `POST /sso/OID/Add/pocket-core` · `GET /sso/OID/Del/pocket-core` | Sign-in on / off | **yes** |
+| `GET /Branding/Configuration` · `POST /System/Configuration/branding` | Sign-in on/off: the login button | **yes** |
+| `GET /System/ActivityLog/Entries` | Events | – |
+| `GET /Items` | Events (new items, titles) | – |
+
+**Accounts.** Jellyfin accounts have no email, so a person matches an account named like their email or the part before `@` (the same name Core sends as `preferred_username`). A match is **linked**: Core saves the account's `USER_ID` as the person's credential and mints nothing, because Jellyfin cannot issue a token for someone else and the password is unknown. A new account gets `USER_ID` plus its own token as `API_KEY`. Nobody knows its password, so the person signs in with Pocket Core (needs the SSO plugin) or Quick Connect, or an admin sets a password in Jellyfin.
+
+**Linking by hand.** When the names don't line up (the owner watches as `root`), pick the account in the people table, or run `pocket-core connector jellyfin link <email> <account>`. A link made by hand is marked *by hand*, and provisioning never changes it. Unlinking removes the link and the credential Core saved for it, never one the person set themselves. One Jellyfin account can be linked to one person only.
+
+**Sign in with Pocket Core** needs the [SSO Authentication plugin](https://github.com/9p4/jellyfin-plugin-sso). Add the repository `https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json` under Dashboard → Plugins → Repositories, install it and restart Jellyfin. Without the plugin the switch refuses and says so.
+
+Turning sign-in on does three things, in this order:
+1. Backs up the plugin's providers and Jellyfin's branding to `DATA_DIR/connectors/jellyfin-sso-<timestamp>.json`.
+2. Creates provider `pocket-core`: issuer = Core, its client id and secret, scopes `openid profile email groups`, username from `preferred_username`. **Authorization stays off**, so the plugin never changes anyone's libraries or admin rights. Core's audience already decides who may sign in.
+3. Puts a *Sign in with Pocket Core* button, linking to `https://<public>/sso/OID/start/pocket-core`, at the top of the login disclaimer, between `<!-- pocket-core-sso -->` markers. Anything else in the disclaimer is kept.
+
+Turning sign-in off deletes the provider and the marked block. Redirect URIs: `https://<public>/sso/OID/redirect/pocket-core` (plugin 3.5+) and `…/sso/OID/r/pocket-core` (older). Jellyfin's TV and phone apps cannot use OIDC: sign in once in the browser, then approve them with Quick Connect.
+
+**Events** are polled from the activity log and the newest library items ([topics](events.md#jellyfin-source-connectorjellyfin)): `playback_started`, `playback_stopped`, `item_added`, `user_created`, `user_deleted`, `user_locked_out`, `login_failed`. Sessions coming and going are not published. A playback carries `user_email` only when its Jellyfin account is linked to a person who is enabled and in the service's audience; otherwise it carries just the Jellyfin user's id and name.
+
 ## From the console
 
 Everything above is also available without a browser, through the running server (so locking and the bus behave the same):
@@ -81,6 +113,7 @@ docker exec -e POCKET_CORE_TOKEN=pcu_… pocket-core pocket-core connector immic
 docker exec -e POCKET_CORE_TOKEN=pcu_… pocket-core pocket-core connector immich status
 #   enable | disable | enable-events | disable-events | poll | recreate-hooks | enable-sso | disable-sso
 #   enable-provisioning | disable-provisioning | provision <email> | provision-all
+#   remote-accounts | link <email> <account> | unlink <email>     (Jellyfin)
 ```
 
 ## Writing a connector
@@ -108,6 +141,8 @@ type Connector interface {
 
 func init() { Register(myApp{}) }
 ```
+
+An app without emails on its accounts also implements `Linker` (and sets `Capabilities.Link`): `RemoteAccounts` lists the accounts for the admin's picker, and `Link(ctx, Target, remoteID)` checks the account exists and returns `Account{Status: StatusLinked, Fields: {USER_ID…}}`. Poll events then carry `RemoteUserID`, and Core turns it into `user_email` through the accounts it linked.
 
 A connector whose app can call a URL also implements `Pusher`; Core then manages hooks for it (create, check, heal, delete, receive, dedupe, attribute, count) and the connector only translates:
 

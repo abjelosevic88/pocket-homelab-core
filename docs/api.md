@@ -52,6 +52,8 @@ Core acting on a third-party service: accounts, sign-in, events. See [connectors
 | POST | `/services/{id}/connector/hooks/recreate` | admin | delete and create every push subscription again (new hook secrets) → `{ok, error?, connector}`; needs events on |
 | POST | `/services/{id}/connector/provision` | admin | `{user_id}` or `{all:true}` → `{results:[{user_id, email, status: ok\|linked\|error\|skipped, remote_id, error, note, credential: connector\|own\|none}]}`; needs `enabled` |
 | GET | `/services/{id}/connector/accounts` | admin | everyone in the audience (and anyone with an account row): `{user_id, email, name, in_audience, status: ok\|linked\|error\|"", remote_id, error, credential: connector\|own\|""}` |
+| GET | `/services/{id}/connector/remote-accounts` | admin | connectors that link by hand (`capabilities.link`, Jellyfin): the app's accounts `[{id, name, admin, disabled}]` |
+| PUT | `/services/{id}/connector/accounts/{user_id}` | admin | `{remote_id}` links the person to that account by hand (`manual: true`, status `linked`, the connector's non-secret fields such as `USER_ID` saved as their credential unless they set their own); `{remote_id: ""}` unlinks. `409` when the account is linked to someone else |
 | GET | `/users/{id}/connectors` | admin | that person's status in every connected service |
 
 `GET /users/{id}/credentials` items carry `source: user|connector` for overrides that are set.
