@@ -7,6 +7,10 @@ Everything is read from environment variables; every value has a default so a ba
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | Listen address |
 | `BASE_URL` | `http://localhost:8080` | **The URL phones and apps reach Core at.** Goes into every pairing QR code and is the default OIDC issuer. Set it before pairing anything. |
 | `OIDC_ISSUER` | `BASE_URL` | Override the issuer if Core is reached under a second name |
+| `SSO_ISSUER` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | – | Sign in **to Core** through an upstream OpenID Connect provider (PocketID, Authelia…). The callback is `BASE_URL/api/v1/auth/sso/callback` |
+| `SSO_NAME` | `single sign-on` | Button label: “Sign in with …” |
+| `SSO_AUTO_CREATE` | `false` | Give an unknown (verified) email a member account instead of refusing it |
+| `PASSWORD_LOGIN` | `true` | `false` = only the upstream provider. Stays on without `SSO_ISSUER`, so nobody gets locked out |
 | `DATA_DIR` | `./data` (`/data` in the image) | SQLite database, secret key, backups |
 | `DB_PATH` / `SECRET_PATH` | `$DATA_DIR/pocket-core.db` / `$DATA_DIR/secret.key` | Override locations. The secret key encrypts stored service credentials; back it up with the database. |
 | `TZ` | – | Container timezone |
@@ -29,6 +33,12 @@ Everything is read from environment variables; every value has a default so a ba
 - **local** — accounts with email + password. The first account created becomes admin. This is the mode a Pocket Box ships with: the same account signs in to every Pocket app through OpenID Connect.
 - **proxy** — trust a forward-auth proxy (Authelia, Authentik, Tinyauth…). Users are created on first visit. Keep `/api/*`, `/oidc/*` and `/.well-known/*` outside the forward-auth rule: apps, phones and relying parties call them with tokens.
 - **none** — no login at all; one implicit admin. Only for a trusted LAN or `make dev`.
+
+### Signing in through PocketID
+
+Core is the OpenID provider for the Pocket apps; it can itself sign people in through another provider. Set `SSO_*` and the login page gets a “Sign in with PocketID” button. When an app sends someone to Core's `/oidc/authorize` without a Core session, they go to Core's login, then to PocketID (passkey), back to Core, and on to the app — one hop each way, with no password stored anywhere. Core checks the upstream ID token's RS256 signature against the provider's keys, and its issuer, audience, expiry and nonce, then matches the person to a Core user by **verified** email (disabled users are refused). Once it works, `PASSWORD_LOGIN=false` turns passwords off; app, device and API tokens are unaffected.
+
+In PocketID: *OIDC Clients → Add*, callback `BASE_URL/api/v1/auth/sso/callback`, PKCE on, group restriction off (or add yourself to an allowed group).
 
 ## Tokens at a glance
 

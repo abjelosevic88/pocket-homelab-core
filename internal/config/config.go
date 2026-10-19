@@ -44,6 +44,14 @@ type Config struct {
 
 	OIDCIssuer string // defaults to BaseURL
 
+	// Signing in to Core itself through an upstream provider (PocketID…).
+	SSOIssuer       string
+	SSOClientID     string
+	SSOClientSecret string
+	SSOName         string
+	SSOAutoCreate   bool
+	PasswordLogin   bool // false = only the upstream provider; tokens keep working
+
 	DemoData bool
 }
 
@@ -114,6 +122,13 @@ func Load() (*Config, error) {
 
 		OIDCIssuer: strings.TrimRight(env("OIDC_ISSUER", ""), "/"),
 
+		SSOIssuer:       strings.TrimRight(env("SSO_ISSUER", ""), "/"),
+		SSOClientID:     env("SSO_CLIENT_ID", ""),
+		SSOClientSecret: env("SSO_CLIENT_SECRET", ""),
+		SSOName:         env("SSO_NAME", "single sign-on"),
+		SSOAutoCreate:   envBool("SSO_AUTO_CREATE", false),
+		PasswordLogin:   envBool("PASSWORD_LOGIN", true),
+
 		DemoData: envBool("DEMO_DATA", false),
 	}
 	if c.BaseURL == "" {
@@ -121,6 +136,15 @@ func Load() (*Config, error) {
 	}
 	if c.OIDCIssuer == "" {
 		c.OIDCIssuer = c.BaseURL
+	}
+	if c.SSOIssuer != "" && c.SSOClientID == "" {
+		return nil, fmt.Errorf("SSO_ISSUER needs SSO_CLIENT_ID (the callback is BASE_URL/api/v1/auth/sso/callback)")
+	}
+	if c.SSOIssuer != "" && c.SSOIssuer == c.OIDCIssuer {
+		return nil, fmt.Errorf("SSO_ISSUER is Core's own issuer — point it at the upstream provider")
+	}
+	if !c.PasswordLogin && c.SSOIssuer == "" {
+		c.PasswordLogin = true // never lock everyone out
 	}
 	switch c.AuthMode {
 	case "local", "proxy", "none":

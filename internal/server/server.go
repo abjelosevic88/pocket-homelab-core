@@ -39,6 +39,7 @@ type Server struct {
 	webFS    fs.FS
 	hub      *events.Hub
 	oidc     *oidc.Provider
+	sso      *ssoProvider // upstream provider for signing in to Core itself
 	started  time.Time
 	requests atomic.Int64
 	errors   atomic.Int64
@@ -54,6 +55,7 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 	ua := "PocketCore/" + Version + " (+https://github.com/abjelosevic88/pocket-homelab-core)"
 	return &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(),
 		hub:        events.New(st, log, cfg.WebhookAttempts, ua),
+		sso:        &ssoProvider{issuerURL: cfg.SSOIssuer},
 		http:       &http.Client{Timeout: 8 * time.Second},
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute)}
 }
@@ -171,6 +173,8 @@ func (s *Server) Router() http.Handler {
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/setup", s.handleSetup)
 		r.Get("/auth/status", s.handleAuthStatus)
+		r.Get("/auth/sso/start", s.handleSSOStart)
+		r.Get("/auth/sso/callback", s.handleSSOCallback)
 		r.Get("/catalog", s.handleCatalog)
 
 		// Pairing claim is authenticated by the code itself.
