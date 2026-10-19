@@ -21,7 +21,7 @@ type fakeJellyfin struct {
 	users      []map[string]any
 	passwords  map[string]string // name → password sent at creation
 	sessions   map[string]string // access token → user id
-	ssoPlugin  bool
+	ssoPlugin  string // "" = not installed, else its status (Active, Restart)
 	providers  map[string]map[string]any
 	disclaimer string
 	activity   []map[string]any
@@ -90,8 +90,8 @@ func newFakeJellyfin(t *testing.T) *fakeJellyfin {
 			js(u)
 		case p == "/Plugins":
 			list := []map[string]any{{"Name": "TMDb", "Version": "10.11.11.0", "Status": "Active"}}
-			if f.ssoPlugin {
-				list = append(list, map[string]any{"Name": "SSO Authentication", "Version": "4.0.0.3", "Status": "Active"})
+			if f.ssoPlugin != "" {
+				list = append(list, map[string]any{"Name": "SSO-Auth", "Version": "4.0.0.4", "Status": f.ssoPlugin})
 			}
 			js(list)
 		case p == "/sso/OID/Get":
@@ -250,17 +250,43 @@ func TestJellyfinConnector(t *testing.T) {
 		t.Fatalf("sso without plugin %d %s", c, txt)
 	}
 	jf.mu.Lock()
-	jf.ssoPlugin = true
+	jf.ssoPlugin = "Restart" // installed, Jellyfin not restarted yet
+	jf.mu.Unlock()
+	if c, txt := e.raw("PUT", base, "", map[string]any{"sso_enabled": true}); c == 200 || !strings.Contains(txt, "restart Jellyfin") {
+		t.Fatalf("sso before restart %d %s", c, txt)
+	}
+	jf.mu.Lock()
+	jf.ssoPlugin = "Active"
+	// someone the plugin linked on its own before Core knew them
+	jf.providers["pocket-core"] = map[string]any{"CanonicalLinks": map[string]any{"guest": "11111111-2222-3333-4444-555555555555"}}
 	jf.mu.Unlock()
 	if c, txt := e.raw("PUT", base, "", map[string]any{"sso_enabled": true}); c != 200 {
 		t.Fatalf("sso on %d %s", c, txt)
+	}
+	links := func() map[string]any {
+		jf.mu.Lock()
+		defer jf.mu.Unlock()
+		m, _ := jf.providers["pocket-core"]["canonicalLinks"].(map[string]any)
+		return m
 	}
 	jf.mu.Lock()
 	cfg := jf.providers["pocket-core"]
 	disc := jf.disclaimer
 	jf.mu.Unlock()
-	if cfg == nil || cfg["enabled"] != true || cfg["enableAuthorization"] != false || cfg["oidEndpoint"] != "http://core.test" || cfg["defaultUsernameClaim"] != "preferred_username" {
+	if cfg == nil || cfg["enabled"] != true || cfg["enableAuthorization"] != false || cfg["oidEndpoint"] != "http://core.test" || cfg["defaultUsernameClaim"] != "preferred_username" || cfg["schemeOverride"] != "https" {
 		t.Fatalf("provider %+v", cfg)
+	}
+	if l := links(); l["aleks"] != "u-root" || l["guest"] == nil || !strings.HasPrefix(fmt.Sprint(l["kid"]), "u-new-") {
+		t.Fatalf("sign-in links: the owner lands in root, the plugin's own link stays: %+v", l)
+	}
+	// Relinking while sign-in is on updates where the person lands.
+	call("PUT", base+"/accounts/1", map[string]string{"remote_id": ""}, nil)
+	if l := links(); l["aleks"] != nil || l["guest"] == nil {
+		t.Fatalf("after unlink %+v", l)
+	}
+	call("PUT", base+"/accounts/1", map[string]string{"remote_id": "u-root"}, &link)
+	if l := links(); l["aleks"] != "u-root" || !strings.Contains(fmt.Sprint(link["note"]), "sign-in now lands") {
+		t.Fatalf("after relink %+v %+v", l, link)
 	}
 	if !strings.Contains(disc, "https://jf.example/sso/OID/start/pocket-core") || !strings.Contains(disc, "Welcome home") {
 		t.Fatalf("login button %q", disc)

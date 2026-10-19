@@ -13,6 +13,7 @@ import (
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/catalog"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/connectors"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/oidc"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 )
 
@@ -242,7 +243,34 @@ func (s *Server) enableSSO(ctx context.Context, sv *store.Service, c connectors.
 	if err != nil {
 		return err
 	}
-	return c.ConfigureSSO(ctx, s.connectorTarget(sv), connectors.SSOConfig{Enabled: true, Issuer: s.oidc.Issuer, ClientID: cl.ClientID, ClientSecret: secret, ButtonText: ssoButton})
+	return c.ConfigureSSO(ctx, s.connectorTarget(sv), connectors.SSOConfig{Enabled: true, Issuer: s.oidc.Issuer, ClientID: cl.ClientID, ClientSecret: secret, ButtonText: ssoButton,
+		Links: s.ssoLinks(ctx, sv)})
+}
+
+// ssoLinks maps the username Core sends at sign-in (preferred_username) to
+// the app account linked to each person in the audience; "" when none.
+func (s *Server) ssoLinks(ctx context.Context, sv *store.Service) map[string]string {
+	out := map[string]string{}
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return out
+	}
+	accts, _ := s.store.ListConnectorAccounts(ctx, sv.ID)
+	byUser := map[int64]store.ConnectorAccount{}
+	for _, a := range accts {
+		byUser[a.UserID] = a
+	}
+	for i := range users {
+		u := &users[i]
+		name := fmt.Sprint(oidc.Claims(u)["preferred_username"])
+		a, ok := byUser[u.ID]
+		if ok && a.RemoteID != "" && a.Status != connectors.StatusError && !u.Disabled && sv.InAudience(u) {
+			out[name] = a.RemoteID
+		} else if _, set := out[name]; !set {
+			out[name] = ""
+		}
+	}
+	return out
 }
 
 func (s *Server) handleTestConnector(w http.ResponseWriter, r *http.Request) {
@@ -791,7 +819,7 @@ func (s *Server) handleLinkAccount(w http.ResponseWriter, r *http.Request) {
 		if byConnector {
 			_ = s.store.DeleteOverride(ctx, sv.ID, u.ID)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "", "remote_id": ""})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "", "remote_id": "", "note": s.reapplySSO(ctx, sv, c, row)})
 		return
 	}
 	if !row.Enabled {
@@ -835,5 +863,24 @@ func (s *Server) handleLinkAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		cred = "connector"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": rec.Status, "remote_id": rec.RemoteID, "note": acc.Note, "credential": cred})
+	note := acc.Note
+	if n := s.reapplySSO(ctx, sv, c, row); n != "" {
+		note += "; " + n
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": rec.Status, "remote_id": rec.RemoteID, "note": note, "credential": cred})
+}
+
+// reapplySSO hands the app the new links while sign-in is on, so a person
+// linked by hand lands in that account at their next sign-in.
+func (s *Server) reapplySSO(ctx context.Context, sv *store.Service, c connectors.Connector, row *store.Connector) string {
+	if !row.Enabled || !row.SSOEnabled {
+		return ""
+	}
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	defer cancel()
+	if err := s.enableSSO(sctx, sv, c); err != nil {
+		s.log.Warn("connector sign-in links not updated", "type", c.Type(), "err", err)
+		return "sign-in links NOT updated: " + err.Error()
+	}
+	return "sign-in now lands in this account"
 }

@@ -87,6 +87,10 @@ type SSOConfig struct {
 	ClientID     string
 	ClientSecret string
 	ButtonText   string
+	// Links: for apps that match sign-ins by username (Jellyfin), the
+	// username Core sends (preferred_username) → the app account each
+	// linked person must land in; "" = Core has no link for that name.
+	Links map[string]string
 }
 
 // Event is one thing that happened in the app. Core publishes it as

@@ -92,11 +92,14 @@ Needs: the Jellyfin service in Core with its internal URL, its public URL and a 
 
 **Linking by hand.** When the names don't line up (the owner watches as `root`), pick the account in the people table, or run `pocket-core connector jellyfin link <email> <account>`. A link made by hand is marked *by hand*, and provisioning never changes it. Unlinking removes the link and the credential Core saved for it, never one the person set themselves. One Jellyfin account can be linked to one person only.
 
-**Sign in with Pocket Core** needs the [SSO Authentication plugin](https://github.com/9p4/jellyfin-plugin-sso). Add the repository `https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json` under Dashboard → Plugins → Repositories, install it and restart Jellyfin. Without the plugin the switch refuses and says so.
+**Sign in with Pocket Core** needs the [SSO Authentication plugin](https://github.com/9p4/jellyfin-plugin-sso). Add the repository `https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json` under Dashboard → Plugins → Repositories, install it and restart Jellyfin. Without the plugin, or while it waits for a Jellyfin restart (status `Restart`), the switch refuses and says so.
 
 Turning sign-in on does three things, in this order:
 1. Backs up the plugin's providers and Jellyfin's branding to `DATA_DIR/connectors/jellyfin-sso-<timestamp>.json`.
-2. Creates provider `pocket-core`: issuer = Core, its client id and secret, scopes `openid profile email groups`, username from `preferred_username`. **Authorization stays off**, so the plugin never changes anyone's libraries or admin rights. Core's audience already decides who may sign in.
+2. Creates provider `pocket-core`: issuer = Core, its client id and secret, scopes `openid profile email groups`, username from `preferred_username`, and `schemeOverride: https` when the public URL is https (behind a TLS proxy Jellyfin sees `http` and the callback would not match Core's client). **Authorization stays off**, so the plugin never changes anyone's libraries or admin rights. Core's audience already decides who may sign in.
+   - It also writes the plugin's **canonical links** (`username → Jellyfin account`) for everyone Core has linked, so a person linked by hand (the owner → `root`) lands in that account rather than one with the same name.
+   - Links the plugin made itself for other names are kept. A person Core no longer links falls back to matching by name.
+   - Linking or unlinking someone while sign-in is on re-applies the provider (with a fresh client secret) at once.
 3. Puts a *Sign in with Pocket Core* button, linking to `https://<public>/sso/OID/start/pocket-core`, at the top of the login disclaimer, between `<!-- pocket-core-sso -->` markers. Anything else in the disclaimer is kept.
 
 Turning sign-in off deletes the provider and the marked block. Redirect URIs: `https://<public>/sso/OID/redirect/pocket-core` (plugin 3.5+) and `…/sso/OID/r/pocket-core` (older). Jellyfin's TV and phone apps cannot use OIDC: sign in once in the browser, then approve them with Quick Connect.

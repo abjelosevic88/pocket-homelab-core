@@ -229,7 +229,9 @@ func (c jellyfin) Test(ctx context.Context, t Target) (Info, error) {
 	}
 	info.Admin, info.Users = true, len(list)
 	notes := []string{}
-	if p, err := c.ssoPlugin(ctx, t); err == nil && p != nil {
+	if p, err := c.ssoPlugin(ctx, t); err == nil && p != nil && p.Status != "Active" {
+		notes = append(notes, fmt.Sprintf("the SSO Authentication plugin %s is %q: restart Jellyfin so it loads", p.Version, p.Status))
+	} else if err == nil && p != nil {
 		notes = append(notes, fmt.Sprintf("SSO Authentication plugin %s (%s) is installed, so “Sign in with Pocket Core” can be switched on", p.Version, p.Status))
 	} else if err == nil {
 		notes = append(notes, "the SSO Authentication plugin is not installed: “Sign in with Pocket Core” needs it (Dashboard → Plugins → Repositories → https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json, install, restart)")
@@ -376,7 +378,10 @@ func (c jellyfin) ConfigureSSO(ctx context.Context, t Target, sc SSOConfig) erro
 		}
 		return errors.New("the Jellyfin SSO Authentication plugin is not installed: add the repository https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json under Dashboard → Plugins → Repositories, install “SSO Authentication”, restart Jellyfin, then switch this on again")
 	}
-	var current map[string]any
+	if plugin.Status != "Active" {
+		return fmt.Errorf("the Jellyfin SSO plugin %s is %q, not active: restart Jellyfin (Dashboard → Restart) so it loads, then switch this on again", plugin.Version, plugin.Status)
+	}
+	var current map[string]map[string]any
 	if err := c.admin(ctx, t, http.MethodGet, "/sso/OID/Get", nil, &current); err != nil {
 		return fmt.Errorf("reading the SSO plugin's providers failed: %w", err)
 	}
@@ -396,11 +401,17 @@ func (c jellyfin) ConfigureSSO(ctx context.Context, t Target, sc SSOConfig) erro
 		// Authorization off: Core already decides who may sign in (the
 		// service's audience) and the plugin must not rewrite anyone's
 		// libraries or admin rights on login.
+		links := mergeLinks(current[JellyfinSSOProvider], sc.Links)
 		cfg := map[string]any{
-			"oidEndpoint": sc.Issuer, "oidClientId": sc.ClientID, "oidSecret": sc.ClientSecret, "enabled": true,
+			"canonicalLinks": links,
+			"oidEndpoint":    sc.Issuer, "oidClientId": sc.ClientID, "oidSecret": sc.ClientSecret, "enabled": true,
 			"enableAuthorization": false, "enableAllFolders": false, "enabledFolders": []string{}, "adminRoles": []string{}, "roles": []string{},
 			"enableFolderRoles": false, "folderRoleMapping": []any{}, "roleClaim": "groups", "oidScopes": []string{"openid", "profile", "email", "groups"},
 			"defaultUsernameClaim": "preferred_username", "disablePushedAuthorization": true,
+		}
+		if strings.HasPrefix(pub, "https://") {
+			// behind a TLS proxy Jellyfin sees http; the redirect URI must match Core's client
+			cfg["schemeOverride"] = "https"
 		}
 		if err := c.admin(ctx, t, http.MethodPost, "/sso/OID/Add/"+JellyfinSSOProvider, cfg, nil, sc.ClientSecret); err != nil {
 			return fmt.Errorf("saving the SSO provider failed (backup kept at %s): %w", backup, err)
@@ -418,6 +429,39 @@ func (c jellyfin) ConfigureSSO(ctx context.Context, t Target, sc SSOConfig) erro
 		return fmt.Errorf("updating the login page failed (backup kept at %s): %w", backup, err)
 	}
 	return nil
+}
+
+// mergeLinks keeps the canonical links the plugin made itself (people who
+// signed in before Core knew them) and lays Core's on top: a linked person
+// lands in their account, a person Core no longer links falls back to
+// matching by name.
+func mergeLinks(existing map[string]any, core map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range existing {
+		if strings.EqualFold(k, "canonicalLinks") {
+			if m, ok := v.(map[string]any); ok {
+				for name, id := range m {
+					out[name] = fmt.Sprint(id)
+				}
+			}
+		}
+	}
+	for name, id := range core {
+		if id == "" {
+			delete(out, name)
+		} else {
+			out[name] = dashedGUID(id)
+		}
+	}
+	return out
+}
+
+// dashedGUID turns Jellyfin's 32-hex ids into the 8-4-4-4-12 form .NET parses everywhere.
+func dashedGUID(id string) string {
+	if len(id) != 32 || strings.Contains(id, "-") {
+		return id
+	}
+	return id[:8] + "-" + id[8:12] + "-" + id[12:16] + "-" + id[16:20] + "-" + id[20:]
 }
 
 func nz(v any) any {
