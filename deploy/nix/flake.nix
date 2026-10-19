@@ -19,7 +19,7 @@
           inherit version;
           src = "${src}/web";
           # Refresh with: nix run nixpkgs#prefetch-npm-deps -- web/package-lock.json
-          npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          npmDepsHash = "sha256-AXC6YqWoYcaV673nEDk/qngUALYMcqPz5Zzv7d95i14=";
           installPhase = ''
             mkdir -p $out
             cp -r dist/* $out/
@@ -30,7 +30,7 @@
           pname = "pocket-core";
           inherit version src;
           # Refresh with: nix build .#pocket-core (the error prints the right hash)
-          vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          vendorHash = "sha256-qqQRlTYPjgLXJDT7lqqQNtduXPF/hym2emClZVlFfxk=";
           subPackages = [ "cmd/pocket-core" ];
           env.CGO_ENABLED = 0;
           ldflags = [ "-s" "-w" "-X main.version=${version}" ];

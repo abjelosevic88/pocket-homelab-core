@@ -16,11 +16,11 @@ services.pocket.core = {
 };
 ```
 
-Two hashes in the flake are placeholders (`sha256-AAAA…`). Fill them once:
+The two hashes in the flake pin the npm and Go dependency sets. Refresh them whenever `web/package-lock.json` or `go.sum` changes:
 
 ```sh
 nix run nixpkgs#prefetch-npm-deps -- web/package-lock.json   # → npmDepsHash
-nix build ./deploy/nix#pocket-core                           # the error shows vendorHash
+nix build ./deploy/nix#pocket-core                           # a mismatch error shows the new vendorHash
 ```
 
 Build and run outside NixOS: `nix run ./deploy/nix` (needs `DATA_DIR` and `BASE_URL`).
