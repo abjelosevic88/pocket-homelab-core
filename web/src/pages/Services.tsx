@@ -19,18 +19,18 @@ export default function Services() {
   const [edit, setEdit] = useState<Service | null>(null)
   const [del, setDel] = useState<Service | null>(null)
   const [q, setQ] = useState('')
-  const [show, setShow] = useState<'all' | 'on' | 'off'>('all')
+  const [show, setShow] = useState<'all' | 'on' | 'off' | 'conn'>('all')
   const [tests, setTests] = useState<Record<number, TestResult>>({})
   const list = data || []
   const groups = useMemo(() => {
     const g = new Map<string, Service[]>()
     for (const s of list) {
       if (q && !(s.name + s.type + s.url + s.public_url).toLowerCase().includes(q.toLowerCase())) continue
-      if ((show === 'on' && !s.enabled) || (show === 'off' && s.enabled)) continue
+      if ((show === 'on' && !s.enabled) || (show === 'off' && s.enabled) || (show === 'conn' && !connFor(s))) continue
       const k = s.catalog.group; g.set(k, [...(g.get(k) || []), s])
     }
     return [...g.entries()]
-  }, [list, q, show])
+  }, [list, q, show, conns]) // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = async (s: Service, on: boolean) => { await api.put(`${V1}/services/${s.id}`, { enabled: on }); await reload() }
   const test = async (s: Service) => {
     setTests(t => ({ ...t, [s.id]: { ok: false, busy: true } }))
@@ -46,9 +46,10 @@ export default function Services() {
         actions={<><a className="btn" href={`${V1}/pair/profile?format=env`} download>Download env</a>{admin && <button className="btn primary" onClick={() => setAdding(true)}>Add service</button>}</>} />
       <div className="toolbar">
         <div className="search"><span className="ico">⌕</span><input placeholder="Search services…" value={q} onChange={e => setQ(e.target.value)} /></div>
-        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }]} />
+        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length}` }] : [])]} />
         <button className="btn sm" onClick={testAll} title="Check every service in the profile">Test all</button>
       </div>
+      {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} onOpen={setConn} />}
       {list.length === 0 ? <Card><Empty title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
         groups.length === 0 ? <Card><Empty title="No match">Nothing matches this search.</Empty></Card> :
         groups.map(([g, items]) => <section key={g} className="svc-group">
@@ -69,12 +70,12 @@ export default function Services() {
                     {s.app_id ? <span className="badge cat">Pocket app</span> : null}
                     {s.audience === 'admins' && <span className="badge warn">Admins</span>}
                     {s.audience === 'users' && <span className="badge">{s.audience_users.length} people</span>}
-                    {c?.enabled && <span className={`badge ${c.last_error ? 'err' : 'ok'}`} title={c.last_error || 'Connector on'}>Connector</span>}
                   </div>
                   <div className="svc-sub">
                     {href ? <a href={href} target="_blank" rel="noreferrer" title={s.public_url && s.url && s.public_url !== s.url ? `internal ${s.url}` : href}>{href.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a> : <span>no address</span>}
                     <span className="env" title={keys.join('\n')}>{s.catalog.prefix}_*</span>
                   </div>
+                  {admin && connFor(s) && <ConnectorLine c={c} onOpen={() => setConn(s)} />}
                 </div>
                 <div className="svc-status">
                   {s.catalog.pocket ? <span className="pill">Device token</span>
@@ -84,11 +85,9 @@ export default function Services() {
                 </div>
                 <div className="svc-actions">
                   <button className="btn sm ghost" onClick={() => test(s)} disabled={t?.busy}>Test</button>
+                  {admin && connFor(s) && <button className={`btn sm ${c?.enabled ? 'conn-btn on' : 'ghost'}`} onClick={() => setConn(s)}>Connector</button>}
                   {admin && <button className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
-                  {admin && (connFor(s) || !s.app_id) && <RowMenu items={[
-                    ...(connFor(s) ? [{ label: 'Connector…', onClick: () => setConn(s) }] : []),
-                    ...(!s.app_id ? [{ label: 'Remove', danger: true, onClick: () => setDel(s) }] : []),
-                  ]} />}
+                  {admin && !s.app_id && <RowMenu items={[{ label: 'Remove', danger: true, onClick: () => setDel(s) }]} />}
                 </div>
                 <Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} />
               </div>
@@ -100,6 +99,48 @@ export default function Services() {
       {edit && <EditService s={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}
       {del && <Confirm title="Remove service" message={<>Remove <b>{del.name}</b>? Paired devices lose it on their next profile refresh.</>} onConfirm={remove} onCancel={() => setDel(null)} />}
     </>
+  )
+}
+
+// ConnectorLine sits under a service's name: what its connector is doing.
+function ConnectorLine({ c, onOpen }: { c?: ConnectorListItem['connector']; onOpen: () => void }) {
+  if (!c || !c.enabled) return <button type="button" className="conn-line off" onClick={onOpen}><span className="conn-bolt">ϟ</span>Connector available · off</button>
+  const parts: [string, boolean, boolean][] = [['Accounts', c.provision_on_create, c.capabilities.provision], ['Sign-in', c.sso_enabled, c.capabilities.sso], ['Events', c.events_enabled, c.capabilities.events]]
+  return (
+    <button type="button" className={`conn-line ${c.last_error ? 'err' : 'on'}`} onClick={onOpen} title={c.last_error || 'Open connector'}>
+      <span className="conn-bolt">ϟ</span>{c.last_error ? 'Connector error' : 'Connector on'}
+      {parts.filter(p => p[2]).map(([label, on]) => <span key={label} className={`conn-part ${on ? 'on' : ''}`}>{on ? '✓' : '–'} {label}</span>)}
+    </button>
+  )
+}
+
+// ConnectorsOverview: every connector Core ships, at the top of the page.
+function ConnectorsOverview({ conns, services, onOpen }: { conns: ConnectorListItem[]; services: Service[]; onOpen: (s: Service) => void }) {
+  return (
+    <section className="svc-group">
+      <div className="svc-group-head"><span>Connectors</span><span className="count">{conns.length}</span><span className="muted" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>create accounts, sign people in with Core, listen to events</span></div>
+      <div className="conn-cards">{conns.map(k => {
+        const svc = services.find(s => s.id === k.service_id && s.type === k.type)
+        const c = k.connector
+        const state = !svc ? 'missing' : !c || !c.enabled ? 'off' : c.last_error ? 'err' : 'on'
+        return (
+          <div key={k.type} className={`conn-card ${state}`}>
+            <div className="conn-card-head">
+              {svc ? <ServiceIcon s={svc} /> : <span className="svc-icon letter" style={{ background: `hsl(${hue(k.name)} 70% 92%)`, color: `hsl(${hue(k.name)} 55% 35%)` }}>{k.name[0]}</span>}
+              <div className="grow"><b>{k.name}</b><div className="muted small">{state === 'missing' ? 'Add the service first' : state === 'off' ? 'Available, switched off' : state === 'err' ? (c?.last_error || 'Error') : c?.last_poll_at ? `Last check ${new Date(c.last_poll_at).toLocaleTimeString()}` : 'On'}</div></div>
+              <span className={`pill ${state === 'on' ? 'ok' : state === 'err' ? 'err' : ''}`}>{state === 'on' ? 'On' : state === 'err' ? 'Error' : state === 'off' ? 'Off' : 'Not added'}</span>
+            </div>
+            <div className="conn-caps">
+              {k.capabilities.provision && <span className={`conn-part ${c?.enabled && c.provision_on_create ? 'on' : ''}`}>Accounts</span>}
+              {k.capabilities.sso && <span className={`conn-part ${c?.enabled && c.sso_enabled ? 'on' : ''}`}>Sign-in</span>}
+              {k.capabilities.events && <span className={`conn-part ${c?.enabled && c.events_enabled ? 'on' : ''}`}>Events</span>}
+              <span className="grow" />
+              {svc && <button className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button>}
+            </div>
+          </div>
+        )
+      })}</div>
+    </section>
   )
 }
 

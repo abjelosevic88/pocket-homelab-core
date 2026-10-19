@@ -600,3 +600,23 @@ html, body { overflow-x: hidden; }
 .pick-text { display: flex; flex-direction: column; min-width: 0; }
 .pick-name { font-weight: 600; font-size: 13.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .pick-group-label { font-size: 11.5px; color: var(--muted); }
+
+/* Connectors on the Services page */
+.conn-line { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; padding: 3px 9px 3px 6px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.conn-line.on { background: var(--accent-soft); border-color: transparent; color: var(--accent-hover); }
+.conn-line.err { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+.conn-line:hover { filter: brightness(.97); }
+.conn-bolt { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: currentColor; color: var(--surface); font-size: 12px; font-weight: 800; }
+.conn-line .conn-bolt { color: inherit; background: none; border: 1.5px solid currentColor; width: 16px; height: 16px; font-size: 10px; }
+.conn-part { font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+.conn-part.on { background: var(--success-soft); color: var(--success); border-color: transparent; }
+.conn-btn.on { background: var(--accent-soft); color: var(--accent-hover); border-color: transparent; }
+.conn-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+.conn-card { display: grid; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); box-shadow: var(--shadow); border-left: 4px solid var(--border); }
+.conn-card.on { border-left-color: var(--success); }
+.conn-card.err { border-left-color: var(--danger); }
+.conn-card.off { border-left-color: var(--warning); }
+.conn-card-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.conn-card-head .grow { min-width: 0; }
+.conn-card-head .muted.small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conn-caps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
