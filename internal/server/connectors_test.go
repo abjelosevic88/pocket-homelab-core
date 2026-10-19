@@ -32,10 +32,26 @@ type fakeImmich struct {
 	keyNames  []string
 	sessions  map[string]string // access token → user id
 	config    map[string]any
-	stats     map[string][2]int64 // user id → photos, videos
+	workflows map[string]fakeWorkflow
+	wfCreates int
 	creates   int
 	configPut int
 	n         int
+}
+
+type fakeWorkflow struct {
+	ID          string `json:"id"`
+	Owner       string `json:"-"`
+	Trigger     string `json:"trigger"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Logging     bool   `json:"logging"`
+	Steps       []struct {
+		Method  string         `json:"method"`
+		Enabled bool           `json:"enabled"`
+		Config  map[string]any `json:"config"`
+	} `json:"steps"`
 }
 
 type fakeImmichUser struct {
@@ -62,7 +78,7 @@ func defaultImmichConfig() map[string]any {
 
 func newFakeImmich(t *testing.T) *fakeImmich {
 	f := &fakeImmich{adminKey: "immich-admin-key", memberKey: "immich-member-key", passwords: map[string]string{}, keys: map[string]string{},
-		sessions: map[string]string{}, config: defaultImmichConfig(), stats: map[string][2]int64{},
+		sessions: map[string]string{}, config: defaultImmichConfig(), workflows: map[string]fakeWorkflow{},
 		users: []fakeImmichUser{
 			{ID: "u-admin", Email: "admin@b.c", Name: "Owner", IsAdmin: true},
 			{ID: "u-existing", Email: "existing@example.com", Name: "Existing"},
@@ -202,18 +218,77 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 		f.configPut++
 		reply(w, 200, in)
 	})
-	mux.HandleFunc("GET /api/server/statistics", func(w http.ResponseWriter, r *http.Request) {
+	// keyUser is whose API key a request carries.
+	keyUser := func(r *http.Request) string {
+		k := r.Header.Get("x-api-key")
+		if k == f.adminKey {
+			return "u-admin"
+		}
+		return f.keys[k]
+	}
+	mux.HandleFunc("GET /api/users/me", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if !adminOnly(w, r) {
+		uid := keyUser(r)
+		for _, u := range f.users {
+			if uid != "" && u.ID == uid {
+				reply(w, 200, u)
+				return
+			}
+		}
+		deny(w, 401)
+	})
+	mux.HandleFunc("GET /api/workflows", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		uid := keyUser(r)
+		if uid == "" {
+			deny(w, 401)
 			return
 		}
-		usage := []map[string]any{}
-		for _, u := range f.users {
-			st := f.stats[u.ID]
-			usage = append(usage, map[string]any{"userId": u.ID, "userName": u.Name, "photos": st[0], "videos": st[1], "usage": 0, "usagePhotos": 0, "usageVideos": 0, "quotaSizeInBytes": nil})
+		out := []fakeWorkflow{} // a workflow belongs to whoever created it
+		for _, wf := range f.workflows {
+			if wf.Owner == uid {
+				out = append(out, wf)
+			}
 		}
-		reply(w, 200, map[string]any{"photos": 0, "videos": 0, "usage": 0, "usagePhotos": 0, "usageVideos": 0, "usageByUser": usage})
+		reply(w, 200, out)
+	})
+	mux.HandleFunc("POST /api/workflows", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		uid := keyUser(r)
+		if uid == "" {
+			deny(w, 401)
+			return
+		}
+		var in fakeWorkflow
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if in.Trigger != "AssetCreate" && in.Trigger != "AssetMetadataExtraction" {
+			reply(w, 400, map[string]any{"message": "bad trigger"})
+			return
+		}
+		if len(in.Steps) != 1 || in.Steps[0].Method != "immich-plugin-core#webhook" || in.Steps[0].Config["url"] == nil {
+			reply(w, 400, map[string]any{"message": "Unknown method or missing url"})
+			return
+		}
+		f.n++
+		f.wfCreates++
+		in.ID = fmt.Sprintf("wf-%d", f.n)
+		in.Owner = uid
+		f.workflows[in.ID] = in
+		reply(w, 201, in)
+	})
+	mux.HandleFunc("DELETE /api/workflows/{id}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		wf, ok := f.workflows[r.PathValue("id")]
+		if !ok || wf.Owner != keyUser(r) {
+			reply(w, 400, map[string]any{"message": "Not found or no workflow.delete access"})
+			return
+		}
+		delete(f.workflows, wf.ID)
+		w.WriteHeader(204)
 	})
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
@@ -229,6 +304,25 @@ func (f *fakeImmich) userByEmail(email string) (fakeImmichUser, bool) {
 		}
 	}
 	return fakeImmichUser{}, false
+}
+
+// workflowsOf lists a user's workflows by trigger.
+func (f *fakeImmich) workflowsOf(uid string) map[string]fakeWorkflow {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]fakeWorkflow{}
+	for _, wf := range f.workflows {
+		if wf.Owner == uid {
+			out[wf.Trigger] = wf
+		}
+	}
+	return out
+}
+
+func (f *fakeImmich) workflowCount() (n, creates int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.workflows), f.wfCreates
 }
 
 func (f *fakeImmich) snapshot() (creates, keys, sessions, puts int, cfg map[string]any) {
@@ -617,55 +711,13 @@ func TestImmichConnector(t *testing.T) {
 		t.Fatalf("disable should back up first too: %v", backups)
 	}
 
-	// Events: the first poll is a baseline, then changes become events.
-	call("PUT", base, map[string]any{"events_enabled": true}, nil)
-	var poll struct {
-		OK       bool   `json:"ok"`
-		Events   int    `json:"events"`
-		Baseline bool   `json:"baseline"`
-		Err      string `json:"error"`
-	}
+	// Own's hand-set key is a real Immich key of their account.
+	ownIU, _ := im.userByEmail("own@example.com")
 	im.mu.Lock()
-	im.stats[iu.ID] = [2]int64{10, 2}
+	im.keys["my-own-key"] = ownIU.ID
 	im.mu.Unlock()
-	call("POST", base+"/poll", nil, &poll)
-	if !poll.OK || !poll.Baseline || poll.Events != 0 {
-		t.Fatalf("baseline %+v", poll)
-	}
-	im.mu.Lock()
-	im.stats[iu.ID] = [2]int64{15, 3}
-	im.users = append(im.users, fakeImmichUser{ID: "u-new", Email: "New@Example.com", Name: "New"})
-	im.mu.Unlock()
-	call("POST", base+"/poll", nil, &poll)
-	if !poll.OK || poll.Baseline || poll.Events != 2 {
-		t.Fatalf("second poll %+v", poll)
-	}
-	var evs []store.Event
-	call("GET", "/api/v1/events?topic=immich.*", nil, &evs)
-	topics := map[string]map[string]any{}
-	for _, ev := range evs {
-		if ev.Source != "connector:immich" {
-			t.Fatalf("source %q", ev.Source)
-		}
-		var p map[string]any
-		_ = json.Unmarshal(ev.Payload, &p)
-		topics[ev.Topic] = p
-	}
-	if p := topics["immich.assets_added"]; p == nil || p["user_email"] != "sani@example.com" || p["photos"] != float64(5) || p["videos"] != float64(1) {
-		t.Fatalf("assets_added %+v", topics)
-	}
-	if p := topics["immich.user_created"]; p == nil || p["user_email"] != "new@example.com" {
-		t.Fatalf("user_created %+v", topics)
-	}
-	im.mu.Lock()
-	im.stats[iu.ID] = [2]int64{12, 3}
-	im.mu.Unlock()
-	call("POST", base+"/poll", nil, &poll)
-	evs = nil
-	call("GET", "/api/v1/events?topic=immich.assets_removed", nil, &evs)
-	if len(evs) != 1 || !strings.Contains(string(evs[0].Payload), `"photos":3`) || !strings.Contains(string(evs[0].Payload), `"user_email":"sani@example.com"`) {
-		t.Fatalf("assets_removed %+v", evs)
-	}
+	adminIU, _ := im.userByEmail("admin@b.c")
+	testImmichEvents(t, e, im, base, sv.ID, call, map[string]string{"admin@b.c": adminIU.ID, "sani@example.com": iu.ID, "own@example.com": ownIU.ID})
 
 	// The person's page shows their status per connected service.
 	var mine []struct {
@@ -686,7 +738,7 @@ func TestImmichConnector(t *testing.T) {
 	}
 	e2.do("POST", "/api/v1/apps/register", settings.RegistrationKey, map[string]any{"slug": "kitchen", "name": "Pocket Kitchen", "url": "http://kitchen"}, &reg)
 	for _, tok := range []string{memberTok, reg.Token} {
-		for _, r := range []struct{ m, p string }{{"GET", "/api/v1/connectors"}, {"GET", base}, {"PUT", base}, {"POST", base + "/test"}, {"POST", base + "/poll"}, {"POST", base + "/provision"}, {"GET", base + "/accounts"}, {"GET", "/api/v1/users/" + itoa(sani.ID) + "/connectors"}} {
+		for _, r := range []struct{ m, p string }{{"GET", "/api/v1/connectors"}, {"GET", base}, {"PUT", base}, {"POST", base + "/test"}, {"POST", base + "/poll"}, {"POST", base + "/hooks/recreate"}, {"POST", base + "/provision"}, {"GET", base + "/accounts"}, {"GET", "/api/v1/users/" + itoa(sani.ID) + "/connectors"}} {
 			code, body := e2.raw(r.m, r.p, tok, map[string]any{"all": true})
 			if code != 403 || !strings.Contains(body, "admin only") {
 				t.Fatalf("%s %s with %s…: %d %s", r.m, r.p, tok[:4], code, body)

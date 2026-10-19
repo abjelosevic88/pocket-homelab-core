@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/catalog"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/connectors"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 )
 
@@ -123,6 +124,7 @@ func (s *Server) handleUpdateService(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "update service")
 		return
 	}
+	s.kickHooks(sv.ID) // the audience or the box-wide key may have changed
 	writeJSON(w, http.StatusOK, maskService(*sv, e))
 }
 
@@ -265,9 +267,16 @@ func (s *Server) handlePutCredential(w http.ResponseWriter, r *http.Request) {
 		o.Fields = f
 	}
 	e := s.entryForCtx(r, sv)
+	changed := !sameFields(cur.Fields, o.Fields)
+	if changed {
+		s.dropUserHooks(r.Context(), uid, sid) // made with the old key: delete them while it still works
+	}
 	if err := s.store.SaveOverride(r.Context(), o, e.IsSecret); err != nil {
 		s.fail(w, err, "save override")
 		return
+	}
+	if changed {
+		s.kickHooks(sid)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "set": o.URL != "" || len(o.Fields) > 0})
 }
@@ -279,11 +288,32 @@ func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusForbidden, "not yours")
 		return
 	}
+	s.dropUserHooks(r.Context(), uid, sid)
 	if err := s.store.DeleteOverride(r.Context(), sid, uid); err != nil {
 		s.fail(w, err, "delete override")
 		return
 	}
+	s.kickHooks(sid)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func sameFields(a, b map[string]string) bool {
+	n := 0
+	for k, v := range a {
+		if v == "" {
+			continue
+		}
+		if b[k] != v {
+			return false
+		}
+		n++
+	}
+	for _, v := range b {
+		if v != "" {
+			n--
+		}
+	}
+	return n == 0
 }
 
 func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
@@ -295,6 +325,9 @@ func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
 	if sv.AppID > 0 {
 		writeErr(w, http.StatusBadRequest, "this service mirrors a registered app; remove the app instead")
 		return
+	}
+	if c, ok := connectors.Get(sv.Type); ok {
+		_ = s.syncHooks(r.Context(), sv, c, hookTeardown) // delete its subscriptions in the app first
 	}
 	if err := s.store.DeleteService(r.Context(), sv.ID); err != nil {
 		s.fail(w, err, "delete service")

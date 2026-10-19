@@ -41,15 +41,22 @@ Core acting on a third-party service: accounts, sign-in, events. See [connectors
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | GET | `/connectors` | admin | every connector Core has: `{type, name, capabilities:{provision, sso, events}, service_id?, connector?}` |
-| GET | `/services/{id}/connector` | admin | `{enabled, provision_on_create, sso_enabled, events_enabled, poll_interval_s, last_poll_at, last_error, type, capabilities, configured, redirects, issuer, oidc_client, polling}`; 404 when the service type has no connector |
-| PUT | `/services/{id}/connector` | admin | any of `{enabled, provision_on_create, sso_enabled, events_enabled, poll_interval_s}`. Flipping `sso_enabled` configures the app immediately and answers `502 {error}` (switch unchanged) when the app refused; turning it on needs `enabled`. Turning `events_enabled` on starts a new baseline |
+| GET | `/services/{id}/connector` | admin | `{enabled, provision_on_create, sso_enabled, events_enabled, poll_interval_s, last_poll_at, last_error, type, capabilities, configured, redirects, issuer, oidc_client, polling, push?}`; 404 when the service type has no connector. `push` (connectors whose events arrive by push) = `{per_user, triggers:[{trigger, name}], url, checked_at, received, published, dropped, last_received_at, people:[{user_id, email, name, state: ok\|missing\|needs_key\|error\|off, detail, workflows:[{trigger, name, remote_workflow_id, state, error}], received, published, dropped, last_drop, last_received_at}]}` |
+| PUT | `/services/{id}/connector` | admin | any of `{enabled, provision_on_create, sso_enabled, events_enabled, poll_interval_s}`. Flipping `sso_enabled` configures the app immediately and answers `502 {error}` (switch unchanged) when the app refused; turning it on needs `enabled`. Turning events on (`enabled` and `events_enabled` both true) creates the push subscriptions in the app right away and starts a new baseline for the periodic check; turning either off deletes them. Problems are reported in `last_error` (`events: …`) and per person in `push.people` |
 | POST | `/services/{id}/connector/test` | admin | read-only check → `{ok, info:{version, admin, users, permissions, detail}, ms}` or `{ok:false, error}` |
-| POST | `/services/{id}/connector/poll` | admin | poll now → `{ok, events, baseline}` / `{ok:false, error}`; `409` while a poll runs; needs `enabled` |
+| POST | `/services/{id}/connector/poll` | admin | check now: poll (`immich.user_created`) and, with events on, re-create any push subscription deleted in the app → `{ok, events, baseline}` / `{ok:false, error}`; `409` while a poll runs; needs `enabled` |
+| POST | `/services/{id}/connector/hooks/recreate` | admin | delete and create every push subscription again (new hook secrets) → `{ok, error?, connector}`; needs events on |
 | POST | `/services/{id}/connector/provision` | admin | `{user_id}` or `{all:true}` → `{results:[{user_id, email, status: ok\|linked\|error\|skipped, remote_id, error, note, credential: connector\|own\|none}]}`; needs `enabled` |
 | GET | `/services/{id}/connector/accounts` | admin | everyone in the audience (and anyone with an account row): `{user_id, email, name, in_audience, status: ok\|linked\|error\|"", remote_id, error, credential: connector\|own\|""}` |
 | GET | `/users/{id}/connectors` | admin | that person's status in every connected service |
 
 `GET /users/{id}/credentials` items carry `source: user|connector` for overrides that are set.
+
+### Push deliveries (public)
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| POST | `/connectors/hooks/{hookID}` | the app, with header `X-Pocket-Hook: <secret>` | where a connected app (Immich workflow webhook step) delivers one thing that happened. No session or token: the random hook id plus its secret (stored hashed, compared in constant time) authenticate. Unknown hook or wrong/missing secret → `404` and nothing is recorded. Body up to 256 KiB (`413` above), at most 1200 deliveries per hook per minute (`429`). `202 {published: bool, dropped: "<reason>"}` once read — also for deliveries that are dropped (owner not a Core person in the audience, duplicate, …); `400` for a body the connector cannot read |
 
 ## Events
 See [events.md](events.md). `POST /events`, `GET /events`, `/events/{id}`, `/events/topics`, `/events/stream`; `GET/POST /webhooks`, `PUT/DELETE /webhooks/{id}`, `POST /webhooks/{id}/test`, `GET /webhooks/{id}/deliveries` (admin, or the app that owns the webhook).

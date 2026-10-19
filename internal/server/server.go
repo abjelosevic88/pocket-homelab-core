@@ -51,6 +51,12 @@ type Server struct {
 	nextPoll sync.Map        // service id → time.Time: when the scheduler polls next
 	provMu   sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
 
+	hookMu    sync.Mutex // one subscription sync at a time
+	hookSyncs sync.Map   // service id → hookSyncResult: what the last sync found per person
+	hookKick  sync.Map   // service id → struct{}: a background sync is pending
+	hookSeen  *seenCache // delivery dedupe
+	hookRate  *limiter   // deliveries per hook per minute
+
 	loginLimit *limiter // per IP and per email: 10 failures / 15 min
 	pairLimit  *limiter // per IP: 10 bad codes / 15 min
 	regLimit   *limiter // per IP: 10 bad registration keys / 15 min
@@ -65,7 +71,8 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		http:       &http.Client{Timeout: 8 * time.Second},
 		connHTTP:   &http.Client{Timeout: 30 * time.Second},
 		ctx:        context.Background(),
-		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute)}
+		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute),
+		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute)}
 }
 
 // Bootstrap seeds the first admin (if configured), the registration key and
@@ -195,6 +202,9 @@ func (s *Server) Router() http.Handler {
 		// App registration: registration key or an existing app token.
 		r.Post("/apps/register", s.handleRegisterApp)
 
+		// Push deliveries from a connected app: the hook id and its secret header authenticate.
+		r.Post("/connectors/hooks/{hookID}", s.handleConnectorHook)
+
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
 			r.Post("/auth/logout", s.handleLogout)
@@ -272,6 +282,7 @@ func (s *Server) Router() http.Handler {
 				r.Post("/services/{id}/connector/test", s.handleTestConnector)
 				r.Post("/services/{id}/connector/poll", s.handlePollConnector)
 				r.Post("/services/{id}/connector/provision", s.handleProvisionConnector)
+				r.Post("/services/{id}/connector/hooks/recreate", s.handleRecreateHooks)
 				r.Get("/services/{id}/connector/accounts", s.handleConnectorAccounts)
 				r.Get("/users/{id}/connectors", s.handleUserConnectors)
 

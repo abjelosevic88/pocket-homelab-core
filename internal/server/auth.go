@@ -566,6 +566,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "update user")
 		return
 	}
+	s.kickAllHooks() // disabled or role (audience) may have changed
 	writeJSON(w, http.StatusOK, u)
 }
 
@@ -575,6 +576,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "you cannot delete yourself")
 		return
 	}
+	s.dropUserHooks(r.Context(), id, 0) // while their key still exists
 	if err := s.store.DeleteUser(r.Context(), id); err != nil {
 		s.fail(w, err, "delete user")
 		return

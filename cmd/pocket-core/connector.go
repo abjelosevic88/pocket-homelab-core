@@ -26,8 +26,9 @@ Actions:
   status                          switches, last poll, last error and every person's account
   test                            reachability + the stored admin credential (read-only)
   enable | disable                the master switch (off = Core does nothing on its own)
-  enable-events | disable-events  poll the app and publish <type>.* events (first poll = baseline)
-  poll                            poll once now
+  enable-events | disable-events  publish <type>.* events (Immich: creates / deletes the workflows that push each upload)
+  poll                            check once now (new accounts; re-create workflows deleted in the app)
+  recreate-hooks                  delete and create every push workflow again (new secrets)
   enable-sso | disable-sso        "Sign in with Pocket Core" in the app (backs up the app's config first)
   enable-provisioning | disable-provisioning
                                   make accounts for people an admin creates from now on
@@ -161,6 +162,8 @@ func connectorAction(c *coreClient, typ, action string, args []string) error {
 		return post("/test", nil)
 	case "poll":
 		return post("/poll", nil)
+	case "recreate-hooks":
+		return post("/hooks/recreate", nil)
 	case "enable":
 		return put(map[string]any{"enabled": true})
 	case "disable":

@@ -34,6 +34,17 @@ export interface ConnectorView {
   service_id: number; enabled: boolean; provision_on_create: boolean; sso_enabled: boolean; events_enabled: boolean; poll_interval_s: number
   last_poll_at?: string; last_error: string; type: string; service_name: string; capabilities: ConnectorCaps; configured: boolean
   redirects: string[]; issuer: string; oidc_client: OIDCClient | null; polling: boolean
+  push?: ConnectorPush
+}
+export type HookState = 'ok' | 'missing' | 'needs_key' | 'error' | 'off'
+export interface HookPerson {
+  user_id: number; email: string; name: string; state: HookState; detail?: string
+  workflows: { trigger: string; name: string; remote_workflow_id: string; state: string; error?: string }[]
+  received: number; published: number; dropped: number; last_drop?: string; last_received_at?: string
+}
+export interface ConnectorPush {
+  per_user: boolean; triggers: { trigger: string; name: string }[]; url: string; checked_at?: string
+  received: number; published: number; dropped: number; last_received_at?: string; people: HookPerson[]
 }
 export interface ConnectorListItem { type: string; name: string; capabilities: ConnectorCaps; service_id?: number; connector?: ConnectorView }
 export type ConnectorStatus = '' | 'ok' | 'linked' | 'error'

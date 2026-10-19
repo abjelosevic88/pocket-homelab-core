@@ -91,10 +91,65 @@ type SSOConfig struct {
 // Event is one thing that happened in the app. Core publishes it as
 // "<type>.<Name>" with source "connector:<type>".
 type Event struct {
-	Name      string         // e.g. assets_added
+	Name      string         // e.g. asset_created
 	Subject   string         // free identifier; Core falls back to UserEmail
 	UserEmail string         // set when the event belongs to a person; copied into the payload as user_email
 	Payload   map[string]any // event body
+}
+
+// ---- push: the app calls Core for each thing that happens ----
+
+// PushHeader carries a push subscription's secret on every delivery.
+const PushHeader = "X-Pocket-Hook"
+
+// PushTrigger is one kind of delivery Core subscribes to.
+type PushTrigger struct {
+	Trigger string `json:"trigger"` // the app's own name, e.g. AssetCreate
+	Name    string `json:"name"`    // what the subscription is called inside the app
+}
+
+// Subscription is what Core asks the app to set up: call URL with the
+// header for every Trigger.
+type Subscription struct {
+	Trigger     string
+	Name        string
+	Description string
+	URL         string
+	HeaderName  string
+	HeaderValue string // the per-subscription secret; never logged
+}
+
+// RemoteUser is who a credential acts as inside the app.
+type RemoteUser struct {
+	ID    string
+	Email string
+}
+
+// Delivery is one decoded push.
+type Delivery struct {
+	OwnerID   string // the app account the delivery is about
+	DedupeKey string // the same key inside the dedupe window is the same delivery again
+	Event     Event  // Name, Subject and Payload; Core adds user_email
+	Drop      string // set: do not publish, and why
+}
+
+// Pusher is implemented by connectors whose events arrive by push instead
+// of polling. Every call acts with the credential in Target.Fields: the
+// person's own key for a per-person subscription, the box-wide one otherwise.
+type Pusher interface {
+	PushTriggers() []PushTrigger
+	// PushPerUser: the app runs a subscription only for its owner's things,
+	// so Core keeps one set per person, made with that person's credential.
+	PushPerUser() bool
+	WhoAmI(ctx context.Context, t Target) (RemoteUser, error)
+	// Subscribe creates the subscription and returns the app's id for it.
+	Subscribe(ctx context.Context, t Target, s Subscription) (string, error)
+	// Subscriptions lists what exists for the credential: app id → name.
+	Subscriptions(ctx context.Context, t Target) (map[string]string, error)
+	// Unsubscribe deletes one; an id that no longer exists is not an error.
+	Unsubscribe(ctx context.Context, t Target, remoteID string) error
+	// Decode turns one delivery body into an event (or a reason to drop it).
+	Decode(t Target, trigger string, body []byte) (Delivery, error)
 }
 
 // Connector is implemented once per app type.
@@ -111,7 +166,8 @@ type Connector interface {
 	// SSORedirects lists the redirect URIs the app will use with Core.
 	SSORedirects(publicURL string) []string
 	// Poll returns what changed since state. An empty state is the first
-	// poll: record a baseline and return no events.
+	// poll: record a baseline and return no events. A Pusher still polls for
+	// what its pushes do not cover (Immich: new accounts).
 	Poll(ctx context.Context, t Target, state json.RawMessage) ([]Event, json.RawMessage, error)
 }
 

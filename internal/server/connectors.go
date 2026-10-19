@@ -79,6 +79,7 @@ type connectorOut struct {
 	Issuer       string                  `json:"issuer"`
 	OIDCClient   *store.OIDCClient       `json:"oidc_client"`
 	Polling      bool                    `json:"polling"`
+	Push         *hookView               `json:"push,omitempty"` // events arrive by push: the subscriptions and their counters
 }
 
 func (s *Server) connectorView(ctx context.Context, sv *store.Service, c connectors.Connector, row *store.Connector) connectorOut {
@@ -92,6 +93,9 @@ func (s *Server) connectorView(ctx context.Context, sv *store.Service, c connect
 		out.OIDCClient = cl
 	}
 	_, out.Polling = s.polling.Load(sv.ID)
+	if p, ok := c.(connectors.Pusher); ok && out.Capabilities.Events {
+		out.Push = s.hookStatus(ctx, sv, p, row.Enabled && row.EventsEnabled)
+	}
 	return out
 }
 
@@ -157,6 +161,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wasEvents, wasSSO := row.EventsEnabled, row.SSOEnabled
+	wasOn := row.Enabled && row.EventsEnabled
 	if in.Enabled != nil {
 		row.Enabled = *in.Enabled
 	}
@@ -185,6 +190,14 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		// a fresh baseline: what happened while events were off is not news
 		_ = s.store.ResetConnectorState(ctx, sv.ID)
 		s.nextPoll.Store(sv.ID, time.Now().Add(5*time.Second))
+	}
+	if nowOn := row.Enabled && row.EventsEnabled; nowOn != wasOn {
+		// push subscriptions follow the switch right away: created on, deleted off
+		err := s.syncHooks(ctx, sv, c, hookReconcile)
+		s.setEventsError(ctx, sv.ID, err)
+		if err != nil {
+			s.log.Warn("connector subscriptions not in step", "type", c.Type(), "events", nowOn, "err", err)
+		}
 	}
 	if wantSSO != wasSSO {
 		var err error
@@ -262,11 +275,22 @@ func (s *Server) handlePollConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, baseline, err := s.pollConnector(r.Context(), sv, c)
-	switch {
-	case errors.Is(err, errPollBusy):
+	if errors.Is(err, errPollBusy) {
 		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	var herr error
+	if row.EventsEnabled {
+		herr = s.syncHooks(r.Context(), sv, c, hookReconcile)
+		if err == nil {
+			s.setEventsError(r.Context(), sv.ID, herr)
+		}
+	}
+	switch {
 	case err != nil:
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+	case herr != nil:
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "subscriptions: " + herr.Error(), "events": n, "baseline": baseline})
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "events": n, "baseline": baseline})
 	}
@@ -293,20 +317,8 @@ func (s *Server) pollConnector(ctx context.Context, sv *store.Service, c connect
 		return 0, baseline, err
 	}
 	for _, ev := range evs {
-		payload := map[string]any{}
-		for k, v := range ev.Payload {
-			payload[k] = v
-		}
-		subject := ev.Subject
-		if ev.UserEmail != "" {
-			payload["user_email"] = ev.UserEmail
-			if subject == "" {
-				subject = "user:" + ev.UserEmail
-			}
-		}
-		e := &store.Event{Topic: c.Type() + "." + ev.Name, Source: "connector:" + c.Type(), Subject: subject, Payload: mustJSON(payload)}
-		if err := s.hub.Publish(ctx, e); err != nil {
-			s.log.Warn("connector event not published", "topic", e.Topic, "err", err)
+		if err := s.publishConnectorEvent(ctx, c, ev); err != nil {
+			s.log.Warn("connector event not published", "type", c.Type(), "event", ev.Name, "err", err)
 			continue
 		}
 		published++
@@ -318,8 +330,28 @@ func (s *Server) pollConnector(ctx context.Context, sv *store.Service, c connect
 	return published, baseline, nil
 }
 
-// connectorScheduler polls every enabled connector with events on, each at
-// its own interval plus jitter.
+// publishConnectorEvent puts one connector event on the bus as
+// <type>.<name> from connector:<type>, with user_email when it is a person's.
+func (s *Server) publishConnectorEvent(ctx context.Context, c connectors.Connector, ev connectors.Event) error {
+	payload := map[string]any{}
+	for k, v := range ev.Payload {
+		payload[k] = v
+	}
+	subject := ev.Subject
+	if ev.UserEmail != "" {
+		payload["user_email"] = ev.UserEmail
+		if subject == "" {
+			subject = "user:" + ev.UserEmail
+		}
+	}
+	return s.hub.Publish(ctx, &store.Event{Topic: c.Type() + "." + ev.Name, Source: "connector:" + c.Type(), Subject: subject, Payload: mustJSON(payload)})
+}
+
+// connectorScheduler checks every enabled connector with events on, each at
+// its own interval plus jitter: a poll for what pushes do not cover, then a
+// subscription sync that re-creates what was deleted in the app. A connector
+// switched off that still has subscriptions keeps being retried until they
+// are gone.
 func (s *Server) connectorScheduler(ctx context.Context) {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
@@ -347,9 +379,12 @@ func (s *Server) scheduleConnectors(ctx context.Context) {
 	}
 	now := time.Now()
 	for _, row := range rows {
-		if !row.Enabled || !row.EventsEnabled {
-			s.nextPoll.Delete(row.ServiceID)
-			continue
+		on := row.Enabled && row.EventsEnabled
+		if !on {
+			if hs, err := s.store.ListConnectorHooks(ctx, row.ServiceID); err != nil || len(hs) == 0 {
+				s.nextPoll.Delete(row.ServiceID)
+				continue
+			}
 		}
 		interval := time.Duration(row.PollIntervalS) * time.Second
 		v, seen := s.nextPoll.Load(row.ServiceID)
@@ -374,7 +409,24 @@ func (s *Server) scheduleConnectors(ctx context.Context) {
 		if !ok || !c.Capabilities().Events {
 			continue
 		}
-		go func() { _, _, _ = s.pollConnector(ctx, sv, c) }()
+		go s.checkConnector(ctx, sv, c, on)
+	}
+}
+
+// checkConnector is one scheduled round for a service.
+func (s *Server) checkConnector(ctx context.Context, sv *store.Service, c connectors.Connector, on bool) {
+	if on {
+		if _, _, err := s.pollConnector(ctx, sv, c); err != nil {
+			if !errors.Is(err, errPollBusy) {
+				_ = s.syncHooks(ctx, sv, c, hookReconcile) // keep the subscriptions healthy; the poll error stays shown
+			}
+			return
+		}
+	}
+	err := s.syncHooks(ctx, sv, c, hookReconcile)
+	s.setEventsError(ctx, sv.ID, err)
+	if err != nil {
+		s.log.Warn("connector subscriptions not in step", "type", c.Type(), "err", err)
 	}
 }
 
@@ -533,6 +585,9 @@ func (s *Server) provisionOne(ctx context.Context, sv *store.Service, c connecto
 			return res
 		}
 		res.Credential = "connector"
+	}
+	if row, err := s.store.GetConnector(ctx, sv.ID); err == nil && row.Enabled && row.EventsEnabled {
+		s.kickHooks(sv.ID) // a newly connected person gets their subscriptions
 	}
 	_ = s.hub.Publish(ctx, &store.Event{Topic: "core.connector.provisioned", Source: "core", Subject: fmt.Sprintf("user:%s", u.Email),
 		Payload: mustJSON(map[string]any{"type": c.Type(), "service_id": sv.ID, "user_email": u.Email, "status": res.Status, "created": acc.Created})})

@@ -27,7 +27,15 @@ import (
 //	POST /auth/logout             Provision, as the new user   WRITE  (closes that session)
 //	GET  /system-config           ConfigureSSO                 read   (systemConfig.read)
 //	PUT  /system-config           ConfigureSSO                 WRITE  (systemConfig.update)
-//	GET  /server/statistics       Poll                         read   (server.statistics)
+//	GET  /users/me                Events: whose key is this    read   (as the person)
+//	GET  /workflows               Events: heal check           read   (workflow.read, as the person)
+//	POST /workflows               Events on                    WRITE  (workflow.create, as the person)
+//	DELETE /workflows/{id}        Events off                   WRITE  (workflow.delete, as the person)
+//
+// Events arrive by push: Immich workflows are per user (a workflow runs only
+// for its owner's assets), so Core creates, with each person's own key, an
+// AssetCreate and an AssetMetadataExtraction workflow whose single step is
+// the built-in immich-plugin-core#webhook. See immich_push.go.
 //
 // /system-config is deprecated since v3.2 in favour of /admin/config (alpha);
 // the connector falls back to /admin/config when /system-config answers 404.
@@ -36,7 +44,10 @@ type immich struct{}
 func init() { Register(immich{}) }
 
 // ImmichAdminPermissions are what the box-wide (admin) API key must allow.
-var ImmichAdminPermissions = []string{"adminUser.read", "adminUser.create", "systemConfig.read", "systemConfig.update", "server.statistics"}
+var ImmichAdminPermissions = []string{"adminUser.read", "adminUser.create", "systemConfig.read", "systemConfig.update"}
+
+// ImmichWorkflowPermissions are what a person's key needs for events.
+var ImmichWorkflowPermissions = []string{"user.read", "workflow.read", "workflow.create", "workflow.delete"}
 
 // ImmichKeyName is the name of the key minted for each person.
 const ImmichKeyName = "Pocket Core"
@@ -204,7 +215,9 @@ func (c immich) Test(ctx context.Context, t Target) (Info, error) {
 	}
 	info.Admin, info.Users = true, len(list)
 	if miss := missing(info.Permissions, ImmichAdminPermissions); len(miss) > 0 {
-		info.Detail = "the key works for reading users but lacks " + strings.Join(miss, ", ") + " — provisioning, SSO or events will fail until it has them (or \"all\")"
+		info.Detail = "the key works for reading users but lacks " + strings.Join(miss, ", ") + " — provisioning or SSO will fail until it has them (or \"all\")"
+	} else if miss := missing(info.Permissions, ImmichWorkflowPermissions); len(miss) > 0 {
+		info.Detail = "the key lacks " + strings.Join(miss, ", ") + ": events for the key's own Immich account will fail until it has them (or \"all\")"
 	}
 	return info, nil
 }
@@ -361,31 +374,20 @@ func (c immich) ConfigureSSO(ctx context.Context, t Target, sc SSOConfig) error 
 }
 
 type immichUserState struct {
-	Email  string `json:"email"`
-	Name   string `json:"name"`
-	Photos int64  `json:"photos"`
-	Videos int64  `json:"videos"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
 }
 
 type immichState struct {
 	Users map[string]immichUserState `json:"users"`
 }
 
+// Poll covers what the workflows do not: new Immich accounts. Assets
+// arrive by push (immich_push.go).
 func (c immich) Poll(ctx context.Context, t Target, state json.RawMessage) ([]Event, json.RawMessage, error) {
 	a, err := adminKey(t)
 	if err != nil {
 		return nil, state, err
-	}
-	var stats struct {
-		UsageByUser []struct {
-			UserID   string      `json:"userId"`
-			UserName string      `json:"userName"`
-			Photos   json.Number `json:"photos"`
-			Videos   json.Number `json:"videos"`
-		} `json:"usageByUser"`
-	}
-	if err := c.call(ctx, t, http.MethodGet, "/server/statistics", a, nil, &stats); err != nil {
-		return nil, state, needAdmin(err)
 	}
 	list, err := c.users(ctx, t, a)
 	if err != nil {
@@ -394,15 +396,6 @@ func (c immich) Poll(ctx context.Context, t Target, state json.RawMessage) ([]Ev
 	cur := immichState{Users: map[string]immichUserState{}}
 	for _, u := range list {
 		cur.Users[u.ID] = immichUserState{Email: strings.ToLower(u.Email), Name: u.Name}
-	}
-	for _, s := range stats.UsageByUser {
-		us := cur.Users[s.UserID]
-		if us.Name == "" {
-			us.Name = s.UserName
-		}
-		us.Photos, _ = s.Photos.Int64()
-		us.Videos, _ = s.Videos.Int64()
-		cur.Users[s.UserID] = us
 	}
 	next, _ := json.Marshal(cur)
 	var prev immichState
@@ -416,17 +409,9 @@ func (c immich) Poll(ctx context.Context, t Target, state json.RawMessage) ([]Ev
 	sort.Strings(ids)
 	var out []Event
 	for _, id := range ids {
-		u := cur.Users[id]
-		old, known := prev.Users[id]
-		if !known {
+		if _, known := prev.Users[id]; !known {
+			u := cur.Users[id]
 			out = append(out, Event{Name: "user_created", UserEmail: u.Email, Payload: map[string]any{"immich_user_id": id, "name": u.Name}})
-		}
-		dp, dv := u.Photos-old.Photos, u.Videos-old.Videos
-		if dp > 0 || dv > 0 {
-			out = append(out, Event{Name: "assets_added", UserEmail: u.Email, Payload: map[string]any{"immich_user_id": id, "photos": max(dp, 0), "videos": max(dv, 0)}})
-		}
-		if dp < 0 || dv < 0 {
-			out = append(out, Event{Name: "assets_removed", UserEmail: u.Email, Payload: map[string]any{"immich_user_id": id, "photos": max(-dp, 0), "videos": max(-dv, 0)}})
 		}
 	}
 	return out, next, nil

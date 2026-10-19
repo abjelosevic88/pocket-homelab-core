@@ -31,7 +31,7 @@ Delivery:
 - Webhook POST of the stored event as JSON with `X-Pocket-Event` (topic), `X-Pocket-Event-ID`, and `X-Pocket-Signature: sha256=<hex HMAC-SHA256(body, secret)>` when a secret is set. Any non-2xx is retried with exponential backoff (10 s doubling, cap 1 h, 8 attempts by default). Deliveries are at-least-once; consumers dedupe on the event id.
 - Topic patterns: `*`, `prefix.*`, exact, comma-separated.
 
-Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|revoked`, `core.connector.provisioned`, `core.test`. Connectors publish `<service type>.<event>` with source `connector:<type>` and `payload.user_email` when the event belongs to a person (`immich.user_created|assets_added|assets_removed`).
+Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|revoked`, `core.connector.provisioned`, `core.test`. Connectors publish `<service type>.<event>` with source `connector:<type>` and `payload.user_email` when the event belongs to a person (`immich.asset_created|asset_processed` pushed by Immich workflows, `immich.user_created`).
 
 ## 4. Profile (`POST /api/v1/pair/claim`, `GET /api/v1/pair/profile`)
 

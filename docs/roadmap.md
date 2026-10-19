@@ -8,8 +8,10 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.3** — [connectors](connectors.md): Core makes or links each person's account in a third-party app and stores their own key as their credential, turns on "Sign in with Pocket Core" in the app (config backed up first, audience enforced at `/oidc/authorize`), and polls the app into `<type>.*` events. First connector: **Immich** (accounts + per-person API keys, OAuth settings, `immich.assets_added` / `assets_removed` / `user_created`). Off by default; `pocket-core connector …` drives it from the console.
 
+**0.4** — events by push: connectors can register hooks in their app (`POST /api/v1/connectors/hooks/{id}` with a per-hook secret) that Core creates, heals and deletes with the Events switch, the people and the audience. Immich gets two workflows per connected person (webhook step) and publishes `immich.asset_created` / `immich.asset_processed` per photo or video, replacing the count polling.
+
 **Next**
-- More connectors, same shape: Jellyfin (users + per-user API key / user id), Nextcloud (users + app passwords, `user_oidc`), Paperless (users + tokens), Audiobookshelf, Navidrome. Event sources that push (webhooks) instead of polling where the app offers them.
+- More connectors, same shape: Jellyfin (users + per-user API key / user id), Nextcloud (users + app passwords, `user_oidc`), Paperless (users + tokens), Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
 - Connector clean-up: disable or remove a person's remote account when they are disabled or deleted in Core (opt-in, with a confirmation).
 - Client: native "Pair with a box" screen (QR → `/pair/claim` → Keychain) and a Core card with box health, pending updates and backup status.
 - Pocket apps adopt the SDK: register on start, resolve siblings through Core instead of `*_URL` env vars, accept device tokens, publish their events.
