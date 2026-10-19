@@ -15,30 +15,56 @@ export default function Apps() {
   if (slug) return <AppDetail slug={slug} onChange={reload} />
   if (loading && !data) return <Loading />
   const apps = data || []
+  const up = apps.filter(a => a.status === 'ok').length
+  const down = apps.filter(a => a.status === 'down').length
   return (
     <>
       <PageHeader title="Apps" sub="Pocket apps that registered themselves with this box." actions={<button className="btn" onClick={reload}>Refresh</button>} />
-      {apps.length === 0 ? <Card><Empty title="No apps registered">Give each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> :
-        <Card flush>
-          <table className="table">
-            <thead><tr><th></th><th>App</th><th>Version</th><th>URL</th><th>Prefix</th><th>Last seen</th><th></th></tr></thead>
-            <tbody>{apps.map(a => <tr key={a.id}>
-              <td><Dot status={a.status} /></td>
-              <td><Link to={`/apps/${a.slug}`}><b>{a.name}</b></Link><div className="muted small">{a.slug}{a.description ? ` · ${a.description}` : ''}</div></td>
-              <td>{a.version || '—'}</td>
-              <td className="mono small">{a.url}{a.public_url && a.public_url !== a.url && <div className="muted">{a.public_url}</div>}</td>
-              <td className="mono small">{a.env_prefix}_URL</td>
-              <td className="muted small" title={when(a.last_seen_at)}>{ago(a.last_seen_at || a.last_check_at)}{a.status === 'down' && <div className="bad">{a.last_error}</div>}</td>
-              <td className="right"><Link className="btn sm" to={`/apps/${a.slug}`}>Open</Link></td>
-            </tr>)}</tbody>
-          </table>
-        </Card>}
-      {settings && <Card title="Register an app" className="mt">
-        <p className="muted small">An app announces itself with one POST on start. Apps built with the Go SDK only need two variables:</p>
-        <pre>{`CORE_URL=${window.location.origin}\nCORE_REGISTRATION_KEY=${settings.registration_key}`}</pre>
-        <p className="muted small">The first registration returns a per-app token the app stores; the key is never needed again. Rotate it under Settings if it leaks. Full manifest format: <code>docs/manifest.md</code>.</p>
-      </Card>}
+      {apps.length === 0 ? <Card><Empty title="No apps registered">Give each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
+        <div className="app-summary">
+          <span className="pill">{apps.length} apps</span>
+          <span className="pill ok">{up} up</span>
+          {down > 0 && <span className="pill err">{down} down</span>}
+          {apps.length - up - down > 0 && <span className="pill">{apps.length - up - down} unknown</span>}
+        </div>
+        <div className="app-tiles">{apps.map(a => <AppTile key={a.id} a={a} />)}</div>
+      </>}
+      {settings && <details className="card register-app mt">
+        <summary><b>Register an app</b><span className="muted small">Two variables for any Pocket app built with the Go SDK</span></summary>
+        <div className="card-body">
+          <pre>{`CORE_URL=${window.location.origin}\nCORE_REGISTRATION_KEY=${settings.registration_key}`}</pre>
+          <p className="muted small">The first registration returns a per-app token the app stores; the key is never needed again. Rotate it under Settings if it leaks. Full manifest format: <code>docs/manifest.md</code>.</p>
+        </div>
+      </details>}
     </>
+  )
+}
+
+function AppTile({ a }: { a: App }) {
+  const navigate = useNavigate()
+  const [iconOk, setIconOk] = useState(true)
+  const pub = a.public_url || a.url
+  const icon = a.icon ? (a.icon.startsWith('http') ? a.icon : pub.replace(/\/$/, '') + a.icon) : ''
+  const state = a.status === 'ok' ? 'ok' : a.status === 'down' ? 'err' : ''
+  return (
+    <div className="app-tile" role="link" tabIndex={0} onClick={() => navigate(`/apps/${a.slug}`)} onKeyDown={e => { if (e.key === 'Enter') navigate(`/apps/${a.slug}`) }}>
+      <div className="app-tile-head">
+        <span className="app-tile-icon">{icon && iconOk ? <img src={icon} alt="" onError={() => setIconOk(false)} /> : a.name[0]}</span>
+        <div className="grow">
+          <div className="app-tile-name">{a.name}</div>
+          <div className="app-tile-meta">{a.version ? `v${a.version}` : 'no version'}</div>
+        </div>
+        <span className={`pill ${state}`} title={a.status === 'down' ? a.last_error : when(a.last_seen_at)}>{a.status === 'ok' ? 'Up' : a.status === 'down' ? 'Down' : 'Unknown'}</span>
+      </div>
+      {a.description && <p className="app-tile-desc">{a.description}</p>}
+      {a.status === 'down' && a.last_error && <p className="app-tile-err">{a.last_error}</p>}
+      <div className="app-tile-foot">
+        <span className="env" title={`${a.env_prefix}_URL\ninternal ${a.url}`}>{a.env_prefix}_*</span>
+        <span className="muted small" title={when(a.last_seen_at)}>seen {ago(a.last_seen_at || a.last_check_at)}</span>
+        <span className="grow" />
+        {pub && <a className="btn sm" href={pub} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>Open ↗</a>}
+      </div>
+    </div>
   )
 }
 
