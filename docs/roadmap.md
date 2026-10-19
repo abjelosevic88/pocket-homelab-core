@@ -20,9 +20,11 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.9** — **Jellyseerr connector**: people are linked by email, else through the Jellyfin account Core's Jellyfin connector linked them to, else imported from Jellyfin (connectors now get a person's links in other services, `Person.Linked`). Requests and issues are **polled**: Jellyseerr's single webhook slot is left to whoever uses it. Topics: `jellyseerr.request_created` / `_approved` / `_declined` / `_failed`, `media_available`, `issue_*`.
 
+**0.10** — **Audiobookshelf connector**: accounts (linked by email, created with their own API key, never taken over by name), linking by hand, "Sign in with Pocket Core" through the built-in OpenID (one provider: the previous one, e.g. PocketID, is saved and put back when switched off; linked accounts get the person's email and are detached from the old provider; reloaded without a restart), and polled `audiobookshelf.listening_started` / `listening_ended` / `item_finished` / `item_added` / `episode_added` / `user_*`. Connectors receive `SSOConfig.People` (email → linked account).
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
-- More connectors, same shape: Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
+- More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.
 - Connector clean-up: disable or remove a person's remote account when they are disabled or deleted in Core (opt-in, with a confirmation).
 - Client: native "Pair with a box" screen (QR → `/pair/claim` → Keychain) and a Core card with box health, pending updates and backup status.
 - Pocket apps adopt the SDK: register on start, resolve siblings through Core instead of `*_URL` env vars, accept device tokens, publish their events.

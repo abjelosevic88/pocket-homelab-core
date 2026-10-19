@@ -440,7 +440,12 @@ func TestImmichConnector(t *testing.T) {
 			Enabled bool `json:"enabled"`
 		} `json:"connector"`
 	}
-	if c := call("GET", "/api/v1/connectors", nil, &list); c != 200 || len(list) == 0 || list[0].Type != "immich" || list[0].ServiceID != sv.ID || list[0].Connector.Enabled {
+	c := call("GET", "/api/v1/connectors", nil, &list)
+	found := false
+	for _, x := range list {
+		found = found || (x.Type == "immich" && x.ServiceID == sv.ID && !x.Connector.Enabled)
+	}
+	if c != 200 || !found {
 		t.Fatalf("connectors %d %+v", c, list)
 	}
 

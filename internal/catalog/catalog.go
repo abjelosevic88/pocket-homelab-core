@@ -116,7 +116,7 @@ var entries = []Entry{
 	{Type: "chaptarr", Name: "Chaptarr / Readarr", Prefix: "CHAPTARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "prowlarr", Name: "Prowlarr", Prefix: "PROWLARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "bazarr", Name: "Bazarr", Prefix: "BAZARR", Group: "Media", Fields: apiKey("Settings → General")},
-	{Type: "audiobookshelf", Name: "Audiobookshelf", Prefix: "ABS", Group: "Media", Fields: token("Settings → Users → API token")},
+	{Type: "audiobookshelf", Name: "Audiobookshelf", Prefix: "ABS", Group: "Media", Fields: []Field{{Key: "TOKEN", Label: "Token", Secret: true, Help: "Settings → API Keys (an administrator's key; root's to manage the root user)"}, {Key: "USER_ID", Label: "User id (optional)"}}},
 	{Type: "navidrome", Name: "Navidrome", Prefix: "NAVIDROME", Group: "Media", Fields: userPass("USER", "PASSWORD")},
 	{Type: "immich", Name: "Immich", Prefix: "IMMICH", Group: "Media", Fields: apiKey("Account → API keys")},
 	{Type: "calibre", Name: "Calibre-Web", Prefix: "CALIBRE", Group: "Media", Fields: userPass("USER", "PASSWORD")},

@@ -106,6 +106,33 @@ Turning sign-in off deletes the provider and the marked block. Redirect URIs: `h
 
 **Events** are polled from the activity log and the newest library items ([topics](events.md#jellyfin-source-connectorjellyfin)): `playback_started`, `playback_stopped`, `item_added`, `user_created`, `user_deleted`, `user_locked_out`, `login_failed`. Sessions coming and going are not published. A playback carries `user_email` only when its Jellyfin account is linked to a person who is enabled and in the service's audience; otherwise it carries just the Jellyfin user's id and name.
 
+## Audiobookshelf
+
+Needs: the Audiobookshelf service in Core with its internal URL, its public URL and an **API key** (Settings → API Keys, 2.26+) for an administrator. Only root's own key may change the root user, so give Core root's key if the owner's account is root. **Test** shows the version, the number of accounts and which OpenID provider people sign in with today.
+
+| Audiobookshelf call | Used by | Writes? |
+|---|---|---|
+| `GET /status` | Test | – |
+| `GET /api/users`, `GET /api/users/:id` | Test, Provision, linking by hand, sign-in, events (finished items) | – |
+| `POST /api/users` | Provision: a missing person; type `user`, active, their email, a 40-character random password never stored, logged or returned | **yes** |
+| `POST /api/api-keys` | Provision: the new account's own key (`Pocket Core · <email>`, no expiry) becomes the person's `TOKEN` | **yes** |
+| `PATCH /api/users/:id` | Sign-in on/off: give a linked account the person's email | **yes** |
+| `PATCH /api/users/:id/openid-unlink` | Sign-in on/off: detach a linked account from the previous provider | **yes** |
+| `GET /api/auth-settings` · `PATCH /api/auth-settings` | Test, sign-in on/off | **yes** |
+| `GET /api/sessions`, `GET /api/libraries`, `GET /api/libraries/:id/items`, `GET /api/libraries/:id/recent-episodes` | Events | – |
+
+**Accounts.** A person matches the account with **their email** and nothing else. A match is **linked** with its `USER_ID` and Core mints nothing. A missing person gets a new account named like the part of their email before `@` (the full email if that name is taken: never taken over by name) plus `USER_ID` and their own API key as `TOKEN`. Nobody knows its password: they sign in with Pocket Core, or an admin sets one. **Linking by hand** works as for Jellyfin (service accounts without an email, the owner under another address).
+
+**Sign in with Pocket Core** uses Audiobookshelf's built-in OpenID, which has **one provider**. Turning it on:
+1. Backs up the sign-in settings to `DATA_DIR/connectors/audiobookshelf-sso-<timestamp>.json`. If they point at another provider (PocketID…), they are also kept as `audiobookshelf-sso-original.json`.
+2. For each linked person: sets the account's email to theirs, and detaches it from the previous provider's subject. Audiobookshelf refuses a second provider for an account ("already linked to a different OpenID subject"), and matches the next sign-in by email.
+3. Sets issuer, endpoints, client id and secret (RS256), button *Sign in with Pocket Core*, **match existing users by email**, and **no group or permissions claim**, so sign-in never changes anyone's type or libraries; Core's audience decides who may sign in. Mobile redirect URIs are kept, plus `audiobookshelf://oauth`. Auto-register, auto-launch and the redirect subfolder stay as they were.
+4. Switches OpenID off and on again in two requests: Audiobookshelf rebuilds its OpenID client only then, so **no restart is needed**. The active methods stay as they were (OpenID-only stays OpenID-only).
+
+Turning it off puts the saved original back (provider, secret, methods; linked accounts are detached again so the old provider matches them by email) and marks the copy `-restored-`. With no original, OpenID is switched off and username/password on. Redirect URIs: `https://<public>/audiobookshelf/auth/openid/callback` and `…/mobile-redirect`, plus the same without `/audiobookshelf` for root installs.
+
+**Events** are polled ([topics](events.md#audiobookshelf-source-connectoraudiobookshelf)): `listening_started`, `listening_ended`, `item_finished`, `item_added`, `episode_added`, `user_created`, `user_deleted`. Listening and finished items carry `user_email` when the Audiobookshelf account is linked to a person.
+
 ## Nextcloud
 
 Needs: the Nextcloud service in Core with its URL, its public URL, and a Nextcloud **admin**:

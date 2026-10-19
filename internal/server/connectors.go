@@ -205,7 +205,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		if wantSSO {
 			err = s.enableSSO(ctx, sv, c)
 		} else {
-			err = c.ConfigureSSO(ctx, s.connectorTarget(sv), connectors.SSOConfig{Enabled: false})
+			err = c.ConfigureSSO(ctx, s.connectorTarget(sv), connectors.SSOConfig{Enabled: false, People: s.ssoPeople(ctx, sv)})
 		}
 		if err != nil {
 			_ = s.store.SetConnectorError(ctx, sv.ID, "sign-in: "+err.Error())
@@ -244,7 +244,35 @@ func (s *Server) enableSSO(ctx context.Context, sv *store.Service, c connectors.
 		return err
 	}
 	return c.ConfigureSSO(ctx, s.connectorTarget(sv), connectors.SSOConfig{Enabled: true, Issuer: s.oidc.Issuer, ClientID: cl.ClientID, ClientSecret: secret, ButtonText: ssoButton,
-		Links: s.ssoLinks(ctx, sv)})
+		Links: s.ssoLinks(ctx, sv), People: s.ssoPeople(ctx, sv)})
+}
+
+// ssoPeople maps each person in the audience (by email) to the app account
+// linked to them; "" when none.
+func (s *Server) ssoPeople(ctx context.Context, sv *store.Service) map[string]string {
+	out := map[string]string{}
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return out
+	}
+	accts, _ := s.store.ListConnectorAccounts(ctx, sv.ID)
+	byUser := map[int64]store.ConnectorAccount{}
+	for _, a := range accts {
+		byUser[a.UserID] = a
+	}
+	for i := range users {
+		u := &users[i]
+		if u.Disabled || !sv.InAudience(u) {
+			continue
+		}
+		email := strings.ToLower(strings.TrimSpace(u.Email))
+		if a, ok := byUser[u.ID]; ok && a.RemoteID != "" && a.Status != connectors.StatusError {
+			out[email] = a.RemoteID
+		} else {
+			out[email] = ""
+		}
+	}
+	return out
 }
 
 // ssoLinks maps the username Core sends at sign-in (preferred_username) to

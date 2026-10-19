@@ -87,7 +87,7 @@ function OIDCClients() {
   const rotate = async (c: OIDCClient) => { const r = await api.put<{ client: OIDCClient; client_secret: string }>(`${V1}/oidc/clients/${c.id}`, { rotate_secret: true }); setSecret({ id: c.client_id, secret: r.client_secret }) }
   return (
     <Card title="Single sign-on (OpenID Connect)" actions={<button className="btn sm primary" onClick={() => setEdit({ name: '', redirect_uris: '', public: false })}>Add client</button>}>
-      <p className="muted small">Core is an OpenID provider. Point Immich, Nextcloud, Paperless, Jellyfin (SSO plugin) or any Pocket app at <span className="inline-code">{issuer}</span> and everyone signs in with their Core account. Pocket apps that ask in their manifest get a client automatically.</p>
+      <p className="muted small">Core is an OpenID provider. Point Immich, Nextcloud, Paperless, Audiobookshelf, Jellyfin (SSO plugin) or any Pocket app at <span className="inline-code">{issuer}</span> and everyone signs in with their Core account. Pocket apps that ask in their manifest get a client automatically.</p>
       {(data || []).length > 0 && <div className="client-list mt">{(data || []).map(c => (
         <div key={c.id} className="client-row">
           <div className="client-head">

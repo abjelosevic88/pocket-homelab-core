@@ -95,6 +95,10 @@ type SSOConfig struct {
 	// username Core sends (preferred_username) → the app account each
 	// linked person must land in; "" = Core has no link for that name.
 	Links map[string]string
+	// People: each person in the audience, by email → the app account
+	// linked to them ("" none). Apps that match sign-ins by email
+	// (Audiobookshelf) make the linked account carry it. Sent on and off.
+	People map[string]string
 }
 
 // Event is one thing that happened in the app. Core publishes it as

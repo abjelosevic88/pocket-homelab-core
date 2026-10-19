@@ -53,6 +53,19 @@ Polled every check interval from Jellyfin's activity log and its newest library 
 
 Sessions starting and ending are not published.
 
+### Audiobookshelf (source `connector:audiobookshelf`)
+
+Polled every check interval from listening sessions, each account's progress, the newest items of every library and recent podcast episodes. The first check only records a baseline. `user_email` is the person linked to the Audiobookshelf account.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `audiobookshelf.listening_started` | `session:<id>` | someone started listening | `user_email`, `audiobookshelf_user_id`, `audiobookshelf_user`, `session_id`, `item_id`, `episode_id`, `title`, `author`, `media_type` (`book` \| `podcast`), `device`, `duration_seconds`, `started_at`, `url` |
+| `audiobookshelf.listening_ended` | `session:<id>` | the session was not synced for 15 minutes | same, plus `ended_at`, `listened_seconds`, `position_seconds`, `progress` (0–1) |
+| `audiobookshelf.item_finished` | `finished:<user>:<item>[:<episode>]` | a book or episode was marked finished | `user_email`, `audiobookshelf_user_id`, `item_id`, `episode_id`, `title`, `subtitle`, `media_type`, `duration_seconds`, `finished_at`, `url` |
+| `audiobookshelf.item_added` | `item:<id>` | a book or podcast appeared in a library | `item_id`, `title`, `author`, `narrator`, `series`, `year`, `media_type`, `library`, `duration_seconds`, `added_at`, `url` (no `user_email`: libraries are shared) |
+| `audiobookshelf.episode_added` | `episode:<id>` | a podcast episode was downloaded | `episode_id`, `item_id`, `title`, `podcast`, `published_at`, `added_at`, `url` |
+| `audiobookshelf.user_created` · `user_deleted` | `audiobookshelf-user:<id>` | account changes | `audiobookshelf_user_id`, `audiobookshelf_user`, `type`, plus `user_email` when linked |
+
 ### Nextcloud (source `connector:nextcloud`)
 
 Pushed by Nextcloud's webhooks (arrive with its cron, within about 5 minutes). `user_email` is the person Core linked to the account.
