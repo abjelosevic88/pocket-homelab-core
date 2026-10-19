@@ -3,6 +3,7 @@ import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import type { Delivery, Event, Topic, Webhook } from '../lib/types'
 import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceKind } from '../components/EventView'
+import { Select } from '../components/Select'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
 
@@ -37,6 +38,7 @@ function Log() {
   const { toast } = useToast()
   const [topic, setTopic] = useState('')
   const [source, setSource] = useState('')
+  const [category, setCategory] = useState('')
   const [live, setLive] = useState(true)
   const [items, setItems] = useState<Event[]>([])
   const [fresh, setFresh] = useState<Set<number>>(new Set())
@@ -60,7 +62,7 @@ function Log() {
   }, [live, topic])
   const sources = [...new Set(items.map(e => e.source))].map(src => ({ src, info: sourceInfo(src, ctx), n: items.filter(e => e.source === src).length }))
   const groups: [SourceKind, string][] = [['app', 'Pocket apps'], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
-  const shown = source ? items.filter(e => e.source === source) : items
+  const shown = items.filter(e => (!source || e.source === source) && (!category || sourceInfo(e.source, ctx).kind === category))
   const days: [string, Event[]][] = []
   for (const e of shown) { const k = dayLabel(e.created_at); const last = days[days.length - 1]; if (last && last[0] === k) last[1].push(e); else days.push([k, [e]]) }
   const copy = async (e: Event) => { await navigator.clipboard.writeText(JSON.stringify(e.payload, null, 2)); toast('Payload copied') }
@@ -69,20 +71,15 @@ function Log() {
       <div className="toolbar">
         <div className="search"><span className="ico">⌕</span><input placeholder="Topic or pattern, e.g. kitchen.*" value={topic} onChange={e => setTopic(e.target.value.toLowerCase())} list="event-topics" /></div>
         <datalist id="event-topics">{(topics || []).map(t => <option key={t.topic} value={t.topic}>{t.count}</option>)}</datalist>
+        <div className="ev-filter"><Select ariaLabel="Category" value={category} onChange={v => { setCategory(v); setSource('') }} placeholder="All categories" clearLabel="All categories"
+          options={groups.filter(([k]) => sources.some(x => x.info.kind === k)).map(([k, title]) => ({ value: k, label: title, hint: String(sources.filter(x => x.info.kind === k).reduce((n, x) => n + x.n, 0)) }))} /></div>
+        <div className="ev-filter wide"><Select ariaLabel="Source" value={source} onChange={setSource} placeholder={`All sources · ${items.length}`} clearLabel="All sources"
+          options={groups.flatMap(([k, title]) => sources.filter(x => x.info.kind === k && (!category || k === category)).sort((x, y) => x.info.label.localeCompare(y.info.label)).map(x => ({ value: x.src, label: x.info.label, hint: String(x.n), group: title })))} /></div>
+        {(source || category) && <button className="btn sm ghost" onClick={() => { setSource(''); setCategory('') }}>Clear</button>}
         <span className="spacer" />
         <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
         <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
       </div>
-      {sources.length > 1 && <div className="source-panel">
-        <div className="source-panel-head">
-          <b>Sources</b><span className="muted small">{source ? `Showing ${sourceInfo(source, ctx).label} only` : `${sources.length} sending events`}</span><span className="spacer" />
-          <button type="button" className={`chip ${source === '' ? 'active' : ''}`} onClick={() => setSource('')}>All <span className="muted">{items.length}</span></button>
-        </div>
-        {groups.map(([kind, title]) => { const list = sources.filter(x => x.info.kind === kind).sort((x, y) => x.info.label.localeCompare(y.info.label)); return list.length === 0 ? null : (
-          <div key={kind} className="source-row"><span className="source-row-title">{title}</span>
-            <div className="source-row-chips">{list.map(({ src, info, n }) => <button type="button" key={src} className={`chip ${source === src ? 'active' : ''}`} onClick={() => setSource(source === src ? '' : src)}><SourceIcon info={info} />{info.label}<span className="muted">{n}</span></button>)}</div>
-          </div>) })}
-      </div>}
       {shown.length === 0 ? <Card><Empty title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
         days.map(([day, list]) => <section key={day} className="svc-group">
           <div className="svc-group-head"><span>{day}</span><span className="count">{list.length}</span></div>

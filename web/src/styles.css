@@ -690,3 +690,9 @@ html, body { overflow-x: hidden; }
 .source-panel-head .chip { padding: 5px 12px; }
 .source-panel .chip .feed-ico { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
 @media (max-width: 700px) { .source-row { grid-template-columns: 1fr; gap: 8px; } }
+
+/* Events toolbar: filters on one line */
+.ev-filter { width: 170px; flex: 0 0 auto; }
+.ev-filter.wide { width: 210px; }
+.toolbar .ev-filter .sel { width: 100%; min-width: 0; }
+@media (max-width: 900px) { .ev-filter, .ev-filter.wide { width: auto; flex: 1 1 45%; } }
