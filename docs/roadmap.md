@@ -16,9 +16,11 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.7** — **Nextcloud connector**: accounts (linked by email, created with their own app password, never taken over by name), linking by hand, "Sign in with Pocket Core" through `user_oidc` with the new per-client **`pocket_uid` claim** (Core's linked account id, only for linked people), and **push events** from `webhook_listeners`: files, calendar events and tasks. Core gains **connector-only service fields** (the admin login password Nextcloud wants for password-confirmed calls; never in profiles, never per person) and drops pushed deliveries from **before Core connected the person**.
 
+**0.8** — **Paperless-ngx connector**: accounts (linked by email, or created in a *Pocket Core* group with member permissions and their own token; never taken over by name), linking by hand, and **push events** from two workflows with a webhook action: `paperless.document_added` / `document_updated`. Sign-in stays a documented manual step (Paperless reads OIDC providers from its environment).
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
-- More connectors, same shape: Paperless (users + tokens), Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
+- More connectors, same shape: Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
 - Connector clean-up: disable or remove a person's remote account when they are disabled or deleted in Core (opt-in, with a confirmation).
 - Client: native "Pair with a box" screen (QR → `/pair/claim` → Keychain) and a Core card with box health, pending updates and backup status.
 - Pocket apps adopt the SDK: register on start, resolve siblings through Core instead of `*_URL` env vars, accept device tokens, publish their events.

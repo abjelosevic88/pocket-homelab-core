@@ -122,7 +122,7 @@ var entries = []Entry{
 	{Type: "pinepods", Name: "PinePods", Prefix: "PINEPODS", Group: "Media", Fields: apiKey("")},
 
 	// ---- Files, notes, code ----
-	{Type: "paperless", Name: "Paperless-ngx", Prefix: "PAPERLESS", Group: "Files", Fields: token("Django admin → Tokens")},
+	{Type: "paperless", Name: "Paperless-ngx", Prefix: "PAPERLESS", Group: "Files", Fields: token("A superuser's token: My Profile → API Auth Token")},
 	{Type: "nextcloud", Name: "Nextcloud", Prefix: "NEXTCLOUD", Group: "Files", Fields: []Field{{Key: "USERNAME", Label: "Username"}, {Key: "APP_PASSWORD", Label: "App password", Secret: true},
 		{Key: "ADMIN_PASSWORD", Label: "Login password (connector only)", Secret: true, ConnectorOnly: true, Help: "Only for the connector: Nextcloud wants the admin's real password, not an app password, to add accounts and change sign-in. Stays in Core, never sent to apps or devices."}}},
 	{Type: "forgejo", Name: "Forgejo / Gitea", Prefix: "FORGEJO", Group: "Files", Fields: token("Settings → Applications")},

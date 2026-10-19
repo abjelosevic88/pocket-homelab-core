@@ -67,6 +67,18 @@ Pushed by Nextcloud's webhooks (arrive with its cron, within about 5 minutes). `
 
 The birthday calendar, previews, versions, hidden and partial files, and anything from before Core connected the person are not published.
 
+### Paperless-ngx (source `connector:paperless`)
+
+Pushed by two Paperless workflows; arrives as soon as Paperless has processed the document.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `paperless.document_added` | `document:<id>` | a document was consumed (upload, consume folder, mail) | `user_email` (the owner's person), `paperless_user`, `document_id`, `title`, `correspondent`, `document_type`, `created` (the document's date), `added`, `original_filename`, `url` |
+| `paperless.document_updated` | `document:<id>` | a document's details changed | same |
+| `paperless.user_created` · `user_deleted` | `user:<name>` | accounts appearing or disappearing (polled) | `paperless_user`, `name`, plus `user_email` when known |
+
+Documents without an owner, and documents added before Core connected the person, are not published.
+
 ## Read
 
 | Method | Path | Notes |

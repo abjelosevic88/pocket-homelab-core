@@ -143,6 +143,33 @@ The login page gets a *Log in with Pocket Core* button; password login stays. Tu
 
 New and deleted accounts are polled.
 
+## Paperless-ngx
+
+Needs: the Paperless service in Core with its URL, its public URL and a **superuser's** API token (`TOKEN`: My Profile → API Auth Token). **Test** shows the version and the number of accounts (Paperless's own `consumer` and `AnonymousUser` are not counted).
+
+| Paperless call | Used by | Writes? |
+|---|---|---|
+| `GET /api/ui_settings/` | Test (whose token, superuser?) | – |
+| `GET /api/users/` | Test, Provision, linking by hand, account events | – |
+| `GET /api/groups/?name__iexact=Pocket Core` · `POST /api/groups/` | Provision: the group new accounts go in (created once) | **yes** |
+| `POST /api/users/` | Provision: a missing person; user name = the email's local part, first/last name and email from Core, a 40-character random password used once and never stored, logged or returned | **yes** |
+| `POST /api/token/` | Provision: as the new account, its own API token | **yes** |
+| `GET/POST/DELETE /api/workflows/` | Events on/off | **yes** |
+
+**Accounts.** A person is **linked** to the account with their email. With none, Core creates one in the **Pocket Core** group and keeps the person's own `TOKEN`. That group may view, add, change and delete documents, notes, tags, correspondents, document types, storage paths, custom fields, saved views, share links, mail accounts and rules, and see their tasks. It does not cover users, groups, workflows or settings. Paperless's object permissions still apply, so a member sees their own documents and what is shared with them; adjust the group in Paperless if the household wants more. An account with that name but **another email is never taken over**: link the person by hand. Paperless's first admin usually has `root@localhost` as email, so the owner is linked by hand (`pocket-core connector paperless link <email> admin`) before provisioning anyone.
+
+**Sign in with Pocket Core** cannot be switched on by Core: Paperless reads its OpenID providers from its environment at start. To set it up by hand:
+1. In Core, Settings → OIDC clients → add a client with redirect URI `https://<paperless>/accounts/oidc/pocket-core/login/callback/`.
+2. In Paperless's environment:
+   ```
+   PAPERLESS_APPS=allauth.socialaccount.providers.openid_connect
+   PAPERLESS_SOCIALACCOUNT_PROVIDERS={"openid_connect":{"OAUTH_PKCE_ENABLED":true,"APPS":[{"provider_id":"pocket-core","name":"Pocket Core","client_id":"<id>","secret":"<secret>","settings":{"server_url":"https://<core>/.well-known/openid-configuration"}}]}}
+   ```
+   and restart Paperless.
+3. People with an existing account connect it once from their Paperless profile (social accounts). Set `PAPERLESS_SOCIAL_AUTO_SIGNUP` / `PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS` to taste.
+
+**Events by push** ([topics](events.md#paperless-ngx-source-connectorpaperless)): two workflows, *Pocket Core · document added* (Document Added, every source: consume folder, API, mail, web) and *Pocket Core · document updated*. Each has one webhook action that sends JSON (`use_params`, `as_json`) rendered from Paperless's placeholders (id, title, owner's user name, correspondent, type, created and added dates, original file name; never the document itself) with Core's per-hook secret header. Workflows run for every account, so Core attributes each delivery to the person linked to the owner. It drops documents without an owner and documents added before Core connected the person. Paperless sends from its task queue and retries a failed call three times. New and deleted accounts are polled.
+
 ## From the console
 
 Everything above is also available without a browser, through the running server (so locking and the bus behave the same):
