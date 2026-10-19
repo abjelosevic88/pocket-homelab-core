@@ -45,7 +45,7 @@ A link issues tokens for a person only when all of these hold (the first that fa
 
 ```go
 tok, err := core.ActAs(ctx, user.Email, "money", "transactions:write")
-// tok.AccessToken (pcx_…), tok.URL (where the target lives); cached until a minute before expiry
+// tok.AccessToken (pcx_…), tok.URL (where the target lives); every call asks Core, so use it for the work at hand
 var le *sdk.LinkError
 if errors.As(err, &le) { /* le.Reason is one of the table above */ }
 
@@ -61,7 +61,7 @@ A link token starts with `pcx_`. `sdk.IsCoreToken` deliberately does **not** mat
 3. **Enforces the scope.** It allows only the routes the scope covers and keeps everything else closed, ideally limiting changes to rows the acting app created (Money: `source = <acting slug>`).
 4. Records the acting app in its audit trail.
 
-Core checks the links again at every introspection, so switching a link off stops live tokens at once, apart from the target's introspection cache (60 s in the SDK). A `pcx_` token is useless against Core's own API.
+Core checks the links again at every introspection, and `ActAs` asks Core for a fresh token every time, so switching a link off stops the next action at once. A token already handed out keeps working only for as long as the target caches its introspection verdict (60 s in the SDK). A `pcx_` token is useless against Core's own API.
 
 ## API
 

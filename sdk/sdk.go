@@ -184,7 +184,6 @@ type Client struct {
 	token string
 	oidc  OIDCClient
 	cache map[string]cached
-	links map[string]*LinkToken
 }
 
 type cached struct {
@@ -194,7 +193,7 @@ type cached struct {
 
 // New creates a client. An empty base URL yields a client whose calls return ErrNotConfigured.
 func New(baseURL string, opts Options) *Client {
-	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}, links: map[string]*LinkToken{}}
+	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -504,7 +503,6 @@ type LinkToken struct {
 	App         string `json:"app"`
 	URL         string `json:"url"`
 	PublicURL   string `json:"public_url"`
-	expires     time.Time
 }
 
 // LinkError is Core refusing a link token; Reason is machine-readable
@@ -518,19 +516,13 @@ type LinkError struct {
 func (e *LinkError) Error() string { return "pocket core: " + e.Message }
 
 // ActAs returns a token (and the target's address) to call app `target` as
-// the person with this email, for the scopes. Tokens are cached until a
-// minute before they expire.
+// the person with this email, for the scopes. Every call asks Core, so a link
+// switched off stops the next action at once; use the token for the work at
+// hand rather than keeping it.
 func (c *Client) ActAs(ctx context.Context, email, target string, scopes ...string) (*LinkToken, error) {
 	if !c.Configured() {
 		return nil, ErrNotConfigured
 	}
-	key := strings.ToLower(email) + "|" + target + "|" + strings.Join(scopes, " ")
-	c.mu.RLock()
-	if t, ok := c.links[key]; ok && time.Now().Before(t.expires) {
-		c.mu.RUnlock()
-		return t, nil
-	}
-	c.mu.RUnlock()
 	body := map[string]any{"user": email, "app": target, "scopes": scopes}
 	b, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/v1/links/token", bytes.NewReader(b))
@@ -562,13 +554,6 @@ func (c *Client) ActAs(ctx context.Context, email, target string, scopes ...stri
 	if err := json.Unmarshal(raw, &t); err != nil {
 		return nil, err
 	}
-	t.expires = time.Now().Add(time.Duration(t.ExpiresIn)*time.Second - time.Minute)
-	c.mu.Lock()
-	if len(c.links) > 500 {
-		c.links = map[string]*LinkToken{}
-	}
-	c.links[key] = &t
-	c.mu.Unlock()
 	return &t, nil
 }
 
