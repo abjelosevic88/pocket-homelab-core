@@ -151,6 +151,27 @@ Triggers switched on (only those the version has): grab, import (Lidarr: release
 
 Every delivery is a **household event**: no `user_email` (connectors mark such deliveries `Shared`, and Core publishes them without looking up a person). Test calls are dropped; the same body twice inside 24 h is published once (health and update events are never deduplicated, they legitimately repeat).
 
+## Uptime Kuma
+
+Events only, **polled** (no accounts or sign-in; adding a notification in Kuma needs its socket.io login, so Core reads instead). Read-only:
+
+| Call | Needs | Gives |
+|---|---|---|
+| `GET /metrics` | `API_KEY` (Settings → API Keys; sent as the Basic-auth password) | every monitor's status and certificate days |
+| `GET /api/status-page/:slug` · `/api/status-page/heartbeat/:slug` | `STATUS_SLUG` (public) | the page's monitors and the message of their last check |
+
+With an API key Core watches every monitor; with only a slug, the monitors on that page. With both, events carry the last check's message. Down, up and certificate events are **household events** (no `user_email`). The first check records what is already down or expiring without announcing it; *pending* (Kuma retrying) is not down. Choose the check interval in the Events section: down is noticed within one interval.
+
+## Dawarich
+
+Events, **polled**, for the account whose `API_KEY` is saved on the service; link that account to its person under People (Dawarich has no API to list or create users, so there is no provisioning, and its OpenID sign-in is environment-only: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER`, `OIDC_REDIRECT_URI` on the container). Reads `GET /api/v1/health` (version header), `/api/v1/users/me`, the newest of `/api/v1/points` and `/api/v1/visits` of the last 14 days.
+
+**Exact positions never go on the bus**: no coordinates, no addresses. Events: `tracking_stopped` (no new point for 12 hours) and `tracking_resumed`; `visit_detected` and `visit_confirmed` (name, times, duration); `city_entered` / `country_entered` when Dawarich reverse-geocodes points (a geocoder configured in Dawarich).
+
+## Maloja
+
+Events, **polled** from the public read API (`/apis/mlj_1/scrobbles`, newest first; `artistinfo` to spot a first listen). Maloja is one person's history with no accounts: link **Maloja's listener** to its person under People and every scrobble carries their email. An `API_KEY` on the service is optional: Core only reads, and Test checks the key that scrobbling devices use.
+
 ## Nextcloud
 
 Needs: the Nextcloud service in Core with its URL, its public URL, and a Nextcloud **admin**:

@@ -20,6 +20,7 @@ const FILES: Record<string, string> = {
   "jellystat": "jellystat.svg",
   "komodo": "komodo.png",
   "kuma": "kuma.svg",
+  "maloja": "maloja.png",
   "lidarr": "lidarr.png",
   "lubelogger": "lubelogger.png",
   "metube": "metube.svg",

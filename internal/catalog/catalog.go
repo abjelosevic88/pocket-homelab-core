@@ -89,7 +89,7 @@ var entries = []Entry{
 	{Type: "glances", Name: "Glances", Prefix: "GLANCES", Group: "Server", Fields: []Field{{Key: "STORAGE_MOUNT", Label: "Extra mount point"}, {Key: "TEMPS_URL", Label: "Temperatures JSON URL"}}},
 	{Type: "homepage", Name: "Dashboard link", Prefix: "HOMEPAGE", Group: "Server"},
 	{Type: "truenas", Name: "TrueNAS", Prefix: "TRUENAS", Group: "Server", Fields: apiKey("Read-only key is enough")},
-	{Type: "kuma", Name: "Uptime Kuma", Prefix: "KUMA", Group: "Server", Fields: []Field{{Key: "STATUS_SLUG", Label: "Status page slug"}, {Key: "API_KEY", Label: "API key", Secret: true}}},
+	{Type: "kuma", Name: "Uptime Kuma", Prefix: "KUMA", Group: "Server", Fields: []Field{{Key: "STATUS_SLUG", Label: "Status page slug"}, {Key: "API_KEY", Label: "API key", Secret: true, Help: "Settings → API Keys (lets Core read every monitor's status from /metrics)"}}},
 	{Type: "komodo", Name: "Komodo", Prefix: "KOMODO", Group: "Server", Fields: []Field{{Key: "API_KEY", Label: "API key", Secret: true}, {Key: "API_SECRET", Label: "API secret", Secret: true}}},
 	{Type: "backrest", Name: "Backrest", Prefix: "BACKREST", Group: "Server", Fields: append(userPass("USERNAME", "PASSWORD"), Field{Key: "GRACE_HOURS", Label: "Grace hours"})},
 	{Type: "scrutiny", Name: "Scrutiny", Prefix: "SCRUTINY", Group: "Server"},
@@ -135,6 +135,7 @@ var entries = []Entry{
 	{Type: "subscriptions", Name: "Subscriptions page", Prefix: "SUBSCRIPTIONS", Group: "Money"},
 	{Type: "lubelogger", Name: "LubeLogger", Prefix: "LUBELOGGER", Group: "Life", Fields: append(userPass("USERNAME", "PASSWORD"), Field{Key: "CURRENCY", Label: "Currency"}, Field{Key: "DISTANCE_UNIT", Label: "Distance unit"}, Field{Key: "VOLUME_UNIT", Label: "Volume unit"}, Field{Key: "VEHICLE_ID", Label: "Vehicle id"}, Field{Key: "DECIMAL", Label: "Decimal separator"})},
 	{Type: "dawarich", Name: "Dawarich", Prefix: "DAWARICH", Group: "Life", Fields: apiKey("Account → API key")},
+	{Type: "maloja", Name: "Maloja", Prefix: "MALOJA", Group: "Media", Fields: apiKey("Settings → API keys (for scrobbling devices; Core itself only reads)")},
 }
 
 var byType = map[string]Entry{}

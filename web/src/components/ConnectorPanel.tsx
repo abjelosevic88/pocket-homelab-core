@@ -154,9 +154,9 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
         </section>}
       </div>
 
-      {c.capabilities.provision && <div className="cx-people-block">
+      {(c.capabilities.provision || c.capabilities.link) && <div className="cx-people-block">
         <div className="cx-block-head"><b>People</b><span className="muted small">{people ? `${people.filter(p => p.status === 'ok' || p.status === 'linked').length} of ${people.length} connected` : ''}</span><span className="spacer" />
-          <button className="btn sm" disabled={off || busy === 'all'} onClick={() => provision({ all: true })} title="Everyone in the audience without an account">{busy === 'all' ? 'Working…' : 'Provision everyone missing'}</button></div>
+          {c.capabilities.provision && <button className="btn sm" disabled={off || busy === 'all'} onClick={() => provision({ all: true })} title="Everyone in the audience without an account">{busy === 'all' ? 'Working…' : 'Provision everyone missing'}</button>}</div>
         {!people ? <Loading /> : people.length === 0 ? <p className="muted small">Nobody is in this service's audience.</p> :
           <div className="cx-people">{people.map(p => (
             <div key={p.user_id} className={`cx-person ${p.disabled || !p.in_audience ? 'off' : ''}`}>
@@ -169,7 +169,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
               {!p.in_audience && <span className="badge warn">outside audience</span>}
               {p.manual && <span className="badge" title="Linked by hand; provisioning leaves it alone">by hand</span>}
               <StatusBadge status={p.status} />
-              {p.status !== 'ok' && !p.manual && p.in_audience && !p.disabled ? <button className="btn sm" disabled={off || busy === `p${p.user_id}`} onClick={() => provision({ user_id: p.user_id })}>{busy === `p${p.user_id}` ? '…' : p.status === 'linked' ? 'Re-check' : 'Provision'}</button> : <span className="cx-btn-gap" />}
+              {c.capabilities.provision && p.status !== 'ok' && !p.manual && p.in_audience && !p.disabled ? <button className="btn sm" disabled={off || busy === `p${p.user_id}`} onClick={() => provision({ user_id: p.user_id })}>{busy === `p${p.user_id}` ? '…' : p.status === 'linked' ? 'Re-check' : 'Provision'}</button> : <span className="cx-btn-gap" />}
             </div>))}</div>}
       </div>}
     </Modal>

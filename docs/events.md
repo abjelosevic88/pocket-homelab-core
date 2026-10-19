@@ -84,6 +84,35 @@ Pushed by a Webhook connection in each app, as it happens. Household events: **n
 
 The item: Radarr `movie_id`, `movie`, `year`, `tmdb_id`, `imdb_id`; Sonarr `series_id`, `series`, `year`, `tvdb_id`, `imdb_id`, `episodes` [`season`, `episode`, `title`, `air_date`] and, for one episode, `season`, `episode`, `episode_title`; Lidarr `artist_id`, `artist`, `musicbrainz_id`, `album` (`albums` when several), `release_date`, `tracks`. Always `event` (the app's eventType), `instance`, a readable `title` (`Dune (2021)`, `Severance S02E01`, `Massive Attack – Mezzanine`) and `url` into the app.
 
+### Uptime Kuma (source `connector:kuma`)
+
+Polled. Household events: no `user_email`.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `kuma.monitor_down` | `monitor:<name>` | a monitor went down | `monitor`, `monitor_type`, `target` (URL or host:port), `message` (last check, with a status page), `checked_at`, `title`, `url` |
+| `kuma.monitor_up` | `monitor:<name>` | it is up again | same, plus `down_since`, `down_for_seconds` |
+| `kuma.cert_expiring` | `monitor:<name>` | the certificate passes 14, 7, 3 or 1 days left (one event per step) | same, plus `days_remaining` |
+
+### Dawarich (source `connector:dawarich`)
+
+Polled for the API key's account; `user_email` = the person it is linked to. Never coordinates or addresses.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `dawarich.tracking_stopped` · `tracking_resumed` | `tracking:<user>` | no new point for 12 hours / points again | `last_point_at`, `silent_hours`, `title`, `url` |
+| `dawarich.visit_detected` · `visit_confirmed` | `visit:<id>` | a new visit, or one confirmed since | `visit_id`, `name`, `status`, `started_at`, `ended_at`, `duration_minutes` |
+| `dawarich.city_entered` · `country_entered` | `city:<name>` · `country:<name>` | the newest point is in another city or country (needs reverse geocoding in Dawarich) | `city`, `country`, `from_city` / `from_country` |
+
+### Maloja (source `connector:maloja`)
+
+Polled; `user_email` = the person linked as Maloja's listener.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `maloja.scrobbled` | `scrobble:<hash>` | a listen was scrobbled | `title`, `artist`, `artists`, `album`, `album_artists`, `listened_seconds`, `length_seconds`, `client`, `at`, `url` |
+| `maloja.new_artist` | `artist:<name>` | the first listen ever of an artist | `artist`, `track`, `at`, `url` |
+
 ### Nextcloud (source `connector:nextcloud`)
 
 Pushed by Nextcloud's webhooks (arrive with its cron, within about 5 minutes). `user_email` is the person Core linked to the account.

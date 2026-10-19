@@ -24,6 +24,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.11** — **Radarr, Sonarr and Lidarr connectors** (events only): one *Pocket Core* Webhook connection per app with Core's secret header, kept in step with the Events switch, for grabs, imports and upgrades, additions and deletions, failures, manual interaction, health errors and app updates (`radarr.*`, `sonarr.*`, `lidarr.*`). Deliveries can now be **household events** (`Delivery.Shared`): published without a person.
 
+**0.12** — **Uptime Kuma, Dawarich and Maloja connectors** (events, polled): Kuma down / up / certificate warnings for every monitor (`/metrics` with an API key) or a status page's; Dawarich tracking stopped / resumed, visits and city / country changes for the linked account, never coordinates; Maloja scrobbles and first listens for the linked listener. Connectors that can only link (no provisioning) get the people table.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.
