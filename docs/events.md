@@ -79,6 +79,18 @@ Pushed by two Paperless workflows; arrives as soon as Paperless has processed th
 
 Documents without an owner, and documents added before Core connected the person, are not published.
 
+### Jellyseerr (source `connector:jellyseerr`)
+
+Polled every check interval; the first check only records a baseline. `user_email` is the person Core linked to the requester's (or reporter's) Jellyseerr user.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `jellyseerr.request_created` | `request:<id>` | someone asked for a movie or show | `user_email`, `request_id`, `title`, `year`, `media_type` (`movie` \| `tv`), `tmdb_id`, `is_4k`, `seasons`, `status`, `media_status`, `requested_by`, `auto_request`, `requested_at`, `at`, `url` |
+| `jellyseerr.request_approved` · `request_declined` · `request_failed` | `request:<id>` | the request's status changed | same, plus `modified_by` when someone else did it |
+| `jellyseerr.media_available` · `media_partially_available` | `request:<id>` | what was requested arrived (all of it, or some seasons) | same |
+| `jellyseerr.issue_created` · `issue_resolved` · `issue_reopened` | `issue:<id>` | a problem report | `user_email` (the reporter), `issue_id`, `issue_type` (`video` \| `audio` \| `subtitles` \| `other`), `title`, `year`, `media_type`, `tmdb_id`, `reported_by`, `reported_at`, `url` |
+| `jellyseerr.user_created` | `user:<id>` | a new Jellyseerr user | `jellyseerr_user_id`, `name`, plus `user_email` when linked |
+
 ## Read
 
 | Method | Path | Notes |

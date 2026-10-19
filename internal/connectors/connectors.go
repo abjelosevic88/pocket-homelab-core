@@ -69,6 +69,10 @@ type Person struct {
 	// KeepOwnCredential: the person already set their own credential for
 	// this service in Core. Make or find the account but mint nothing.
 	KeepOwnCredential bool
+	// Linked: the person's accounts in other services Core connected them
+	// to, by service type (jellyfin → Jellyfin user id). Jellyseerr finds
+	// and imports people through their Jellyfin account.
+	Linked map[string]string
 }
 
 // Account is the result of provisioning one person.

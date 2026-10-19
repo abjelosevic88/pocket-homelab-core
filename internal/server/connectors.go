@@ -590,7 +590,7 @@ func (s *Server) provisionOne(ctx context.Context, sv *store.Service, c connecto
 	}
 	pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	acc, err := c.Provision(pctx, s.connectorTarget(sv), connectors.Person{Email: u.Email, Name: u.Name, KeepOwnCredential: own})
+	acc, err := c.Provision(pctx, s.connectorTarget(sv), connectors.Person{Email: u.Email, Name: u.Name, KeepOwnCredential: own, Linked: s.linkedElsewhere(ctx, u.ID, sv.ID)})
 	rec := &store.ConnectorAccount{ServiceID: sv.ID, UserID: u.ID, RemoteID: acc.RemoteID, Status: acc.Status}
 	if err != nil {
 		rec.Status, rec.Error = connectors.StatusError, err.Error()
@@ -735,6 +735,25 @@ func (s *Server) handleUserConnectors(w http.ResponseWriter, r *http.Request) {
 		out = append(out, it)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// linkedElsewhere is the person's accounts in the other services Core
+// connected them to: service type → account id.
+func (s *Server) linkedElsewhere(ctx context.Context, userID, except int64) map[string]string {
+	out := map[string]string{}
+	accts, err := s.store.ListUserConnectorAccounts(ctx, userID)
+	if err != nil {
+		return out
+	}
+	for _, a := range accts {
+		if a.ServiceID == except || a.RemoteID == "" || a.Status == connectors.StatusError {
+			continue
+		}
+		if sv, err := s.store.GetService(ctx, a.ServiceID); err == nil && sv.Enabled {
+			out[sv.Type] = a.RemoteID
+		}
+	}
+	return out
 }
 
 // personForRemote finds the Core person linked to an app account, for

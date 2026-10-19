@@ -170,6 +170,30 @@ Needs: the Paperless service in Core with its URL, its public URL and a **superu
 
 **Events by push** ([topics](events.md#paperless-ngx-source-connectorpaperless)): two workflows, *Pocket Core · document added* (Document Added, every source: consume folder, API, mail, web) and *Pocket Core · document updated*. Each has one webhook action that sends JSON (`use_params`, `as_json`) rendered from Paperless's placeholders (id, title, owner's user name, correspondent, type, created and added dates, original file name; never the document itself) with Core's per-hook secret header. Workflows run for every account, so Core attributes each delivery to the person linked to the owner. It drops documents without an owner and documents added before Core connected the person. Paperless sends from its task queue and retries a failed call three times. New and deleted accounts are polled.
 
+## Jellyseerr
+
+Needs: the Jellyseerr service in Core with its URL, its public URL and its **API key** (Settings → General; it acts as the admin). Tested against Seerr 3.5.
+
+| Jellyseerr call | Used by | Writes? |
+|---|---|---|
+| `GET /api/v1/status`, `GET /api/v1/auth/me` | Test | – |
+| `GET /api/v1/user` | Test, Provision, linking by hand, events | – |
+| `GET /api/v1/user/{id}` | Linking by hand | – |
+| `POST /api/v1/user/import-from-jellyfin` | Provision: a person with no Jellyseerr user yet | **yes** |
+| `GET /api/v1/request`, `GET /api/v1/issue` | Events | – |
+| `GET /api/v1/movie/{tmdb}`, `GET /api/v1/tv/{tmdb}` | Events: titles of what changed | – |
+
+**Accounts.** Jellyseerr users come from Jellyfin, and an imported user's "email" is their Jellyfin name, so matching by email alone rarely works. A person is linked:
+1. to the user with their email; else
+2. to the user whose Jellyfin account is the one **Core's Jellyfin connector** linked them to (Core hands every connector the person's links in other services); else
+3. their Jellyfin account is **imported** into Jellyseerr, which gives it Jellyseerr's default permissions.
+
+Someone Core has not linked to a Jellyfin account gets an error asking for that first, or an admin links them by hand. Jellyseerr has no per-person keys, so nothing is minted.
+
+**Sign-in:** none. People sign in to Jellyseerr with their Jellyfin account.
+
+**Events are polled** ([topics](events.md#jellyseerr-source-connectorjellyseerr)), not pushed. Jellyseerr has a single webhook slot, often already used (for example by a Jellyfin plugin), and Core does not take it over. Each check reads the 100 most recently changed requests and issues and compares them with the previous check. Each event belongs to whoever made the request or reported the issue. A request Core sees for the first time with an id at or below the highest one it already knew (an old request edited) produces no event, because there is nothing to compare it with.
+
 ## From the console
 
 Everything above is also available without a browser, through the running server (so locking and the bus behave the same):

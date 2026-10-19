@@ -18,6 +18,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.8** — **Paperless-ngx connector**: accounts (linked by email, or created in a *Pocket Core* group with member permissions and their own token; never taken over by name), linking by hand, and **push events** from two workflows with a webhook action: `paperless.document_added` / `document_updated`. Sign-in stays a documented manual step (Paperless reads OIDC providers from its environment).
 
+**0.9** — **Jellyseerr connector**: people are linked by email, else through the Jellyfin account Core's Jellyfin connector linked them to, else imported from Jellyfin (connectors now get a person's links in other services, `Person.Linked`). Requests and issues are **polled**: Jellyseerr's single webhook slot is left to whoever uses it. Topics: `jellyseerr.request_created` / `_approved` / `_declined` / `_failed`, `media_available`, `issue_*`.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
