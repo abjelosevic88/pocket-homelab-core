@@ -630,8 +630,9 @@ html, body { overflow-x: hidden; }
 .cx-sec { border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); background: var(--surface); }
 .cx-sec > header { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
 .cx-sec > header .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.cx-sec > header b { font-size: 14px; display: flex; align-items: center; gap: 8px; }
-.cx-sec > header span:not(.cx-ico):not(.spinner) { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.cx-sec > header .grow > b { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.cx-sec > header .grow > span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.cx-sec > header .grow > span b { font-weight: 650; color: var(--text); }
 .cx-ico { width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); display: grid; place-items: center; font-size: 16px; flex-shrink: 0; }
 .cx-body { border-top: 1px solid var(--border); padding: 12px 14px; display: grid; gap: 12px; }
 .cx-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 12.5px; }
