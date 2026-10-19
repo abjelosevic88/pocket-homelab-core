@@ -696,3 +696,10 @@ html, body { overflow-x: hidden; }
 .ev-filter.wide { width: 210px; }
 .toolbar .ev-filter .sel { width: 100%; min-width: 0; }
 @media (max-width: 900px) { .ev-filter, .ev-filter.wide { width: auto; flex: 1 1 45%; } }
+
+/* Select options with icons */
+.sel-ico { display: inline-flex; flex-shrink: 0; }
+.sel-ico .feed-ico, .sel-ico .mini-ico { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
+.sel-all-ico { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: 12px; }
+.sel-opt { gap: 10px; }
+.ev-filter.wide { width: 240px; }

@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-export interface SelectOption { value: string; label: string; hint?: string; group?: string }
+export interface SelectOption { value: string; label: string; hint?: string; group?: string; icon?: React.ReactNode }
 
 interface Props {
   value: string
@@ -85,6 +85,7 @@ export function Select({ value, onChange, options, placeholder = 'Choose…', on
     <div ref={root} className={`sel ${className} ${open ? 'open' : ''}`} onKeyDown={open ? onKey : undefined}>
       <button type="button" className={`sel-btn ${current ? '' : 'empty'}`} onClick={() => !disabled && setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} aria-controls={id} disabled={disabled}
         onKeyDown={e => { if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(true) } }}>
+        {current?.icon && <span className="sel-ico">{current.icon}</span>}
         <span className="sel-val">{current ? current.label : placeholder}</span>
         <Chevron />
       </button>
@@ -100,7 +101,7 @@ export function Select({ value, onChange, options, placeholder = 'Choose…', on
                   {head && <div className="sel-group">{head}</div>}
                   <div role="option" aria-selected={r.opt?.value === value} data-i={i} className={`sel-opt ${i === hl ? 'hl' : ''} ${r.opt && r.opt.value === value ? 'cur' : ''} ${r.kind !== 'opt' ? 'action' : ''}`}
                     onMouseEnter={() => setHl(i)} onMouseDown={e => e.preventDefault()} onClick={() => pick(r)}>
-                    {r.kind === 'clear' ? <span>× {clearLabel}</span> : r.kind === 'create' ? <span>{busy ? 'Creating…' : `+ ${createLabel} “${q.trim()}”`}</span> : <><span className="sel-lbl">{r.opt!.label}</span>{r.opt!.hint && <span className="sel-hint muted">{r.opt!.hint}</span>}</>}
+                    {r.kind === 'clear' ? <span>× {clearLabel}</span> : r.kind === 'create' ? <span>{busy ? 'Creating…' : `+ ${createLabel} “${q.trim()}”`}</span> : <>{r.opt!.icon && <span className="sel-ico">{r.opt!.icon}</span>}<span className="sel-lbl">{r.opt!.label}</span>{r.opt!.hint && <span className="sel-hint muted">{r.opt!.hint}</span>}</>}
                     {r.opt && r.opt.value === value && <span className="sel-check">✓</span>}
                   </div>
                 </div>

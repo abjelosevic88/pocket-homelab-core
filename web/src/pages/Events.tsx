@@ -38,7 +38,6 @@ function Log() {
   const { toast } = useToast()
   const [topic, setTopic] = useState('')
   const [source, setSource] = useState('')
-  const [category, setCategory] = useState('')
   const [live, setLive] = useState(true)
   const [items, setItems] = useState<Event[]>([])
   const [fresh, setFresh] = useState<Set<number>>(new Set())
@@ -62,7 +61,7 @@ function Log() {
   }, [live, topic])
   const sources = [...new Set(items.map(e => e.source))].map(src => ({ src, info: sourceInfo(src, ctx), n: items.filter(e => e.source === src).length }))
   const groups: [SourceKind, string][] = [['app', 'Pocket apps'], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
-  const shown = items.filter(e => (!source || e.source === source) && (!category || sourceInfo(e.source, ctx).kind === category))
+  const shown = items.filter(e => !source || (source.startsWith('kind:') ? sourceInfo(e.source, ctx).kind === source.slice(5) : e.source === source))
   const days: [string, Event[]][] = []
   for (const e of shown) { const k = dayLabel(e.created_at); const last = days[days.length - 1]; if (last && last[0] === k) last[1].push(e); else days.push([k, [e]]) }
   const copy = async (e: Event) => { await navigator.clipboard.writeText(JSON.stringify(e.payload, null, 2)); toast('Payload copied') }
@@ -71,11 +70,14 @@ function Log() {
       <div className="toolbar">
         <div className="search"><span className="ico">⌕</span><input placeholder="Topic or pattern, e.g. kitchen.*" value={topic} onChange={e => setTopic(e.target.value.toLowerCase())} list="event-topics" /></div>
         <datalist id="event-topics">{(topics || []).map(t => <option key={t.topic} value={t.topic}>{t.count}</option>)}</datalist>
-        <div className="ev-filter"><Select ariaLabel="Category" value={category} onChange={v => { setCategory(v); setSource('') }} placeholder="All categories" clearLabel="All categories"
-          options={groups.filter(([k]) => sources.some(x => x.info.kind === k)).map(([k, title]) => ({ value: k, label: title, hint: String(sources.filter(x => x.info.kind === k).reduce((n, x) => n + x.n, 0)) }))} /></div>
         <div className="ev-filter wide"><Select ariaLabel="Source" value={source} onChange={setSource} placeholder={`All sources · ${items.length}`} clearLabel="All sources"
-          options={groups.flatMap(([k, title]) => sources.filter(x => x.info.kind === k && (!category || k === category)).sort((x, y) => x.info.label.localeCompare(y.info.label)).map(x => ({ value: x.src, label: x.info.label, hint: String(x.n), group: title })))} /></div>
-        {(source || category) && <button className="btn sm ghost" onClick={() => { setSource(''); setCategory('') }}>Clear</button>}
+          options={groups.flatMap(([k, title]) => {
+            const list = sources.filter(x => x.info.kind === k).sort((x, y) => x.info.label.localeCompare(y.info.label))
+            if (list.length === 0) return []
+            const all = list.length > 1 ? [{ value: `kind:${k}`, label: `All ${title.toLowerCase()}`, hint: String(list.reduce((n, x) => n + x.n, 0)), group: title, icon: <span className="sel-all-ico">▦</span> }] : []
+            return [...all, ...list.map(x => ({ value: x.src, label: x.info.label, hint: String(x.n), group: title, icon: <SourceIcon info={x.info} /> }))]
+          })} /></div>
+        {source && <button className="btn sm ghost" onClick={() => setSource('')}>Clear</button>}
         <span className="spacer" />
         <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
         <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
