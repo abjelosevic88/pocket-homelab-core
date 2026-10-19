@@ -5,7 +5,7 @@ import type { Delivery, Event, Topic, Webhook } from '../lib/types'
 import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceKind } from '../components/EventView'
 import { Select } from '../components/Select'
 import { useApp } from '../lib/app-context'
-import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
+import { Card, Collapse, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
 
 export default function Events() {
   const [tab, setTab] = useState<'log' | 'webhooks'>('log')
@@ -96,7 +96,7 @@ function Log() {
                 <span className="feed-time" title={when(e.created_at)}>{ago(e.created_at)}</span>
                 <span className="chev">›</span>
               </button>
-              {isOpen && <div className="feed-detail-wrap"><div className="feed-detail">
+              <Collapse open={isOpen}><div className="feed-detail">
                 <div className="feed-detail-meta">
                   <span className="mono">{e.topic}</span><span>#{e.id}</span><span title={e.created_at}>{when(e.created_at)}</span>{e.subject && <span className="mono">{e.subject}</span>}
                   <span className="spacer" />
@@ -105,7 +105,7 @@ function Log() {
                 </div>
                 {(() => { const facts = d.facts || autoFacts(e.payload); return facts.length > 0 && <dl className="event-facts">{facts.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl> })()}
                 <details className="cx-more"><summary>Raw payload</summary><pre>{JSON.stringify(e.payload, null, 2)}</pre></details>
-              </div></div>}
+              </div></Collapse>
             </div>) })}</div>
         </section>)}
     </>

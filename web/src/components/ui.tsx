@@ -131,3 +131,21 @@ export function Avatar({ name, email }: { name?: string; email?: string }) {
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360
   return <span className="avatar" style={{ background: `hsl(${h} 55% 45%)` }}>{ini}</span>
 }
+
+/** Collapse animates its children open and closed (height + fade, both directions); content mounts only while needed. */
+export function Collapse({ open, children, className = '' }: { open: boolean; children: React.ReactNode; className?: string }) {
+  const [mounted, setMounted] = useState(open)
+  const [shown, setShown] = useState(open)
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      const r = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true)))
+      return () => cancelAnimationFrame(r)
+    }
+    setShown(false)
+    const t = setTimeout(() => setMounted(false), 240)
+    return () => clearTimeout(t)
+  }, [open])
+  if (!mounted) return null
+  return <div className={`collapse ${shown ? 'show' : ''} ${className}`} aria-hidden={!open}><div className="collapse-inner">{children}</div></div>
+}
