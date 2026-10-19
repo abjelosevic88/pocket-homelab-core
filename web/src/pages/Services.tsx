@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import type { CatalogEntry, ConnectorListItem, Service, User } from '../lib/types'
 import { useApp } from '../lib/app-context'
-import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, useAsync, useToast } from '../components/ui'
+import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
 import { ConnectorModal } from '../components/ConnectorPanel'
 
+type TestResult = { ok: boolean; status?: number; ms?: number; error?: string; busy?: boolean }
+
 export default function Services() {
-  const { toast } = useToast()
   const { user } = useApp()
   const admin = user?.role === 'admin'
   const { data, loading, reload } = useAsync(() => api.get<Service[]>(`${V1}/services`), [])
@@ -18,41 +19,117 @@ export default function Services() {
   const [edit, setEdit] = useState<Service | null>(null)
   const [del, setDel] = useState<Service | null>(null)
   const [q, setQ] = useState('')
+  const [show, setShow] = useState<'all' | 'on' | 'off'>('all')
+  const [tests, setTests] = useState<Record<number, TestResult>>({})
   const list = data || []
   const groups = useMemo(() => {
     const g = new Map<string, Service[]>()
-    for (const s of list) { if (q && !(s.name + s.type + s.url).toLowerCase().includes(q.toLowerCase())) continue; const k = s.catalog.group; g.set(k, [...(g.get(k) || []), s]) }
+    for (const s of list) {
+      if (q && !(s.name + s.type + s.url + s.public_url).toLowerCase().includes(q.toLowerCase())) continue
+      if ((show === 'on' && !s.enabled) || (show === 'off' && s.enabled)) continue
+      const k = s.catalog.group; g.set(k, [...(g.get(k) || []), s])
+    }
     return [...g.entries()]
-  }, [list, q])
+  }, [list, q, show])
   const toggle = async (s: Service, on: boolean) => { await api.put(`${V1}/services/${s.id}`, { enabled: on }); await reload() }
-  const test = async (s: Service) => { const r = await api.post<{ ok: boolean; status?: number; ms?: number; error?: string }>(`${V1}/services/${s.id}/test`); toast(r.ok ? `Reachable · HTTP ${r.status} in ${r.ms} ms` : `Unreachable: ${r.error || r.status}`, r.ok ? 'ok' : 'err') }
+  const test = async (s: Service) => {
+    setTests(t => ({ ...t, [s.id]: { ok: false, busy: true } }))
+    try { const r = await api.post<TestResult>(`${V1}/services/${s.id}/test`); setTests(t => ({ ...t, [s.id]: r })) }
+    catch (e) { setTests(t => ({ ...t, [s.id]: { ok: false, error: (e as Error).message } })) }
+  }
+  const testAll = async () => { for (const s of list.filter(x => x.enabled)) void test(s) }
   const remove = async () => { if (del) { await api.del(`${V1}/services/${del.id}`); setDel(null); await reload() } }
   if (loading && !data) return <Loading />
   return (
     <>
       <PageHeader title="Services" sub="Everything a paired device receives: registered Pocket apps plus the services you add with their credentials."
         actions={<><a className="btn" href={`${V1}/pair/profile?format=env`} download>Download env</a>{admin && <button className="btn primary" onClick={() => setAdding(true)}>Add service</button>}</>} />
-      <div className="toolbar"><div className="search"><span className="ico">⌕</span><input placeholder="Filter…" value={q} onChange={e => setQ(e.target.value)} /></div><span className="muted small">{list.filter(s => s.enabled).length} of {list.length} in the profile</span></div>
+      <div className="toolbar">
+        <div className="search"><span className="ico">⌕</span><input placeholder="Search services…" value={q} onChange={e => setQ(e.target.value)} /></div>
+        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }]} />
+        <button className="btn sm" onClick={testAll} title="Check every service in the profile">Test all</button>
+      </div>
       {list.length === 0 ? <Card><Empty title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
-        groups.map(([g, items]) => <div key={g}>
-          <div className="group-title">{g}</div>
-          <Card flush>
-            <table className="table">
-              <tbody>{items.map(s => <tr key={s.id} className={s.enabled ? '' : 'muted'}>
-                <td style={{ width: 44 }}><Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} /></td>
-                <td><b>{s.name || s.catalog.name}</b>{s.app_id ? <span className="badge cat" style={{ marginLeft: 6 }}>app</span> : null}{s.audience === 'admins' && <span className="badge warn" style={{ marginLeft: 6 }}>admins</span>}{s.audience === 'users' && <span className="badge" style={{ marginLeft: 6 }}>{s.audience_users.length} people</span>}{connFor(s)?.connector?.enabled && <span className={`badge ${connFor(s)?.connector?.last_error ? 'err' : 'ok'}`} style={{ marginLeft: 6 }} title={connFor(s)?.connector?.last_error || 'Connector on'}>connector</span>}<div className="muted small mono">{s.catalog.prefix}_{s.catalog.url_key}{s.catalog.fields.length ? ' · ' + s.catalog.fields.map(f => s.catalog.prefix + '_' + f.key).join(' · ') : ''}</div></td>
-                <td className="mono small">{s.public_url || s.url || <span className="muted">no url</span>}{s.public_url && s.url && s.public_url !== s.url && <div className="muted">internal {s.url}</div>}</td>
-                <td className="small">{Object.entries(s.fields).filter(([, v]) => v).map(([k, v]) => <div key={k}><span className="muted">{k}</span> {v}</div>)}</td>
-                <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn sm" onClick={() => test(s)}>Test</button> {admin && connFor(s) && <button className="btn sm" onClick={() => setConn(s)}>Connector</button>} {admin && <button className="btn sm" onClick={() => setEdit(s)}>Edit</button>} {admin && !s.app_id && <button className="btn sm ghost danger-text" onClick={() => setDel(s)}>✕</button>}</td>
-              </tr>)}</tbody>
-            </table>
-          </Card>
-        </div>)}
+        groups.length === 0 ? <Card><Empty title="No match">Nothing matches this search.</Empty></Card> :
+        groups.map(([g, items]) => <section key={g} className="svc-group">
+          <div className="svc-group-head"><span>{g}</span><span className="count">{items.length}</span></div>
+          <div className="svc-list">{items.map(s => {
+            const c = connFor(s)?.connector
+            const href = s.public_url || s.url
+            const keys = [`${s.catalog.prefix}_${s.catalog.url_key}`, ...s.catalog.fields.map(f => `${s.catalog.prefix}_${f.key}`)]
+            const secrets = s.catalog.fields.filter(f => f.secret)
+            const hasSecret = secrets.some(f => s.fields[f.key])
+            const t = tests[s.id]
+            return (
+              <div key={s.id} className={`svc-row ${s.enabled ? '' : 'off'}`}>
+                <ServiceIcon s={s} />
+                <div className="svc-main">
+                  <div className="svc-name">
+                    <b>{s.name || s.catalog.name}</b>
+                    {s.app_id ? <span className="badge cat">Pocket app</span> : null}
+                    {s.audience === 'admins' && <span className="badge warn">Admins</span>}
+                    {s.audience === 'users' && <span className="badge">{s.audience_users.length} people</span>}
+                    {c?.enabled && <span className={`badge ${c.last_error ? 'err' : 'ok'}`} title={c.last_error || 'Connector on'}>Connector</span>}
+                  </div>
+                  <div className="svc-sub">
+                    {href ? <a href={href} target="_blank" rel="noreferrer" title={s.public_url && s.url && s.public_url !== s.url ? `internal ${s.url}` : href}>{href.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a> : <span>no address</span>}
+                    <span className="env" title={keys.join('\n')}>{s.catalog.prefix}_*</span>
+                  </div>
+                </div>
+                <div className="svc-status">
+                  {s.catalog.pocket ? <span className="pill">Device token</span>
+                    : secrets.length > 0 ? (hasSecret ? <span className="pill ok">Key saved</span> : <span className="pill warn">No key</span>)
+                    : null}
+                  {t && <span className={`pill ${t.busy ? '' : t.ok ? 'ok' : 'err'}`} title={t.error || ''}>{t.busy ? 'Testing…' : t.ok ? `${t.status} · ${t.ms} ms` : 'Unreachable'}</span>}
+                </div>
+                <div className="svc-actions">
+                  <button className="btn sm ghost" onClick={() => test(s)} disabled={t?.busy}>Test</button>
+                  {admin && <button className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
+                  {admin && (connFor(s) || !s.app_id) && <RowMenu items={[
+                    ...(connFor(s) ? [{ label: 'Connector…', onClick: () => setConn(s) }] : []),
+                    ...(!s.app_id ? [{ label: 'Remove', danger: true, onClick: () => setDel(s) }] : []),
+                  ]} />}
+                </div>
+                <Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} />
+              </div>
+            )
+          })}</div>
+        </section>)}
       {adding && catalog && <AddService catalog={catalog.filter(c => !list.some(s => s.type === c.type))} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
       {conn && <ConnectorModal service={conn} onClose={() => { setConn(null); reloadConns() }} />}
       {edit && <EditService s={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}
       {del && <Confirm title="Remove service" message={<>Remove <b>{del.name}</b>? Paired devices lose it on their next profile refresh.</>} onConfirm={remove} onCancel={() => setDel(null)} />}
     </>
+  )
+}
+
+function hue(text: string) { let h = 0; for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 360; return h }
+
+// ServiceIcon tries the service's own icon, then a coloured initial.
+function ServiceIcon({ s }: { s: Service }) {
+  const base = (s.public_url || s.url || '').replace(/\/$/, '')
+  const candidates = base ? (s.catalog.pocket ? [`${base}/favicon.svg`, `${base}/favicon.ico`] : [`${base}/favicon.ico`, `${base}/favicon.svg`]) : []
+  const [i, setI] = useState(0)
+  const name = s.name || s.catalog.name
+  if (i >= candidates.length) return <span className="svc-icon letter" style={{ background: `hsl(${hue(name)} 70% 92%)`, color: `hsl(${hue(name)} 55% 35%)` }}>{name[0]}</span>
+  return <span className="svc-icon"><img src={candidates[i]} alt="" onError={() => setI(n => n + 1)} /></span>
+}
+
+function RowMenu({ items }: { items: { label: string; onClick: () => void; danger?: boolean }[] }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
+  }, [open])
+  return (
+    <div className="row-menu" ref={ref}>
+      <button className="btn sm ghost icon" aria-label="More" aria-expanded={open} onClick={() => setOpen(o => !o)}>⋯</button>
+      {open && <div className="row-menu-pop" role="menu">{items.map(it => <button key={it.label} role="menuitem" className={it.danger ? 'danger-text' : ''} onClick={() => { setOpen(false); it.onClick() }}>{it.label}</button>)}</div>}
+    </div>
   )
 }
 
