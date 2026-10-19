@@ -671,3 +671,15 @@ html, body { overflow-x: hidden; }
 .event-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 14px; margin: 0 0 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
 .event-facts dt { color: var(--muted); } .event-facts dd { margin: 0; overflow-wrap: anywhere; }
 .feed-detail .cx-more pre { margin-top: 6px; }
+
+/* Event sources: one row per category */
+.source-panel { background: var(--surface); border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); box-shadow: var(--shadow); padding: 4px 16px; margin-bottom: 26px; }
+.source-panel-head { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.source-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.source-row:last-child { border-bottom: 0; }
+.source-row-title { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.source-row-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-panel .chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; }
+.source-panel-head .chip { padding: 5px 12px; }
+.source-panel .chip .feed-ico { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
+@media (max-width: 700px) { .source-row { grid-template-columns: 1fr; gap: 8px; } }

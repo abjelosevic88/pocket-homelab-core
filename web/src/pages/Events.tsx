@@ -65,11 +65,14 @@ function Log() {
         <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
         <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
       </div>
-      {sources.length > 1 && <div className="source-groups">
-        <button type="button" className={`chip ${source === '' ? 'active' : ''}`} onClick={() => setSource('')}>All <span className="muted">{items.length}</span></button>
+      {sources.length > 1 && <div className="source-panel">
+        <div className="source-panel-head">
+          <b>Sources</b><span className="muted small">{source ? `Showing ${sourceInfo(source, ctx).label} only` : `${sources.length} sending events`}</span><span className="spacer" />
+          <button type="button" className={`chip ${source === '' ? 'active' : ''}`} onClick={() => setSource('')}>All <span className="muted">{items.length}</span></button>
+        </div>
         {groups.map(([kind, title]) => { const list = sources.filter(x => x.info.kind === kind).sort((x, y) => x.info.label.localeCompare(y.info.label)); return list.length === 0 ? null : (
-          <div key={kind} className="source-group"><span className="source-group-title">{title}</span>
-            {list.map(({ src, info, n }) => <button type="button" key={src} className={`chip ${source === src ? 'active' : ''}`} onClick={() => setSource(source === src ? '' : src)}><SourceIcon info={info} />{info.label}<span className="muted">{n}</span></button>)}
+          <div key={kind} className="source-row"><span className="source-row-title">{title}</span>
+            <div className="source-row-chips">{list.map(({ src, info, n }) => <button type="button" key={src} className={`chip ${source === src ? 'active' : ''}`} onClick={() => setSource(source === src ? '' : src)}><SourceIcon info={info} />{info.label}<span className="muted">{n}</span></button>)}</div>
           </div>) })}
       </div>}
       {shown.length === 0 ? <Card><Empty title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
