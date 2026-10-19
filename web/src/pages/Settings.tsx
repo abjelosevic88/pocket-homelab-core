@@ -85,9 +85,17 @@ function OIDCClients() {
   return (
     <Card title="Single sign-on (OpenID Connect)" actions={<button className="btn sm primary" onClick={() => setEdit({ name: '', redirect_uris: '', public: false })}>Add client</button>}>
       <p className="muted small">Core is an OpenID provider. Point Immich, Nextcloud, Paperless, Jellyfin (SSO plugin) or any Pocket app at <span className="inline-code">{issuer}</span> and everyone signs in with their Core account. Pocket apps that ask in their manifest get a client automatically.</p>
-      {(data || []).length > 0 && <table className="table compact mt"><thead><tr><th>Name</th><th>Client id</th><th>Redirects</th><th></th></tr></thead>
-        <tbody>{(data || []).map(c => <tr key={c.id}><td><b>{c.name}</b>{c.app_id ? <span className="badge cat" style={{ marginLeft: 6 }}>app</span> : null}{!c.has_secret && <span className="badge" style={{ marginLeft: 6 }}>PKCE</span>}</td><td className="mono small">{c.client_id}</td><td className="mono small">{c.redirect_uris.map(u => <div key={u}>{u}</div>)}</td>
-          <td className="right" style={{ whiteSpace: 'nowrap' }}>{c.has_secret && <button className="btn sm" onClick={() => rotate(c)}>Secret</button>} <button className="btn sm" onClick={() => setEdit({ id: c.id, client_id: c.client_id, name: c.name, redirect_uris: c.redirect_uris.join('\n'), public: !c.has_secret })}>Edit</button> <button className="btn sm ghost danger-text" onClick={() => setDel(c)}>✕</button></td></tr>)}</tbody></table>}
+      {(data || []).length > 0 && <div className="client-list mt">{(data || []).map(c => (
+        <div key={c.id} className="client-row">
+          <div className="client-head">
+            <div className="grow">
+              <div className="client-name"><b>{c.name}</b>{c.app_id ? <span className="badge cat">app</span> : null}{!c.has_secret && <span className="badge">PKCE</span>}</div>
+              <div className="mono small muted">{c.client_id}</div>
+            </div>
+            <div className="client-actions">{c.has_secret && <button className="btn sm" onClick={() => rotate(c)}>Secret</button>}<button className="btn sm" onClick={() => setEdit({ id: c.id, client_id: c.client_id, name: c.name, redirect_uris: c.redirect_uris.join('\n'), public: !c.has_secret })}>Edit</button><button className="btn sm ghost danger-text" onClick={() => setDel(c)} aria-label={`Delete ${c.name}`}>✕</button></div>
+          </div>
+          <div className="client-redirects mono small">{c.redirect_uris.map(u => <div key={u}>{u}</div>)}</div>
+        </div>))}</div>}
       {edit && <Modal title={edit.id ? 'Edit client' : 'Add OIDC client'} onClose={() => setEdit(null)}>
         <form onSubmit={save} className="grid" style={{ gap: 12 }}>
           <Field label="Name"><input required value={edit.name} onChange={e => setEdit(v => v && ({ ...v, name: e.target.value }))} placeholder="Immich" /></Field>

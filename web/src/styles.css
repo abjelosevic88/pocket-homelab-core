@@ -469,3 +469,14 @@ html, body { overflow-x: hidden; }
 .sel-list button { text-align: left; }
 .login-or { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
 .login-or::before, .login-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* two-column pages: a column never grows past its share (long URLs wrap instead) */
+.two-col > * { min-width: 0; }
+.client-list { display: grid; }
+.client-row { padding: 12px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.client-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.client-head { display: flex; gap: 12px; align-items: flex-start; }
+.client-head .grow { flex: 1; min-width: 0; }
+.client-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.client-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.client-redirects { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; }
