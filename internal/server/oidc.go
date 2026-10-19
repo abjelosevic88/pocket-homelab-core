@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"html"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/abjelosevic88/pocket-homelab-core/internal/connectors"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/crypto"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/oidc"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
@@ -201,7 +203,7 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 500, "server_error", err.Error())
 		return
 	}
-	idTok, err := s.oidc.IDToken(u, cl.ClientID, nonce, idTokenTTL)
+	idTok, err := s.oidc.IDToken(u, cl.ClientID, nonce, idTokenTTL, s.clientClaims(ctx, cl, u))
 	if err != nil {
 		tokenErr(w, 500, "server_error", err.Error())
 		return
@@ -230,7 +232,32 @@ func (s *Server) handleUserinfo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid token")
 		return
 	}
-	writeJSON(w, http.StatusOK, oidc.Claims(p.User))
+	claims := oidc.Claims(p.User)
+	if t, err := s.store.GetOIDCToken(r.Context(), tok); err == nil && t.Kind == "access" {
+		if cl, err := s.store.GetOIDCClient(r.Context(), t.ClientID); err == nil {
+			for k, v := range s.clientClaims(r.Context(), cl, p.User) {
+				if _, std := claims[k]; !std {
+					claims[k] = v
+				}
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, claims)
+}
+
+// clientClaims are the claims that depend on which app is signing in. For a
+// connector's client: pocket_uid = the app account Core linked the person to
+// (Nextcloud matches sign-ins on it). No link, no claim: the app refuses the
+// sign-in instead of guessing an account by name.
+func (s *Server) clientClaims(ctx context.Context, cl *store.OIDCClient, u *store.User) map[string]any {
+	if cl == nil || cl.ServiceID == 0 || u == nil {
+		return nil
+	}
+	a, err := s.store.GetConnectorAccount(ctx, cl.ServiceID, u.ID)
+	if err != nil || a.RemoteID == "" || a.Status == connectors.StatusError {
+		return nil
+	}
+	return map[string]any{"pocket_uid": a.RemoteID}
 }
 
 // handleEndSession clears the browser session and bounces to the RP.

@@ -14,9 +14,11 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.6** — **Jellyfin connector**: provisions accounts (name = the email's local part; new accounts get their own session token as `API_KEY` plus `USER_ID`; matches are linked with `USER_ID`), lets an admin **link people to existing accounts by hand** (connectors without emails implement `Linker`), switches on "Sign in with Pocket Core" through the SSO Authentication plugin (provider + login button, backed up first), and polls playback, new items and account events into `jellyfin.*`.
 
+**0.7** — **Nextcloud connector**: accounts (linked by email, created with their own app password, never taken over by name), linking by hand, "Sign in with Pocket Core" through `user_oidc` with the new per-client **`pocket_uid` claim** (Core's linked account id, only for linked people), and **push events** from `webhook_listeners`: files, calendar events and tasks. Core gains **connector-only service fields** (the admin login password Nextcloud wants for password-confirmed calls; never in profiles, never per person) and drops pushed deliveries from **before Core connected the person**.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
-- More connectors, same shape: Nextcloud (users + app passwords, `user_oidc`), Paperless (users + tokens), Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
+- More connectors, same shape: Paperless (users + tokens), Audiobookshelf, Navidrome. Push events (hooks) for every app that can call a URL.
 - Connector clean-up: disable or remove a person's remote account when they are disabled or deleted in Core (opt-in, with a confirmation).
 - Client: native "Pair with a box" screen (QR → `/pair/claim` → Keychain) and a Core card with box health, pending updates and backup status.
 - Pocket apps adopt the SDK: register on start, resolve siblings through Core instead of `*_URL` env vars, accept device tokens, publish their events.

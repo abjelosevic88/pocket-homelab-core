@@ -278,7 +278,7 @@ func (s *Server) buildProfile(r *http.Request, u *store.User, d *store.Device, d
 			ps.Env[e.FullKey(e.URLKey)] = ps.URL
 		}
 		for k, v := range sv.Fields {
-			if v != "" {
+			if v != "" && !e.IsConnectorOnly(k) {
 				ps.Env[e.FullKey(k)] = v
 			}
 		}

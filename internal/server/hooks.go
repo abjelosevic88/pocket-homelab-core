@@ -513,19 +513,22 @@ func (s *Server) acceptDelivery(ctx context.Context, h *store.ConnectorHook, bod
 		return false, d.Drop, nil
 	}
 	var u *store.User
+	var linked string // when Core connected the person (connector_accounts.updated_at)
 	if h.UserID != 0 {
 		a, err := s.store.GetConnectorAccount(ctx, sv.ID, h.UserID)
 		if err != nil || a.RemoteID == "" || a.RemoteID != d.OwnerID {
 			return false, "asset owner is not this hook's person", nil
 		}
+		linked = a.UpdatedAt
 		if u, err = s.store.GetUser(ctx, h.UserID); err != nil {
 			return false, "asset owner is not a Core user", nil
 		}
 	} else {
 		accts, _ := s.store.ListConnectorAccounts(ctx, sv.ID)
 		for _, a := range accts {
-			if a.RemoteID != "" && a.RemoteID == d.OwnerID {
+			if a.RemoteID != "" && a.RemoteID == d.OwnerID && a.Status != connectors.StatusError {
 				if u, err = s.store.GetUser(ctx, a.UserID); err == nil {
+					linked = a.UpdatedAt
 					break
 				}
 			}
@@ -536,6 +539,9 @@ func (s *Server) acceptDelivery(ctx context.Context, h *store.ConnectorHook, bod
 	}
 	if u.Disabled || !sv.InAudience(u) {
 		return false, "asset owner is disabled or outside the audience", nil
+	}
+	if at, err := time.Parse(time.RFC3339Nano, linked); err == nil && !d.At.IsZero() && !d.At.After(at.Truncate(time.Second)) {
+		return false, "happened before Core connected the person", nil
 	}
 	key := fmt.Sprintf("%d|%s", sv.ID, d.DedupeKey)
 	if d.DedupeKey != "" && !s.hookSeen.first(key) {

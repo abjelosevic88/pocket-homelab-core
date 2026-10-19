@@ -12,7 +12,7 @@ Core is a small OpenID Connect provider. One account per person, every app on th
 | `/oidc/logout` | `end_session_endpoint`; honours `post_logout_redirect_uri` |
 | `/api/v1/auth/introspect` | app-authenticated token check (not RFC 7662 form-encoded; JSON) |
 
-Claims: `sub` (user id), `email`, `email_verified`, `name`, `preferred_username`, `groups` (`users`, plus `admin`). ID tokens live 1 h, access tokens 1 h, refresh tokens 30 d (rotated on use). There is no consent screen: one box, one household.
+Claims: `sub` (user id), `email`, `email_verified`, `name`, `preferred_username`, `groups` (`users`, plus `admin`). A client a connector made for a service also gets `pocket_uid`: the id of the account in that app Core linked the person to, and only when there is one (Nextcloud's `user_oidc` signs people in by it). ID tokens live 1 h, access tokens 1 h, refresh tokens 30 d (rotated on use). There is no consent screen: one box, one household.
 
 ## Registering a relying party
 

@@ -111,10 +111,16 @@ func Claims(u *store.User) map[string]any {
 	}
 }
 
-// IDToken signs an ID token for the user and client.
-func (p *Provider) IDToken(u *store.User, clientID, nonce string, ttl time.Duration) (string, error) {
+// IDToken signs an ID token for the user and client. extra adds claims
+// that depend on the client (pocket_uid); it never overrides the standard ones.
+func (p *Provider) IDToken(u *store.User, clientID, nonce string, ttl time.Duration, extra map[string]any) (string, error) {
 	now := time.Now()
 	claims := Claims(u)
+	for k, v := range extra {
+		if _, std := claims[k]; !std {
+			claims[k] = v
+		}
+	}
 	claims["iss"] = p.Issuer
 	claims["aud"] = clientID
 	claims["iat"] = now.Unix()

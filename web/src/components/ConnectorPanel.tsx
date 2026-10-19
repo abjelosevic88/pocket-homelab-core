@@ -17,12 +17,22 @@ export function StatusBadge({ status }: { status: ConnectorStatus | 'skipped' })
 
 function HookBadge({ state }: { state: HookState }) {
   switch (state) {
-    case 'ok': return <span className="badge ok">workflows present</span>
+    case 'ok': return <span className="badge ok">set up</span>
     case 'missing': return <span className="badge warn">missing</span>
     case 'needs_key': return <span className="badge warn">needs a key</span>
     case 'error': return <span className="badge err">error</span>
   }
   return <span className="badge">off</span>
+}
+
+/** What the app calls its push subscriptions. */
+const hookNoun = (push: ConnectorPush) => push.per_user ? 'workflows' : 'webhooks'
+
+/** How events work, per app. */
+function PushHelp({ service, push }: { service: Service; push: ConnectorPush }) {
+  if (service.type === 'nextcloud') return <p>Webhooks are box-wide (one per kind of change, made with the main account) and {service.name} sends them from its background jobs, so events arrive with its cron, within about 5 minutes. Only files in someone's own Files count (no previews, versions, trash, hidden or partial files), and nothing from before Core connected the person: a new account's welcome files are not news. Calendar events and tasks marked private or confidential go on the bus without title or place; the birthday calendar is skipped. New and deleted accounts are checked separately.</p>
+  if (!push.per_user) return <p>{service.name} calls Core for each change; Core matches the account it belongs to with the people it connected.</p>
+  return <p>Workflows live in each person's own {service.name} account ({service.name} runs a workflow only for its owner's photos) and are made with their own key. Uploads from someone who isn't a Core user in this service's audience, live-photo video halves, the locked folder and metadata re-scans of old photos are dropped. Exact GPS never goes on the bus, only city, state and country.</p>
 }
 
 /** Push subscriptions: counters, then who has workflows in the app. */
@@ -35,7 +45,7 @@ function PushStatus({ push, service }: { push: ConnectorPush; service: Service }
         <div className="cx-stat"><span className="n">{push.dropped}</span><span className="l">dropped</span></div>
         <div className="cx-stat wide"><span className="n sm" title={when(push.last_received_at)}>{push.last_received_at ? ago(push.last_received_at) : 'nothing yet'}</span><span className="l">last event</span></div>
       </div>
-      {push.people.length === 0 ? <p className="muted small">No connected person yet: provision people below and their workflows are created.</p> :
+      {push.people.length === 0 ? <p className="muted small">{push.per_user ? 'No connected person yet: provision people below and their workflows are created.' : 'No webhooks yet.'}</p> :
         <div className="cx-people">{push.people.map(p => (
           <div key={p.user_id} className={`cx-person ${p.state === 'off' ? 'off' : ''}`}>
             <Avatar name={p.name} email={p.email} />
@@ -45,7 +55,7 @@ function PushStatus({ push, service }: { push: ConnectorPush; service: Service }
             <HookBadge state={p.state} />
           </div>))}</div>}
       <details className="cx-more"><summary>How events work</summary>
-        <p>Workflows live in each person's own {service.name} account ({service.name} runs a workflow only for its owner's photos) and are made with their own key. Uploads from someone who isn't a Core user in this service's audience, live-photo video halves, the locked folder and metadata re-scans of old photos are dropped. Exact GPS never goes on the bus, only city, state and country.</p>
+        <PushHelp service={service} push={push} />
       </details>
     </>
   )
@@ -81,7 +91,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
   const recreate = () => run('recreate', async () => {
     const r = await api.post<{ ok: boolean; error?: string; connector: ConnectorView }>(`${base}/hooks/recreate`)
     setData(r.connector)
-    toast(r.ok ? 'Workflows re-created' : `Re-create failed: ${r.error}`, r.ok ? 'ok' : 'err')
+    toast(r.ok ? 'Re-created' : `Re-create failed: ${r.error}`, r.ok ? 'ok' : 'err')
   })
   const provision = (body: { user_id?: number; all?: boolean }) => run(body.all ? 'all' : `p${body.user_id}`, async () => {
     const r = await api.post<{ results: ProvisionResult[] }>(`${base}/provision`, body)
@@ -126,7 +136,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
 
         {c.capabilities.events && <section className="cx-sec">
           <header><span className="cx-ico">⚡</span><div className="grow"><b>Events {busy === 'events' && <span className="spinner sm" />}</b>
-            <span>{c.push ? <>Each upload is pushed to Core by a workflow in {service.name}: {c.push.triggers.map((t, i) => <span key={t.trigger}>{i > 0 && ' and '}<b>{t.name.replace(/^Pocket Core · /, '')}</b></span>)}. No polling.</> : <>Core checks {service.name} and publishes changes; the first check only records a baseline.</>}</span></div>
+            <span>{c.push ? <>{service.name} pushes each change to Core by {hookNoun(c.push).replace(/s$/, '')}: {c.push.triggers.map((t, i) => <span key={t.trigger}>{i > 0 && (i === c.push!.triggers.length - 1 ? ' and ' : ', ')}<b>{t.name.replace(/^Pocket Core · /, '')}</b></span>)}. No polling.</> : <>Core checks {service.name} and publishes changes; the first check only records a baseline.</>}</span></div>
             <Switch on={c.events_enabled} onChange={v => !off && save('events', { events_enabled: v })} /></header>
           {c.events_enabled && <div className="cx-body">
             <div className="cx-toolbar">
@@ -135,7 +145,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
               <span className="muted small" title={when(c.last_poll_at)}>last {ago(c.last_poll_at)}</span>
               <span className="spacer" />
               <button className="btn sm" disabled={off || busy === 'poll' || c.polling} onClick={poll}>{busy === 'poll' || c.polling ? 'Checking…' : c.push ? 'Check now' : 'Run now'}</button>
-              {c.push && <button className="btn sm ghost" disabled={off || busy === 'recreate'} onClick={recreate} title="Delete and create every workflow again, with new secrets">{busy === 'recreate' ? 'Re-creating…' : 'Re-create workflows'}</button>}
+              {c.push && <button className="btn sm ghost" disabled={off || busy === 'recreate'} onClick={recreate} title={`Delete and create every ${hookNoun(c.push).replace(/s$/, '')} again, with new secrets`}>{busy === 'recreate' ? 'Re-creating…' : `Re-create ${hookNoun(c.push)}`}</button>}
             </div>
             {c.push && <PushStatus push={c.push} service={service} />}
           </div>}

@@ -106,6 +106,43 @@ Turning sign-in off deletes the provider and the marked block. Redirect URIs: `h
 
 **Events** are polled from the activity log and the newest library items ([topics](events.md#jellyfin-source-connectorjellyfin)): `playback_started`, `playback_stopped`, `item_added`, `user_created`, `user_deleted`, `user_locked_out`, `login_failed`. Sessions coming and going are not published. A playback carries `user_email` only when its Jellyfin account is linked to a person who is enabled and in the service's audience; otherwise it carries just the Jellyfin user's id and name.
 
+## Nextcloud
+
+Needs: the Nextcloud service in Core with its URL, its public URL, and a Nextcloud **admin**:
+- `USERNAME` and `APP_PASSWORD`: the admin's app password (Personal settings → Security → Devices & sessions). Core uses it for everything that only reads.
+- `ADMIN_PASSWORD`, **Login password (connector only)**: the same admin's real login password. Nextcloud guards adding accounts and changing sign-in providers with *password confirmation* and refuses app passwords there. This field is **connector-only**: it is encrypted at rest and never goes into a device profile, an env file or an app answer, and nobody can set it per person. It does not work for an account with two-factor sign-in, so a dedicated admin account for Core is the cleanest choice.
+
+**Test** shows the version and the number of accounts, and says what is missing: the login password, the `user_oidc` app (sign-in) or the `webhook_listeners` app (events, shipped with Nextcloud 30+).
+
+| Nextcloud call | Used by | Writes? |
+|---|---|---|
+| `GET /status.php`, `GET /ocs/v2.php/cloud/user`, `GET /ocs/v2.php/cloud/apps?filter=enabled` | Test | – |
+| `GET /ocs/v2.php/cloud/users/details` | Test, Provision, linking by hand, account events | – |
+| `GET /ocs/v2.php/cloud/users/{id}` | Linking by hand | – |
+| `POST /ocs/v2.php/cloud/users` | Provision: a missing person; user name = their email's local part, display name and email from Core, a 40-character random password used once and never stored, logged or returned (login password) | **yes** |
+| `PROPFIND /remote.php/dav/files/{id}/` | Provision: open the new account's files once, as the new account | **yes** (welcome files) |
+| `GET /ocs/v2.php/core/getapppassword` | Provision: as the new account, its own app password (*Pocket Core* under its Devices & sessions) | **yes** |
+| `GET/POST/PUT/DELETE /ocs/v2.php/apps/user_oidc/api/v1/provider` | Sign-in on/off (writes with the login password; backed up first) | **yes** |
+| `GET/POST/DELETE /ocs/v2.php/apps/webhook_listeners/api/v1/webhooks` | Events on/off | **yes** |
+
+**Accounts.** A person is **linked** to the Nextcloud account with their email (nothing minted: Nextcloud cannot issue an app password for someone else). With none, Core creates one named like the email's local part and keeps the person's own `USERNAME` + `APP_PASSWORD`. An account with that name but **another email is never taken over**: provisioning stops with an error and an admin links the person by hand (people table, or `pocket-core connector nextcloud link <email> <account>`). Nextcloud sends its usual "account created" email to new accounts when mail is set up.
+
+**Sign in with Pocket Core** needs the *OpenID Connect user backend* app (`user_oidc`, Apps → Security, or `occ app:install user_oidc`). Turning it on:
+1. backs up `user_oidc`'s providers to `DATA_DIR/connectors/nextcloud-sso-<timestamp>.json`;
+2. creates (or updates) provider **Pocket Core**: Core's discovery URL, its client id and secret, scopes `openid email profile`, and
+   - **user id = the `pocket_uid` claim**, not hashed (`uniqueUid` off). Core puts `pocket_uid` in the tokens of a connector's client only for people it linked to an account in that service, holding that account's id. So everyone lands in the account Core linked them to (linked by email or by hand), nobody lands in an account just because the name matches, and a person Core has not linked is refused (*Failed to provision the user*);
+   - **no group provisioning**: nobody's groups or admin rights change;
+   - **name and email stay Nextcloud's**: they are mapped to claims Core never sends, so a linked account keeps its own.
+
+The login page gets a *Log in with Pocket Core* button; password login stays. Turning sign-in off deletes the provider. Redirect URIs: `https://<public>/apps/user_oidc/code` and `…/index.php/apps/user_oidc/code`. `user_oidc` only signs people in over https, and it counts refused attempts toward Nextcloud's brute-force throttle. Desktop and phone apps sign in through the browser login flow, which shows the same button.
+
+**Events by push** ([topics](events.md#nextcloud-source-connectornextcloud)): five box-wide webhooks (`webhook_listeners` runs them for every account), made with the admin app password and carrying Core's per-hook secret header: file created, file deleted, calendar object created, updated and moved to the trash. Nextcloud sends them from its background jobs, so they arrive with its cron (every 5 minutes on a default setup). Core attributes each one to the person linked to the account it belongs to (the file's owner or the calendar's owner) and drops:
+- files outside someone's own Files (previews, versions, trash, upload chunks: filtered in Nextcloud already), hidden files, Office lock files and `.part` files;
+- anything from **before Core connected the person**: a new account's welcome files are copied when Core opens its files during provisioning, before the link is saved, so they never reach the bus;
+- the birthday calendar; and the title and place of anything marked private or confidential.
+
+New and deleted accounts are polled.
+
 ## From the console
 
 Everything above is also available without a browser, through the running server (so locking and the bus behave the same):

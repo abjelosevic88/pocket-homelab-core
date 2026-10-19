@@ -53,6 +53,20 @@ Polled every check interval from Jellyfin's activity log and its newest library 
 
 Sessions starting and ending are not published.
 
+### Nextcloud (source `connector:nextcloud`)
+
+Pushed by Nextcloud's webhooks (arrive with its cron, within about 5 minutes). `user_email` is the person Core linked to the account.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `nextcloud.file_created` | `file:<account>/<path>` | a file or folder appeared in someone's Files (upload, sync, copy) | `user_email`, `nextcloud_user`, `path` (inside Files), `name`, `folder`, `file_id`, `url` (`/f/<id>`), `by` (when someone else did it, e.g. in a shared folder) |
+| `nextcloud.file_deleted` | `file:<account>/<path>` | moved to the trash or deleted | same, without `file_id` and `url` |
+| `nextcloud.calendar_event_created` · `_updated` · `_deleted` | `calendar:<account>/<uid>` | an event in someone's calendar | `user_email`, `nextcloud_user`, `uid`, `calendar`, `title`, `location`, `start`, `end` (RFC 3339; a date when `all_day`), `all_day`, `recurring`, `url`; `private: true` instead of title and location for private or confidential events |
+| `nextcloud.task_created` · `task_updated` · `task_completed` · `task_deleted` | `calendar:<account>/<uid>` | a task (Nextcloud Tasks, Apple Reminders over CalDAV) | same, with `due` and `status` instead of `end` |
+| `nextcloud.user_created` · `user_deleted` | `user:<account>` | accounts appearing or disappearing (polled) | `nextcloud_user`, `name`, plus `user_email` when known |
+
+The birthday calendar, previews, versions, hidden and partial files, and anything from before Core connected the person are not published.
+
 ## Read
 
 | Method | Path | Notes |

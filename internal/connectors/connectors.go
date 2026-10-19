@@ -156,6 +156,10 @@ type Delivery struct {
 	DedupeKey string // the same key inside the dedupe window is the same delivery again
 	Event     Event  // Name, Subject and Payload; Core adds user_email
 	Drop      string // set: do not publish, and why
+	// At: when it happened in the app (zero = unknown). Core drops what
+	// happened before it connected the person: an account's welcome files
+	// are not news.
+	At time.Time
 }
 
 // Pusher is implemented by connectors whose events arrive by push instead

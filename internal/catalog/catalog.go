@@ -14,6 +14,9 @@ type Field struct {
 	Label  string `json:"label"`  // human label
 	Secret bool   `json:"secret"` // encrypted at rest, masked in the UI
 	Help   string `json:"help,omitempty"`
+	// ConnectorOnly: box-wide, used by Core's connector alone; never in a
+	// device profile or env file, never set per person.
+	ConnectorOnly bool `json:"connector_only,omitempty"`
 }
 
 // Entry is a service type.
@@ -31,6 +34,16 @@ type Entry struct {
 func (e Entry) FullKey(suffix string) string { return e.Prefix + "_" + suffix }
 
 // IsSecret reports whether a field suffix is a secret for this entry.
+// IsConnectorOnly reports whether a field stays inside Core.
+func (e Entry) IsConnectorOnly(suffix string) bool {
+	for _, f := range e.Fields {
+		if f.Key == suffix {
+			return f.ConnectorOnly
+		}
+	}
+	return false
+}
+
 func (e Entry) IsSecret(suffix string) bool {
 	for _, f := range e.Fields {
 		if f.Key == suffix {
@@ -110,7 +123,8 @@ var entries = []Entry{
 
 	// ---- Files, notes, code ----
 	{Type: "paperless", Name: "Paperless-ngx", Prefix: "PAPERLESS", Group: "Files", Fields: token("Django admin → Tokens")},
-	{Type: "nextcloud", Name: "Nextcloud", Prefix: "NEXTCLOUD", Group: "Files", Fields: []Field{{Key: "USERNAME", Label: "Username"}, {Key: "APP_PASSWORD", Label: "App password", Secret: true}}},
+	{Type: "nextcloud", Name: "Nextcloud", Prefix: "NEXTCLOUD", Group: "Files", Fields: []Field{{Key: "USERNAME", Label: "Username"}, {Key: "APP_PASSWORD", Label: "App password", Secret: true},
+		{Key: "ADMIN_PASSWORD", Label: "Login password (connector only)", Secret: true, ConnectorOnly: true, Help: "Only for the connector: Nextcloud wants the admin's real password, not an app password, to add accounts and change sign-in. Stays in Core, never sent to apps or devices."}}},
 	{Type: "forgejo", Name: "Forgejo / Gitea", Prefix: "FORGEJO", Group: "Files", Fields: token("Settings → Applications")},
 	{Type: "searxng", Name: "SearXNG", Prefix: "SEARXNG", Group: "Files"},
 

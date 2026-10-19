@@ -253,6 +253,7 @@ func (s *Server) handlePutCredential(w http.ResponseWriter, r *http.Request) {
 	if in.URL != nil {
 		o.URL = strings.TrimRight(strings.TrimSpace(*in.URL), "/")
 	}
+	e := s.entryForCtx(r, sv)
 	if in.Fields != nil {
 		f := map[string]string{}
 		for k, v := range *in.Fields {
@@ -260,13 +261,12 @@ func (s *Server) handlePutCredential(w http.ResponseWriter, r *http.Request) {
 			if v == masked {
 				v = cur.Fields[k]
 			}
-			if k != "" {
+			if k != "" && !e.IsConnectorOnly(k) { // box-wide only, never per person
 				f[k] = strings.TrimSpace(v)
 			}
 		}
 		o.Fields = f
 	}
-	e := s.entryForCtx(r, sv)
 	changed := !sameFields(cur.Fields, o.Fields)
 	if changed {
 		s.dropUserHooks(r.Context(), uid, sid) // made with the old key: delete them while it still works

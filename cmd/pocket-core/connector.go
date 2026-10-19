@@ -25,7 +25,7 @@ Actions:
   status                          switches, last poll, last error and every person's account
   test                            reachability + the stored admin credential (read-only)
   enable | disable                the master switch (off = Core does nothing on its own)
-  enable-events | disable-events  publish <type>.* events (Immich: creates / deletes the workflows that push each upload)
+  enable-events | disable-events  publish <type>.* events (Immich: per-person workflows; Nextcloud: box-wide webhooks)
   poll                            check once now (new accounts; re-create workflows deleted in the app)
   recreate-hooks                  delete and create every push workflow again (new secrets)
   enable-sso | disable-sso        "Sign in with Pocket Core" in the app (backs up the app's config first)
@@ -33,7 +33,7 @@ Actions:
                                   make accounts for people an admin creates from now on
   provision <email>               make or link that person's account now
   provision-all                   everyone in the service's audience who has no account yet
-  remote-accounts                 the app's accounts (connectors that link by hand, e.g. Jellyfin)
+  remote-accounts                 the app's accounts (connectors that link by hand: Jellyfin, Nextcloud)
   link <email> <account>          tie that person to an existing app account (name or id); provisioning leaves it alone
   unlink <email>                  forget the link (and the credential Core saved for it)
 
