@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
-import type { App, Delivery, Event, Topic, Webhook } from '../lib/types'
-import { AppIcon, humanTopic } from '../components/AppIcon'
+import type { Delivery, Event, Topic, Webhook } from '../lib/types'
+import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceKind } from '../components/EventView'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
 
@@ -34,7 +34,7 @@ function Log() {
   const [fresh, setFresh] = useState<Set<number>>(new Set())
   const [open, setOpen] = useState<number | null>(null)
   const { data: topics } = useAsync(() => api.get<Topic[]>(`${V1}/events/topics`), [items.length])
-  const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`).catch(() => [] as App[]), [])
+  const ctx = useEventCtx()
   const es = useRef<EventSource | null>(null)
   useEffect(() => { api.get<Event[]>(`${V1}/events?limit=200${topic ? `&topic=${encodeURIComponent(topic)}` : ''}`).then(setItems) }, [topic])
   useEffect(() => {
@@ -50,8 +50,8 @@ function Log() {
     es.current = s
     return () => s.close()
   }, [live, topic])
-  const bySlug = new Map((apps || []).map(a => [a.slug, a]))
-  const sources = [...new Set(items.map(e => e.source))].sort()
+  const sources = [...new Set(items.map(e => e.source))].map(src => ({ src, info: sourceInfo(src, ctx), n: items.filter(e => e.source === src).length }))
+  const groups: [SourceKind, string][] = [['app', 'Pocket apps'], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
   const shown = source ? items.filter(e => e.source === source) : items
   const days: [string, Event[]][] = []
   for (const e of shown) { const k = dayLabel(e.created_at); const last = days[days.length - 1]; if (last && last[0] === k) last[1].push(e); else days.push([k, [e]]) }
@@ -65,31 +65,32 @@ function Log() {
         <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
         <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
       </div>
-      {sources.length > 1 && <div className="chips source-chips">
+      {sources.length > 1 && <div className="source-groups">
         <button type="button" className={`chip ${source === '' ? 'active' : ''}`} onClick={() => setSource('')}>All <span className="muted">{items.length}</span></button>
-        {sources.map(src => { const a = bySlug.get(src); return (
-          <button type="button" key={src} className={`chip ${source === src ? 'active' : ''}`} onClick={() => setSource(source === src ? '' : src)}>
-            {a ? <AppIcon a={a} small /> : <span className="feed-ico"><img src="/favicon.svg" alt="" /></span>}{a ? a.name.replace(/^Pocket /, '') : src}<span className="muted">{items.filter(e => e.source === src).length}</span>
-          </button>) })}
+        {groups.map(([kind, title]) => { const list = sources.filter(x => x.info.kind === kind).sort((x, y) => x.info.label.localeCompare(y.info.label)); return list.length === 0 ? null : (
+          <div key={kind} className="source-group"><span className="source-group-title">{title}</span>
+            {list.map(({ src, info, n }) => <button type="button" key={src} className={`chip ${source === src ? 'active' : ''}`} onClick={() => setSource(source === src ? '' : src)}><SourceIcon info={info} />{info.label}<span className="muted">{n}</span></button>)}
+          </div>) })}
       </div>}
       {shown.length === 0 ? <Card><Empty title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
         days.map(([day, list]) => <section key={day} className="svc-group">
           <div className="svc-group-head"><span>{day}</span><span className="count">{list.length}</span></div>
-          <div className="svc-list feed">{list.map(e => { const a = bySlug.get(e.source); const isOpen = open === e.id; return (
-            <div key={e.id} className={`feed-item ${fresh.has(e.id) ? 'fresh' : ''} ${isOpen ? 'open' : ''}`}>
+          <div className="svc-list feed">{list.map(e => { const info = sourceInfo(e.source, ctx); const d = describeEvent(e, ctx); const isOpen = open === e.id; return (
+            <div key={e.id} className={`feed-item ${fresh.has(e.id) ? 'fresh' : ''} ${isOpen ? 'open' : ''} ${info.kind}`}>
               <button type="button" className="feed-row" onClick={() => setOpen(isOpen ? null : e.id)} aria-expanded={isOpen}>
-                {a ? <AppIcon a={a} small /> : <span className="feed-ico"><img src="/favicon.svg" alt="" /></span>}
+                <SourceIcon info={info} />
                 <span className="grow">
-                  <span className="feed-title">{humanTopic(e.topic)}<span className="muted"> · {a ? a.name.replace(/^Pocket /, '') : e.source}</span></span>
-                  <span className="feed-sub mono">{e.topic}</span>
+                  <span className="feed-title">{d.title}<span className="muted"> · {info.label}</span>{info.kind === 'connector' && <span className="badge cat src-badge">connector</span>}</span>
+                  <span className="feed-sub">{d.sub}</span>
                 </span>
-                {e.subject && <span className="subject-chip mono">{e.subject}</span>}
+                {d.facts ? null : e.subject && <span className="subject-chip mono">{e.subject}</span>}
                 <span className="feed-time" title={when(e.created_at)}>{ago(e.created_at)}</span>
                 <span className="chev">›</span>
               </button>
               {isOpen && <div className="feed-detail">
-                <div className="feed-detail-meta"><span>#{e.id}</span><span>{when(e.created_at)}</span><span className="spacer" /><button className="btn sm ghost" onClick={() => copy(e)}>Copy JSON</button></div>
-                <pre>{JSON.stringify(e.payload, null, 2)}</pre>
+                {d.facts && <dl className="event-facts">{d.facts.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
+                <div className="feed-detail-meta"><span className="mono">{e.topic}</span><span>#{e.id}</span><span>{when(e.created_at)}</span><span className="spacer" />{d.link && <a className="btn sm primary" href={d.link.href} target="_blank" rel="noreferrer">{d.link.label} ↗</a>}<button className="btn sm ghost" onClick={() => copy(e)}>Copy JSON</button></div>
+                {d.facts ? <details className="cx-more"><summary>Raw payload</summary><pre>{JSON.stringify(e.payload, null, 2)}</pre></details> : <pre>{JSON.stringify(e.payload, null, 2)}</pre>}
               </div>}
             </div>) })}</div>
         </section>)}

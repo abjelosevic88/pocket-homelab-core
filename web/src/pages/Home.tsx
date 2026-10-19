@@ -3,13 +3,15 @@ import { Link } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { ago } from '../lib/format'
 import type { MyService, Overview } from '../lib/types'
-import { AppIcon, humanTopic } from '../components/AppIcon'
+import { AppIcon } from '../components/AppIcon'
+import { SourceIcon, describeEvent, sourceInfo, useEventCtx } from '../components/EventView'
 import { Card, Dot, Empty, Loading, PageHeader, useAsync } from '../components/ui'
 import PairModal from '../components/PairModal'
 
 export default function Home() {
   const { data, loading, error, reload } = useAsync(() => api.get<Overview>(`${V1}/overview`), [])
   const [pair, setPair] = useState(false)
+  const ectx = useEventCtx()
   if (loading && !data) return <Loading />
   if (error || !data) return <div className="callout danger">{error || 'Failed to load'}</div>
   const d = data
@@ -23,7 +25,6 @@ export default function Home() {
     </>
   )
   const down = d.apps.filter(a => a.status === 'down').length
-  const appByName = new Map(d.apps.map(a => [a.slug, a]))
   return (
     <>
       <PageHeader title={d.box_name} sub="Everything on this box, in one place." actions={<><button className="btn" onClick={reload}>Refresh</button><button className="btn primary" onClick={() => setPair(true)}>Pair a device</button></>} />
@@ -47,13 +48,14 @@ export default function Home() {
         <Card title="Recent events" actions={<Link className="btn sm ghost" to="/events">Live →</Link>} flush>
           {d.recent_events.length === 0 ? <Empty title="Quiet">Nothing published yet.</Empty> :
             <div className="feed">{d.recent_events.map(e => {
-              const src = appByName.get(e.source)
+              const info = sourceInfo(e.source, ectx)
+              const desc = describeEvent(e, ectx)
               return (
                 <Link key={e.id} to="/events" className="feed-row">
-                  {src ? <AppIcon a={src} small /> : <span className="feed-ico"><img src="/favicon.svg" alt="" /></span>}
+                  <SourceIcon info={info} />
                   <span className="grow">
-                    <span className="feed-title">{humanTopic(e.topic)}<span className="muted"> · {src ? src.name.replace(/^Pocket /, '') : e.source}</span></span>
-                    <span className="feed-sub mono">{e.topic}{e.subject ? ` · ${e.subject}` : ''}</span>
+                    <span className="feed-title">{desc.title}<span className="muted"> · {info.label}</span></span>
+                    <span className="feed-sub">{desc.sub}</span>
                   </span>
                   <span className="feed-time">{ago(e.created_at)}</span>
                 </Link>

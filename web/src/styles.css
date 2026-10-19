@@ -658,3 +658,16 @@ html, body { overflow-x: hidden; }
 .cx-people-block { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); }
 .cx-block-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 @media (max-width: 700px) { .cx-stats { grid-template-columns: repeat(3, 1fr); } .cx-stat.wide { grid-column: 1 / -1; } .cx-person { flex-wrap: wrap; } }
+
+/* Event sources grouped; connector events */
+.source-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 16px; }
+.source-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
+.source-group-title { font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.source-groups .chip { display: inline-flex; align-items: center; gap: 7px; }
+.source-groups .chip .feed-ico { width: 20px; height: 20px; border-radius: 6px; font-size: 10px; }
+.feed-ico.plain, .mini-ico.plain { background: var(--surface); border: 1px solid var(--border); }
+.feed-ico.plain img, .mini-ico.plain img { width: 70%; height: 70%; object-fit: contain; }
+.src-badge { margin-left: 6px; font-size: 10px; padding: 1px 6px; vertical-align: 1px; }
+.event-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 14px; margin: 0 0 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+.event-facts dt { color: var(--muted); } .event-facts dd { margin: 0; overflow-wrap: anywhere; }
+.feed-detail .cx-more pre { margin-top: 6px; }
