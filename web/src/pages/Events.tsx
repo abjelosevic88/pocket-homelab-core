@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
-import type { Delivery, Event, Topic, Webhook } from '../lib/types'
+import type { App, Delivery, Event, Topic, Webhook } from '../lib/types'
+import { AppIcon, humanTopic } from '../components/AppIcon'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
 
@@ -16,38 +17,82 @@ export default function Events() {
   )
 }
 
+function dayLabel(iso: string) {
+  const d = new Date(iso), today = new Date()
+  const y = new Date(); y.setDate(today.getDate() - 1)
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  if (d.toDateString() === y.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
 function Log() {
+  const { toast } = useToast()
   const [topic, setTopic] = useState('')
+  const [source, setSource] = useState('')
   const [live, setLive] = useState(true)
   const [items, setItems] = useState<Event[]>([])
+  const [fresh, setFresh] = useState<Set<number>>(new Set())
   const [open, setOpen] = useState<number | null>(null)
   const { data: topics } = useAsync(() => api.get<Topic[]>(`${V1}/events/topics`), [items.length])
+  const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`).catch(() => [] as App[]), [])
   const es = useRef<EventSource | null>(null)
-  useEffect(() => { api.get<Event[]>(`${V1}/events?limit=100${topic ? `&topic=${encodeURIComponent(topic)}` : ''}`).then(setItems) }, [topic])
+  useEffect(() => { api.get<Event[]>(`${V1}/events?limit=200${topic ? `&topic=${encodeURIComponent(topic)}` : ''}`).then(setItems) }, [topic])
   useEffect(() => {
     es.current?.close()
     if (!live) return
     const s = new EventSource(`${V1}/events/stream?topics=${encodeURIComponent(topic || '*')}`)
-    s.onmessage = (e: MessageEvent) => { const ev = JSON.parse(e.data) as Event; setItems(list => [ev, ...list.filter(x => x.id !== ev.id)].slice(0, 300)) }
+    s.onmessage = (e: MessageEvent) => {
+      const ev = JSON.parse(e.data) as Event
+      setItems(list => [ev, ...list.filter(x => x.id !== ev.id)].slice(0, 300))
+      setFresh(f => new Set(f).add(ev.id))
+      setTimeout(() => setFresh(f => { const n = new Set(f); n.delete(ev.id); return n }), 2500)
+    }
     es.current = s
     return () => s.close()
   }, [live, topic])
+  const bySlug = new Map((apps || []).map(a => [a.slug, a]))
+  const sources = [...new Set(items.map(e => e.source))].sort()
+  const shown = source ? items.filter(e => e.source === source) : items
+  const days: [string, Event[]][] = []
+  for (const e of shown) { const k = dayLabel(e.created_at); const last = days[days.length - 1]; if (last && last[0] === k) last[1].push(e); else days.push([k, [e]]) }
+  const copy = async (e: Event) => { await navigator.clipboard.writeText(JSON.stringify(e.payload, null, 2)); toast('Payload copied') }
   return (
     <>
       <div className="toolbar">
-        <select value={topic} onChange={e => setTopic(e.target.value)}><option value="">All topics</option>{(topics || []).map(t => <option key={t.topic} value={t.topic}>{t.topic} ({t.count})</option>)}</select>
-        <input style={{ maxWidth: 220 }} placeholder="or a pattern: kitchen.*" value={topic} onChange={e => setTopic(e.target.value.toLowerCase())} />
+        <div className="search"><span className="ico">⌕</span><input placeholder="Topic or pattern, e.g. kitchen.*" value={topic} onChange={e => setTopic(e.target.value.toLowerCase())} list="event-topics" /></div>
+        <datalist id="event-topics">{(topics || []).map(t => <option key={t.topic} value={t.topic}>{t.count}</option>)}</datalist>
         <span className="spacer" />
-        <span className="live"><span className={`dot ${live ? 'on' : ''}`} />{live ? 'live' : 'paused'}</span><Switch on={live} onChange={setLive} />
+        <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
+        <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
       </div>
-      {items.length === 0 ? <Card><Empty title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
-        <Card flush><table className="table compact">
-          <thead><tr><th>Topic</th><th>Source</th><th>Subject</th><th>When</th></tr></thead>
-          <tbody>{items.map(e => <tr key={e.id} className="event-row" style={{ cursor: 'pointer' }} onClick={() => setOpen(open === e.id ? null : e.id)}>
-            <td><span className="topic">{e.topic}</span>{open === e.id && <pre>{JSON.stringify(e.payload, null, 2)}</pre>}</td>
-            <td>{e.source}</td><td>{e.subject}</td><td title={when(e.created_at)} className="muted">{ago(e.created_at)}</td>
-          </tr>)}</tbody>
-        </table></Card>}
+      {sources.length > 1 && <div className="chips source-chips">
+        <button type="button" className={`chip ${source === '' ? 'active' : ''}`} onClick={() => setSource('')}>All <span className="muted">{items.length}</span></button>
+        {sources.map(src => { const a = bySlug.get(src); return (
+          <button type="button" key={src} className={`chip ${source === src ? 'active' : ''}`} onClick={() => setSource(source === src ? '' : src)}>
+            {a ? <AppIcon a={a} small /> : <span className="feed-ico"><img src="/favicon.svg" alt="" /></span>}{a ? a.name.replace(/^Pocket /, '') : src}<span className="muted">{items.filter(e => e.source === src).length}</span>
+          </button>) })}
+      </div>}
+      {shown.length === 0 ? <Card><Empty title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
+        days.map(([day, list]) => <section key={day} className="svc-group">
+          <div className="svc-group-head"><span>{day}</span><span className="count">{list.length}</span></div>
+          <div className="svc-list feed">{list.map(e => { const a = bySlug.get(e.source); const isOpen = open === e.id; return (
+            <div key={e.id} className={`feed-item ${fresh.has(e.id) ? 'fresh' : ''} ${isOpen ? 'open' : ''}`}>
+              <button type="button" className="feed-row" onClick={() => setOpen(isOpen ? null : e.id)} aria-expanded={isOpen}>
+                {a ? <AppIcon a={a} small /> : <span className="feed-ico"><img src="/favicon.svg" alt="" /></span>}
+                <span className="grow">
+                  <span className="feed-title">{humanTopic(e.topic)}<span className="muted"> · {a ? a.name.replace(/^Pocket /, '') : e.source}</span></span>
+                  <span className="feed-sub mono">{e.topic}</span>
+                </span>
+                {e.subject && <span className="subject-chip mono">{e.subject}</span>}
+                <span className="feed-time" title={when(e.created_at)}>{ago(e.created_at)}</span>
+                <span className="chev">›</span>
+              </button>
+              {isOpen && <div className="feed-detail">
+                <div className="feed-detail-meta"><span>#{e.id}</span><span>{when(e.created_at)}</span><span className="spacer" /><button className="btn sm ghost" onClick={() => copy(e)}>Copy JSON</button></div>
+                <pre>{JSON.stringify(e.payload, null, 2)}</pre>
+              </div>}
+            </div>) })}</div>
+        </section>)}
     </>
   )
 }
