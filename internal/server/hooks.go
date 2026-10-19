@@ -329,17 +329,26 @@ func (s *Server) ensureHooks(ctx context.Context, sv *store.Service, c connector
 			id = crypto.Token("", 18)
 		}
 		secret := crypto.Token("", 32)
+		// Record the hook first: some apps (the *arr) call a new subscription
+		// once before saving it, and that call must authenticate.
+		rec := &store.ConnectorHook{ID: id, ServiceID: sv.ID, UserID: uid, Trigger: tr.Trigger, SecretHash: crypto.Hash(secret)}
+		if err := s.store.SaveConnectorHook(ctx, rec); err != nil {
+			errs = append(errs, "saving the hook failed: "+err.Error())
+			continue
+		}
 		rid, err := p.Subscribe(ctx, t, connectors.Subscription{Trigger: tr.Trigger, Name: tr.Name, URL: s.hookURL(id),
 			Description: "Managed by Pocket Core (" + s.cfg.BaseURL + "): sends what happens here to Core's event bus. Turn Events off in Core to remove it.",
 			HeaderName:  connectors.PushHeader, HeaderValue: secret})
 		if err != nil {
 			if known {
 				_ = s.store.SetConnectorHookCheck(ctx, h.ID, "error", err.Error())
+			} else {
+				_ = s.store.DeleteConnectorHook(ctx, id)
 			}
 			errs = append(errs, err.Error())
 			continue
 		}
-		rec := &store.ConnectorHook{ID: id, ServiceID: sv.ID, UserID: uid, Trigger: tr.Trigger, RemoteWorkflowID: rid, SecretHash: crypto.Hash(secret)}
+		rec.RemoteWorkflowID = rid
 		if err := s.store.SaveConnectorHook(ctx, rec); err != nil {
 			_ = p.Unsubscribe(ctx, t, rid) // never leave a subscription Core cannot authenticate
 			errs = append(errs, "saving the hook failed: "+err.Error())

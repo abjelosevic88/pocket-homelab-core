@@ -21,6 +21,8 @@ type fakeArr struct {
 	notes     map[int64]map[string]any
 	n         int64
 	forceSave bool
+	coreURL   string // where http://core.test really is
+	tested    int    // test calls made before saving
 }
 
 func newFakeArr(t *testing.T, app, api string, triggers []string) *fakeArr {
@@ -60,6 +62,13 @@ func newFakeArr(t *testing.T, app, api string, triggers []string) *fakeArr {
 			var in map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			f.forceSave = r.URL.Query().Get("forceSave") == "true"
+			// Like the real apps: an enabled connection is called once with
+			// a Test event before it is saved, forceSave or not.
+			if msg := f.testCall(in); msg != "" {
+				w.WriteHeader(400)
+				js([]map[string]string{{"propertyName": "Url", "errorMessage": msg}})
+				return
+			}
 			f.n++
 			in["id"] = f.n
 			f.notes[f.n] = in
@@ -78,6 +87,48 @@ func newFakeArr(t *testing.T, app, api string, triggers []string) *fakeArr {
 	}))
 	t.Cleanup(f.Close)
 	return f
+}
+
+// testCall posts {"eventType":"Test"} the way the apps do; "" = it passed.
+func (f *fakeArr) testCall(n map[string]any) string {
+	enabled := false
+	for k, v := range n {
+		enabled = enabled || (strings.HasPrefix(k, "on") && v == true)
+	}
+	if !enabled {
+		return ""
+	}
+	var u string
+	hdr := map[string]string{}
+	for _, x := range n["fields"].([]any) {
+		m := x.(map[string]any)
+		switch m["name"] {
+		case "url":
+			u = fmt.Sprint(m["value"])
+		case "headers":
+			if l, ok := m["value"].([]any); ok {
+				for _, h := range l {
+					hm := h.(map[string]any)
+					hdr[fmt.Sprint(hm["key"])] = fmt.Sprint(hm["value"])
+				}
+			}
+		}
+	}
+	req, _ := http.NewRequest("POST", strings.Replace(u, "http://core.test", f.coreURL, 1), strings.NewReader(`{"eventType":"Test","instanceName":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	f.tested++
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "Unable to post to webhook: " + err.Error()
+	}
+	res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		return fmt.Sprintf("Unable to post to webhook: HTTP request failed: [%d]", res.StatusCode)
+	}
+	return ""
 }
 
 // ours returns Core's connection, its URL path and secret.
@@ -188,6 +239,7 @@ func TestArrConnectors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		f := newFakeArr(t, strings.ToUpper(tc.app[:1])+tc.app[1:], tc.api, tc.triggers)
+		f.coreURL = e.srv.URL
 		var sv struct {
 			ID int64 `json:"id"`
 		}
@@ -228,6 +280,9 @@ func TestArrConnectors(t *testing.T) {
 		f.mu.Lock()
 		forced := f.forceSave
 		f.mu.Unlock()
+		if f.tested != 1 {
+			t.Fatalf("%s: the app's test call should have run once and passed, ran %d", tc.app, f.tested)
+		}
 		if !forced || n["includeHealthWarnings"] != false {
 			t.Fatalf("%s: forceSave %v, warnings %v", tc.app, forced, n["includeHealthWarnings"])
 		}

@@ -110,7 +110,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
       <div className="cx-hero">
         <div className="grow">
           <div className="cx-hero-title"><span className={`pill ${off ? '' : c.last_error ? 'err' : 'ok'}`}>{off ? 'Off' : c.last_error ? 'Error' : 'On'}</span><b>Connector</b></div>
-          <p className="muted small">Core manages {service.name} with the admin key saved on the service: accounts for your people, sign-in through Core, and <span className="inline-code">{c.type}.*</span> events.</p>
+          <p className="muted small">Core manages {service.name} with the admin key saved on the service: {[c.capabilities.provision && 'accounts for your people', c.capabilities.sso && 'sign-in through Core'].filter(Boolean).join(', ')}{c.capabilities.provision || c.capabilities.sso ? ', and ' : ''}<span className="inline-code">{c.type}.*</span> events{!c.capabilities.provision && !c.capabilities.sso ? ` (${service.name} has no per-person accounts or sign-in)` : ''}.</p>
         </div>
         <button className="btn" onClick={doTest} disabled={busy === 'test'} title="Read-only: version and admin rights">{busy === 'test' ? 'Testing…' : 'Test'}</button>
         <Switch on={c.enabled} onChange={v => save('enabled', { enabled: v }, v ? 'Connector on' : 'Connector off')} title="Master switch" />

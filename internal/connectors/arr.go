@@ -28,8 +28,9 @@ import (
 //	POST   /api/vN/notification?forceSave=true   subscribe           WRITE
 //	DELETE /api/vN/notification/:id              unsubscribe         WRITE
 //
-// forceSave: saving a connection makes the app call it with a Test event
-// first, and Core only knows the hook's secret once the app has saved it.
+// Saving an enabled connection makes the app call it once with a Test
+// event first (forceSave only turns warnings off), so Core records the hook
+// before subscribing and drops that call.
 type arr struct {
 	typ  string // radarr | sonarr | lidarr
 	name string // Radarr

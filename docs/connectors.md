@@ -145,7 +145,7 @@ Needs: the service in Core with its URL, public URL and **API key** (Settings �
 | `POST /notification?forceSave=true` | Events on: add the connection | **yes** |
 | `DELETE /notification/:id` | Events off | **yes** |
 
-Switching **Events** on adds one **Webhook** connection named *Pocket Core* (Settings → Connect): `POST` to `https://<core>/api/v1/connectors/hooks/<id>` with Core's secret in the `X-Pocket-Hook` header. `forceSave` skips the app's test call, which Core could not answer before it has saved the hook. Core re-creates the connection if someone deletes it, removes it when Events go off, and never touches other connections (Apprise, ntfy, Jellyfin…).
+Switching **Events** on adds one **Webhook** connection named *Pocket Core* (Settings → Connect): `POST` to `https://<core>/api/v1/connectors/hooks/<id>` with Core's secret in the `X-Pocket-Hook` header. Saving an enabled connection makes the app call it once with a *Test* event first (`forceSave` only silences warnings), so Core records every hook **before** it subscribes; the test call authenticates and is dropped. Core re-creates the connection if someone deletes it, removes it when Events go off, and never touches other connections (Apprise, ntfy, Jellyfin…).
 
 Triggers switched on (only those the version has): grab, import (Lidarr: release import), upgrade, added, deleted, file deleted (not "deleted for upgrade"), album deleted (Lidarr), download and import failures (Lidarr), manual interaction required, health issue and restored (**errors only**: `includeHealthWarnings` off, warnings flap with every WAN blip), application update. Renames and retags stay off: they repeat what an import said.
 
