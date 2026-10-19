@@ -77,6 +77,11 @@ export function describeEvent(e: Event, ctx: EventCtx): EventDescription {
         link: p.url ? { href: str(p.url), label: 'Open in Immich' } : undefined,
         facts: [['Person', who], ['File', str(p.original_file_name)], ['Place', [str(p.city), str(p.state), str(p.country)].filter(Boolean).join(', ')], ['Taken', [clock(str(p.taken_at || p.local_date_time)), str(p.time_zone)].filter(Boolean).join(' ')], ['Camera', camera], ['Lens', str(p.lens_model)], ['Size', size]],
       }
+    case 'clips.clip_created': {
+      const what = str(p.kind) === 'image' ? 'an image' : str(p.kind) === 'link' ? 'a link' : str(p.kind) === 'file' ? 'a file' : 'some text'
+      const from = [str(p.source_app), str(p.source_device)].filter(Boolean).join(' on ')
+      return { title: `${who} copied ${what}`, sub: [from, p.words ? `${p.words} words` : '', p.bytes && !p.words ? `${Math.round(Number(p.bytes) / 1024)} KB` : ''].filter(Boolean).join(' · ') || e.topic }
+    }
     case 'immich.user_created':
       return { title: `New Immich account${p.name ? `: ${str(p.name)}` : ''}`, sub: str(p.email || p.user_email) }
   }

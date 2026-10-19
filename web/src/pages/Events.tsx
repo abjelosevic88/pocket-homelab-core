@@ -17,6 +17,14 @@ export default function Events() {
   )
 }
 
+// autoFacts turns a payload's top-level plain values into readable rows; nested values stay in the raw JSON.
+function autoFacts(payload: unknown): [string, string][] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return []
+  return Object.entries(payload as Record<string, unknown>)
+    .filter(([, v]) => v !== null && v !== '' && typeof v !== 'object')
+    .map(([k, v]) => [k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()), typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v)])
+}
+
 function dayLabel(iso: string) {
   const d = new Date(iso), today = new Date()
   const y = new Date(); y.setDate(today.getDate() - 1)
@@ -79,7 +87,7 @@ function Log() {
         days.map(([day, list]) => <section key={day} className="svc-group">
           <div className="svc-group-head"><span>{day}</span><span className="count">{list.length}</span></div>
           <div className="svc-list feed">{list.map(e => { const info = sourceInfo(e.source, ctx); const d = describeEvent(e, ctx); const isOpen = open === e.id; return (
-            <div key={e.id} className={`feed-item ${fresh.has(e.id) ? 'fresh' : ''} ${isOpen ? 'open' : ''} ${info.kind}`}>
+            <div key={e.id} className={`feed-item ${fresh.has(e.id) ? 'fresh' : ''} ${isOpen ? 'open' : ''} src-${info.kind}`}>
               <button type="button" className="feed-row" onClick={() => setOpen(isOpen ? null : e.id)} aria-expanded={isOpen}>
                 <SourceIcon info={info} />
                 <span className="grow">
@@ -90,11 +98,16 @@ function Log() {
                 <span className="feed-time" title={when(e.created_at)}>{ago(e.created_at)}</span>
                 <span className="chev">›</span>
               </button>
-              {isOpen && <div className="feed-detail">
-                {d.facts && <dl className="event-facts">{d.facts.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
-                <div className="feed-detail-meta"><span className="mono">{e.topic}</span><span>#{e.id}</span><span>{when(e.created_at)}</span><span className="spacer" />{d.link && <a className="btn sm primary" href={d.link.href} target="_blank" rel="noreferrer">{d.link.label} ↗</a>}<button className="btn sm ghost" onClick={() => copy(e)}>Copy JSON</button></div>
-                {d.facts ? <details className="cx-more"><summary>Raw payload</summary><pre>{JSON.stringify(e.payload, null, 2)}</pre></details> : <pre>{JSON.stringify(e.payload, null, 2)}</pre>}
-              </div>}
+              {isOpen && <div className="feed-detail-wrap"><div className="feed-detail">
+                <div className="feed-detail-meta">
+                  <span className="mono">{e.topic}</span><span>#{e.id}</span><span title={e.created_at}>{when(e.created_at)}</span>{e.subject && <span className="mono">{e.subject}</span>}
+                  <span className="spacer" />
+                  {d.link && <a className="btn sm primary" href={d.link.href} target="_blank" rel="noreferrer">{d.link.label} ↗</a>}
+                  <button className="btn sm ghost" onClick={() => copy(e)}>Copy JSON</button>
+                </div>
+                {(() => { const facts = d.facts || autoFacts(e.payload); return facts.length > 0 && <dl className="event-facts">{facts.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl> })()}
+                <details className="cx-more"><summary>Raw payload</summary><pre>{JSON.stringify(e.payload, null, 2)}</pre></details>
+              </div></div>}
             </div>) })}</div>
         </section>)}
     </>

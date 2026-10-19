@@ -585,7 +585,14 @@ html, body { overflow-x: hidden; }
 .feed-item.open .subject-chip { background: var(--surface); }
 .chev { color: var(--muted); font-size: 18px; transition: transform .15s; width: 12px; text-align: center; }
 .feed-item.open .chev { transform: rotate(90deg); }
-.feed-detail { padding: 0 16px 14px 58px; background: var(--surface-2); }
+.feed-detail { padding: 4px 16px 14px 58px; background: var(--surface-2); }
+.feed-detail-wrap { display: grid; grid-template-rows: 1fr; overflow: hidden; animation: feed-open .18s ease-out; }
+.feed-detail-wrap > .feed-detail { min-height: 0; }
+@keyframes feed-open { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+.feed-item .feed-row:focus-visible { outline: none; box-shadow: inset 3px 0 0 var(--accent); }
+.feed-item.open { box-shadow: inset 3px 0 0 var(--accent); }
+.feed-detail-meta { flex-wrap: wrap; }
+.feed-detail .cx-more pre { max-height: 240px; }
 .feed-detail-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); padding-bottom: 8px; }
 .feed-detail pre { margin: 0; max-height: 320px; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 12px; }
 @media (max-width: 900px) { .subject-chip { display: none; } .feed-detail { padding-left: 16px; } }
