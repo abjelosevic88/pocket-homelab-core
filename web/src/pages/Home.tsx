@@ -7,6 +7,7 @@ import { AppIcon } from '../components/AppIcon'
 import { SourceIcon, describeEvent, sourceInfo, useEventCtx } from '../components/EventView'
 import { Card, Dot, Empty, Loading, PageHeader, useAsync } from '../components/ui'
 import PairModal from '../components/PairModal'
+import { iconCandidates } from '../lib/icons'
 
 export default function Home() {
   const { data, loading, error, reload } = useAsync(() => api.get<Overview>(`${V1}/overview`), [])
@@ -79,6 +80,7 @@ function MyServices() {
   if (error || !data) return <div className="callout danger">{error || 'Failed to load services'}</div>
   if (data.length === 0) return <Card title="Your services"><Empty title="Nothing shared with you yet">Ask the person who runs this box to add you to a service.</Empty></Card>
   const groups: [string, MyService[]][] = []
+  const pocketBases = data.filter(x => x.pocket).map(x => x.url)
   for (const sv of data) {
     const g = sv.group || 'Other'
     const hit = groups.find(x => x[0] === g)
@@ -90,7 +92,7 @@ function MyServices() {
         <Card key={g} title={g}>
           <div className="app-grid">{list.map(sv => (
             <a key={sv.id} href={sv.open_url || sv.url} target="_blank" rel="noreferrer" className="app-card" title={sv.open_url !== sv.url ? 'Opens signed in with your Pocket Core account' : undefined}>
-              <ServiceIcon sv={sv} />
+              <ServiceIcon sv={sv} pocketBases={pocketBases} />
               <span className="grow"><span className="name">{sv.name}</span><span className="meta block">{sv.url.replace(/^https?:\/\//, '')}</span></span>
             </a>))}</div>
         </Card>))}
@@ -98,9 +100,8 @@ function MyServices() {
   )
 }
 
-function ServiceIcon({ sv }: { sv: MyService }) {
-  const [src, setSrc] = useState(sv.icon || `${sv.url}/favicon.ico`)
-  const [failed, setFailed] = useState(false)
-  const fallback = () => { if (src !== `${sv.url}/favicon.ico` && !failed) setSrc(`${sv.url}/favicon.ico`); else setFailed(true) }
-  return <span className="icon">{failed ? sv.name[0] : <img src={src} alt="" onError={fallback} />}</span>
+function ServiceIcon({ sv, pocketBases }: { sv: MyService; pocketBases: string[] }) {
+  const list = [...(sv.icon ? [sv.icon] : []), ...iconCandidates({ type: sv.type, url: sv.url, pocket: sv.pocket }, pocketBases)]
+  const [i, setI] = useState(0)
+  return <span className="icon">{i >= list.length ? sv.name[0] : <img src={list[i]} alt="" onError={() => setI(n => n + 1)} />}</span>
 }

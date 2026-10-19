@@ -510,11 +510,24 @@ html, body { overflow-x: hidden; }
 .row-menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 160px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(16, 24, 40, .14); padding: 4px; display: grid; }
 .row-menu-pop button { text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 7px; font: inherit; color: inherit; cursor: pointer; }
 .row-menu-pop button:hover { background: var(--surface-2); }
+.svc-foot { display: contents; }
 @media (max-width: 900px) {
-  .svc-row { grid-template-columns: 36px minmax(0, 1fr) 44px; gap: 10px; padding: 12px; }
-  .svc-icon { width: 36px; height: 36px; }
-  .svc-status, .svc-actions { grid-column: 2 / 4; justify-content: flex-start; min-width: 0; }
-  .svc-row > .switch { grid-row: 1; grid-column: 3; }
+  .svc-row { grid-template-columns: 36px minmax(0, 1fr) auto; gap: 6px 12px; padding: 12px 14px; align-items: start; }
+  .svc-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .svc-icon img { width: 24px; height: 24px; }
+  .svc-row > .switch { grid-row: 1; grid-column: 3; margin-top: 6px; }
+  .svc-name { font-size: 15px; }
+  .svc-name b { overflow-wrap: anywhere; }
+  /* key status and buttons share one full-width line under the name */
+  .svc-foot { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-left: 48px; }
+  .svc-status { justify-content: flex-start; }
+  .svc-status:empty { display: none; }
+  .svc-actions { min-width: 0; margin-left: auto; margin-right: -6px; }
+  .svc-actions .btn.sm { padding: 5px 9px; }
+}
+@media (max-width: 480px) {
+  .svc-foot { padding-left: 0; }
+  .svc-sub .env { display: none; }
 }
 
 /* Apps: tiles */
@@ -615,6 +628,13 @@ html, body { overflow-x: hidden; }
 .conn-part { font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
 .conn-part.on { background: var(--success-soft); color: var(--success); border-color: transparent; }
 .conn-btn.on { background: var(--accent-soft); color: var(--accent-hover); border-color: transparent; }
+@media (max-width: 480px) {
+  /* the connector line stays one line: the bolt says "connector", the chips say what is on */
+  .conn-line { flex-wrap: nowrap; max-width: 100%; overflow: hidden; border-radius: 10px; gap: 4px; padding: 3px 6px; }
+  .conn-line .conn-label { display: none; }
+  .conn-line.err .conn-label, .conn-line.off .conn-label { display: inline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conn-part { padding: 1px 6px; font-size: 11px; white-space: nowrap; }
+}
 .conn-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; }
 .conn-card { display: grid; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); box-shadow: var(--shadow); border-left: 4px solid var(--border); }
 .conn-card.on { border-left-color: var(--success); }

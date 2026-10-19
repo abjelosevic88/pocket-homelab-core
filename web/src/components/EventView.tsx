@@ -3,6 +3,7 @@ import { api, V1 } from '../lib/api'
 import type { App, Event, Service, User } from '../lib/types'
 import { useAsync } from './ui'
 import { AppIcon, humanTopic } from './AppIcon'
+import { iconCandidates } from '../lib/icons'
 
 /** What the event views need to name sources and people. Admin-only lists fail soft. */
 export interface EventCtx { apps: App[]; services: Service[]; users: User[] }
@@ -33,8 +34,8 @@ export function SourceIcon({ info, small = true }: { info: SourceInfo; small?: b
   if (info.app) return <AppIcon a={info.app} small={small} />
   const cls = small ? 'feed-ico' : 'mini-ico'
   if (info.kind === 'core') return <span className={cls}><img src="/favicon.svg" alt="" /></span>
-  const base = (info.service?.public_url || info.service?.url || '').replace(/\/$/, '')
-  const candidates = base ? [`${base}/favicon.ico`, `${base}/favicon.svg`, `${base}/favicon.png`] : []
+  const sv = info.service
+  const candidates = sv ? iconCandidates({ type: sv.type, url: sv.url, public_url: sv.public_url, pocket: sv.catalog?.pocket || !!sv.app_id }) : []
   if (i < candidates.length) return <span className={`${cls} plain`}><img src={candidates[i]} alt="" onError={() => setI(n => n + 1)} /></span>
   return <span className={cls}>{info.label[0]}</span>
 }

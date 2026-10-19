@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
 import { ConnectorModal } from '../components/ConnectorPanel'
 import { Select } from '../components/Select'
+import { bundledIcon, iconCandidates } from '../lib/icons'
 
 type TestResult = { ok: boolean; status?: number; ms?: number; error?: string; busy?: boolean }
 
@@ -23,6 +24,7 @@ export default function Services() {
   const [show, setShow] = useState<'all' | 'on' | 'off' | 'conn'>('all')
   const [tests, setTests] = useState<Record<number, TestResult>>({})
   const list = data || []
+  const pocketBases = list.filter(s => s.catalog.pocket || s.app_id).map(s => s.public_url || s.url)
   const groups = useMemo(() => {
     const g = new Map<string, Service[]>()
     for (const s of list) {
@@ -50,7 +52,7 @@ export default function Services() {
         <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length}` }] : [])]} />
         <button className="btn sm" onClick={testAll} title="Check every service in the profile">Test all</button>
       </div>
-      {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} onOpen={setConn} />}
+      {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} pocketBases={pocketBases} onOpen={setConn} />}
       {list.length === 0 ? <Card><Empty title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
         groups.length === 0 ? <Card><Empty title="No match">Nothing matches this search.</Empty></Card> :
         groups.map(([g, items]) => <section key={g} className="svc-group">
@@ -64,7 +66,7 @@ export default function Services() {
             const t = tests[s.id]
             return (
               <div key={s.id} className={`svc-row ${s.enabled ? '' : 'off'}`}>
-                <ServiceIcon s={s} />
+                <ServiceIcon s={s} pocketBases={pocketBases} />
                 <div className="svc-main">
                   <div className="svc-name">
                     <b>{s.name || s.catalog.name}</b>
@@ -78,17 +80,19 @@ export default function Services() {
                   </div>
                   {admin && connFor(s) && <ConnectorLine c={c} onOpen={() => setConn(s)} />}
                 </div>
-                <div className="svc-status">
-                  {s.catalog.pocket ? <span className="pill">Device token</span>
-                    : secrets.length > 0 ? (hasSecret ? <span className="pill ok">Key saved</span> : <span className="pill warn">No key</span>)
-                    : null}
-                  {t && <span className={`pill ${t.busy ? '' : t.ok ? 'ok' : 'err'}`} title={t.error || ''}>{t.busy ? 'Testing…' : t.ok ? `${t.status} · ${t.ms} ms` : 'Unreachable'}</span>}
-                </div>
-                <div className="svc-actions">
-                  <button className="btn sm ghost" onClick={() => test(s)} disabled={t?.busy}>Test</button>
-                  {admin && connFor(s) && <button className={`btn sm ${c?.enabled ? 'conn-btn on' : 'ghost'}`} onClick={() => setConn(s)}>Connector</button>}
-                  {admin && <button className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
-                  {admin && !s.app_id && <RowMenu items={[{ label: 'Remove', danger: true, onClick: () => setDel(s) }]} />}
+                <div className="svc-foot">
+                  <div className="svc-status">
+                    {s.catalog.pocket ? <span className="pill">Device token</span>
+                      : secrets.length > 0 ? (hasSecret ? <span className="pill ok">Key saved</span> : <span className="pill warn">No key</span>)
+                      : null}
+                    {t && <span className={`pill ${t.busy ? '' : t.ok ? 'ok' : 'err'}`} title={t.error || ''}>{t.busy ? 'Testing…' : t.ok ? `${t.status} · ${t.ms} ms` : 'Unreachable'}</span>}
+                  </div>
+                  <div className="svc-actions">
+                    <button className="btn sm ghost" onClick={() => test(s)} disabled={t?.busy}>Test</button>
+                    {admin && connFor(s) && <button className={`btn sm ${c?.enabled ? 'conn-btn on' : 'ghost'}`} onClick={() => setConn(s)}>Connector</button>}
+                    {admin && <button className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
+                    {admin && !s.app_id && <RowMenu items={[{ label: 'Remove', danger: true, onClick: () => setDel(s) }]} />}
+                  </div>
                 </div>
                 <Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} />
               </div>
@@ -105,18 +109,18 @@ export default function Services() {
 
 // ConnectorLine sits under a service's name: what its connector is doing.
 function ConnectorLine({ c, onOpen }: { c?: ConnectorListItem['connector']; onOpen: () => void }) {
-  if (!c || !c.enabled) return <button type="button" className="conn-line off" onClick={onOpen}><span className="conn-bolt">ϟ</span>Connector available · off</button>
+  if (!c || !c.enabled) return <button type="button" className="conn-line off" onClick={onOpen}><span className="conn-bolt">ϟ</span><span className="conn-label">Connector available · off</span></button>
   const parts: [string, boolean, boolean][] = [['Accounts', c.provision_on_create, c.capabilities.provision], ['Sign-in', c.sso_enabled, c.capabilities.sso], ['Events', c.events_enabled, c.capabilities.events]]
   return (
     <button type="button" className={`conn-line ${c.last_error ? 'err' : 'on'}`} onClick={onOpen} title={c.last_error || 'Open connector'}>
-      <span className="conn-bolt">ϟ</span>{c.last_error ? 'Connector error' : 'Connector on'}
+      <span className="conn-bolt">ϟ</span><span className="conn-label">{c.last_error ? 'Connector error' : 'Connector on'}</span>
       {parts.filter(p => p[2]).map(([label, on]) => <span key={label} className={`conn-part ${on ? 'on' : ''}`}>{on ? '✓' : '–'} {label}</span>)}
     </button>
   )
 }
 
 // ConnectorsOverview: every connector Core ships, at the top of the page.
-function ConnectorsOverview({ conns, services, onOpen }: { conns: ConnectorListItem[]; services: Service[]; onOpen: (s: Service) => void }) {
+function ConnectorsOverview({ conns, services, pocketBases, onOpen }: { conns: ConnectorListItem[]; services: Service[]; pocketBases: string[]; onOpen: (s: Service) => void }) {
   return (
     <section className="svc-group">
       <div className="svc-group-head"><span>Connectors</span><span className="count">{conns.length}</span><span className="muted" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>create accounts, sign people in with Core, listen to events</span></div>
@@ -127,7 +131,7 @@ function ConnectorsOverview({ conns, services, onOpen }: { conns: ConnectorListI
         return (
           <div key={k.type} className={`conn-card ${state}`}>
             <div className="conn-card-head">
-              {svc ? <ServiceIcon s={svc} /> : <span className="svc-icon letter" style={{ background: `hsl(${hue(k.name)} 70% 92%)`, color: `hsl(${hue(k.name)} 55% 35%)` }}>{k.name[0]}</span>}
+              {svc ? <ServiceIcon s={svc} pocketBases={pocketBases} /> : bundledIcon(k.type) ? <span className="svc-icon"><img src={bundledIcon(k.type)} alt="" /></span> : <span className="svc-icon letter" style={{ background: `hsl(${hue(k.name)} 70% 92%)`, color: `hsl(${hue(k.name)} 55% 35%)` }}>{k.name[0]}</span>}
               <div className="grow"><b>{k.name}</b><div className="muted small">{state === 'missing' ? 'Add the service first' : state === 'off' ? 'Available, switched off' : state === 'err' ? (c?.last_error || 'Error') : c?.last_poll_at ? `Last check ${new Date(c.last_poll_at).toLocaleTimeString()}` : 'On'}</div></div>
               <span className={`pill ${state === 'on' ? 'ok' : state === 'err' ? 'err' : ''}`}>{state === 'on' ? 'On' : state === 'err' ? 'Error' : state === 'off' ? 'Off' : 'Not added'}</span>
             </div>
@@ -154,9 +158,8 @@ function groupBy(items: CatalogEntry[]): [string, CatalogEntry[]][] {
 function hue(text: string) { let h = 0; for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 360; return h }
 
 // ServiceIcon tries the service's own icon, then a coloured initial.
-function ServiceIcon({ s }: { s: Service }) {
-  const base = (s.public_url || s.url || '').replace(/\/$/, '')
-  const candidates = base ? (s.catalog.pocket ? [`${base}/favicon.svg`, `${base}/favicon.ico`] : [`${base}/favicon.ico`, `${base}/favicon.svg`]) : []
+function ServiceIcon({ s, pocketBases = [] }: { s: Service; pocketBases?: string[] }) {
+  const candidates = iconCandidates({ type: s.type, url: s.url, public_url: s.public_url, pocket: s.catalog.pocket || !!s.app_id }, pocketBases)
   const [i, setI] = useState(0)
   const name = s.name || s.catalog.name
   if (i >= candidates.length) return <span className="svc-icon letter" style={{ background: `hsl(${hue(name)} 70% 92%)`, color: `hsl(${hue(name)} 55% 35%)` }}>{name[0]}</span>
