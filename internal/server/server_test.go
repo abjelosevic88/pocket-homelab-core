@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -276,3 +277,64 @@ func TestLockoutsAndSameOrigin(t *testing.T) {
 		t.Fatalf("same-origin should pass, got %d", res2.StatusCode)
 	}
 }
+
+func TestAudienceAndOverrides(t *testing.T) {
+	e := newEnv(t)
+	e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "admin@b.c", "password": "password123"}, nil)
+	var member store.User
+	e.do("POST", "/api/v1/users", "", map[string]string{"email": "kid@b.c", "password": "password123", "role": "member"}, &member)
+	// Three services: everyone, admins only, one specific person.
+	var jf, nas, nd map[string]any
+	e.do("POST", "/api/v1/services", "", map[string]any{"type": "jellyfin", "url": "http://jf", "fields": map[string]string{"API_KEY": "boxkey"}}, &jf)
+	e.do("POST", "/api/v1/services", "", map[string]any{"type": "truenas", "url": "http://nas", "fields": map[string]string{"API_KEY": "naskey"}, "audience": "admins"}, &nas)
+	e.do("POST", "/api/v1/services", "", map[string]any{"type": "navidrome", "url": "http://nd", "audience": "users", "audience_users": []int64{member.ID}}, &nd)
+	// The member gets their own Jellyfin key.
+	if c := e.do("PUT", "/api/v1/users/"+itoa(member.ID)+"/credentials/"+itoa(int64(jf["id"].(float64))), "", map[string]any{"fields": map[string]string{"API_KEY": "kidkey", "USER_ID": "u-kid"}}, nil); c != 200 {
+		t.Fatalf("override %d", c)
+	}
+	// Admin profile: jellyfin + truenas, not navidrome.
+	var adminProf Profile
+	e.do("GET", "/api/v1/pair/profile", "", nil, &adminProf)
+	if adminProf.Values["JELLYFIN_API_KEY"] != "boxkey" || adminProf.Values["TRUENAS_API_KEY"] != "naskey" || adminProf.Values["NAVIDROME_URL"] != "" {
+		t.Fatalf("admin profile %+v", adminProf.Values)
+	}
+	// Member pairs a device: jellyfin with their key, navidrome, no truenas.
+	var pair struct {
+		Code string `json:"code"`
+	}
+	e.do("POST", "/api/v1/pair", "", map[string]int64{"user_id": member.ID}, &pair)
+	var prof Profile
+	e.do("POST", "/api/v1/pair/claim", "", map[string]string{"code": pair.Code, "name": "kid phone"}, &prof)
+	if prof.Values["JELLYFIN_API_KEY"] != "kidkey" || prof.Values["JELLYFIN_USER_ID"] != "u-kid" || prof.Values["NAVIDROME_URL"] != "http://nd" {
+		t.Fatalf("member profile %+v", prof.Values)
+	}
+	if _, leaked := prof.Values["TRUENAS_API_KEY"]; leaked {
+		t.Fatalf("admin-only key leaked to a member")
+	}
+	// The member's token cannot read the service list or the bus, but can read its own credentials (masked, no box values).
+	if c := e.do("GET", "/api/v1/services", prof.Token, nil, nil); c != 403 {
+		t.Fatalf("member services %d", c)
+	}
+	if c := e.do("GET", "/api/v1/events", prof.Token, nil, nil); c != 403 {
+		t.Fatalf("member events %d", c)
+	}
+	var creds []map[string]any
+	if c := e.do("GET", "/api/v1/users/"+itoa(member.ID)+"/credentials", prof.Token, nil, &creds); c != 200 || len(creds) != 3 {
+		t.Fatalf("member creds %d %d", c, len(creds))
+	}
+	for _, cr := range creds {
+		if sv := cr["service"].(map[string]any); sv["url"] != "" || len(sv["fields"].(map[string]any)) != 0 {
+			t.Fatalf("box values leaked in member credential view: %+v", sv)
+		}
+	}
+	if c := e.do("GET", "/api/v1/users/1/credentials", prof.Token, nil, nil); c != 403 {
+		t.Fatalf("member read admin creds %d", c)
+	}
+	var ov map[string]any
+	e.do("GET", "/api/v1/overview", prof.Token, nil, &ov)
+	if ov["member"] != true || len(ov["apps"].([]any)) != 0 {
+		t.Fatalf("member overview %+v", ov)
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }

@@ -12,6 +12,14 @@ export default function Home() {
   if (loading && !data) return <Loading />
   if (error || !data) return <div className="callout danger">{error || 'Failed to load'}</div>
   const d = data
+  if (d.member) return (
+    <>
+      <PageHeader title={d.box_name} sub="Your devices on this box." actions={<button className="btn primary" onClick={() => setPair(true)}>Pair a device</button>} />
+      <div className="stats"><Link to="/devices" className="stat"><div className="n">{d.devices.length}</div><div className="l">Your devices</div></Link><Link to="/settings" className="stat"><div className="n">{d.services_enabled}</div><div className="l">Services in your profile</div></Link></div>
+      <Card title="Your own logins"><p className="muted small">Under Settings you can set your own Jellyfin, Navidrome or Audiobookshelf login; otherwise your phone receives the household one.</p></Card>
+      {pair && <PairModal onClose={() => { setPair(false); reload() }} />}
+    </>
+  )
   return (
     <>
       <PageHeader title={d.box_name} sub="Everything on this box, in one place." actions={<><button className="btn" onClick={reload}>Refresh</button><button className="btn primary" onClick={() => setPair(true)}>Pair a device</button></>} />

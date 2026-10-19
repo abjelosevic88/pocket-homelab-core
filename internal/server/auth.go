@@ -93,6 +93,17 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) requireAdminOrApp(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := principalFrom(r.Context())
+		if !p.IsAdmin() && p.App == nil {
+			writeErr(w, http.StatusForbidden, "admins and apps only")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !principalFrom(r.Context()).IsAdmin() {

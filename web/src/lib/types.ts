@@ -12,7 +12,9 @@ export interface CatalogEntry { type: string; name: string; prefix: string; grou
 export interface Service {
   id: number; type: string; name: string; url: string; public_url: string; fields: Record<string, string>; app_id?: number
   enabled: boolean; notes: string; created_at: string; updated_at: string; catalog: CatalogEntry
+  audience: 'all' | 'admins' | 'users'; audience_users: number[]
 }
+export interface Credential { service: Service; url: string; fields: Record<string, string>; set: boolean; visible: boolean }
 export interface Device { id: number; user_id: number; name: string; platform: string; token_prefix: string; last_seen_at?: string; last_ip: string; created_at: string }
 export interface Event { id: number; topic: string; source: string; subject: string; payload: unknown; created_at: string }
 export interface Topic { topic: string; count: number; last: string }
@@ -23,6 +25,6 @@ export interface APIToken { id: number; user_id: number; name: string; prefix: s
 export interface Pairing { code: string; expires_at: string; url: string; qr_png: string; qr_svg: string; core_url: string; ttl_s: number }
 export interface Overview {
   box_name: string; version: string; apps: App[]; apps_up: number; services_total: number; services_enabled: number
-  devices: Device[]; recent_events: Event[]; deliveries: Record<string, number>; listeners: number
+  devices: Device[]; recent_events: Event[]; deliveries: Record<string, number>; listeners: number; member?: boolean
 }
 export interface SystemInfo { version: string; go: string; os: string; uptime_s: number; started_at: string; base_url: string; issuer: string; auth_mode: string; data_dir: string; counts: Record<string, number>; listeners: number; box_name: string; health_interval_s: number; event_retention_h: number }

@@ -242,9 +242,26 @@ func (s *Server) buildProfile(r *http.Request, u *store.User, d *store.Device, d
 	}
 	prof.Services = append(prof.Services, core)
 
+	overrides, err := s.store.ListOverrides(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
 	for _, sv := range list {
-		if !sv.Enabled {
+		if !sv.VisibleTo(u) {
 			continue
+		}
+		if ov, ok := overrides[sv.ID]; ok {
+			if ov.URL != "" {
+				sv.URL, sv.PublicURL = ov.URL, ""
+			}
+			merged := map[string]string{}
+			for k, v := range sv.Fields {
+				merged[k] = v
+			}
+			for k, v := range ov.Fields {
+				merged[k] = v
+			}
+			sv.Fields = merged
 		}
 		prefix := ""
 		if sv.AppID > 0 {

@@ -141,6 +141,17 @@ type Options struct {
 	UserAgent string
 	// IntrospectCache is how long a verdict is reused (default 60 s).
 	IntrospectCache time.Duration
+	// OIDCFile persists the relying-party client Core creates for the app
+	// (issuer, client id, secret) so sign-in needs no configuration. Defaults
+	// to TokenFile + ".oidc.json" when TokenFile is set.
+	OIDCFile string
+}
+
+// OIDCClient is the relying-party client Core issued to the app.
+type OIDCClient struct {
+	Issuer       string `json:"issuer"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret,omitempty"`
 }
 
 // Client talks to one Pocket Core.
@@ -150,6 +161,7 @@ type Client struct {
 	http  *http.Client
 	mu    sync.RWMutex
 	token string
+	oidc  OIDCClient
 	cache map[string]cached
 }
 
@@ -175,7 +187,24 @@ func New(baseURL string, opts Options) *Client {
 			c.token = strings.TrimSpace(string(b))
 		}
 	}
+	if c.opts.OIDCFile == "" && opts.TokenFile != "" {
+		c.opts.OIDCFile = opts.TokenFile + ".oidc.json"
+	}
+	if c.opts.OIDCFile != "" {
+		if b, err := os.ReadFile(c.opts.OIDCFile); err == nil {
+			_ = json.Unmarshal(b, &c.oidc)
+		}
+	}
 	return c
+}
+
+// OIDC returns the relying-party client Core issued (zero value when none).
+// Issuer and client id refresh on every registration; the secret is kept
+// from the registration that minted it.
+func (c *Client) OIDC() OIDCClient {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.oidc
 }
 
 // Configured reports whether a base URL is set.
@@ -267,6 +296,21 @@ func (c *Client) Register(ctx context.Context, registrationKey string, m Manifes
 		if c.opts.TokenFile != "" {
 			_ = os.MkdirAll(filepath.Dir(c.opts.TokenFile), 0o755)
 			_ = os.WriteFile(c.opts.TokenFile, []byte(reg.Token+"\n"), 0o600)
+		}
+	}
+	if reg.OIDC != nil && reg.OIDC.ClientID != "" {
+		c.mu.Lock()
+		c.oidc.Issuer, c.oidc.ClientID = reg.OIDC.Issuer, reg.OIDC.ClientID
+		if reg.OIDC.ClientSecret != "" {
+			c.oidc.ClientSecret = reg.OIDC.ClientSecret
+		}
+		snapshot := c.oidc
+		c.mu.Unlock()
+		if c.opts.OIDCFile != "" {
+			_ = os.MkdirAll(filepath.Dir(c.opts.OIDCFile), 0o755)
+			if b, err := json.MarshalIndent(snapshot, "", "  "); err == nil {
+				_ = os.WriteFile(c.opts.OIDCFile, b, 0o600)
+			}
 		}
 	}
 	return &reg, nil

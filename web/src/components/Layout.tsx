@@ -20,7 +20,8 @@ export default function Layout() {
   const navigate = useNavigate()
   const logout = async () => { await api.post(`${V1}/auth/logout`); setUser(null); navigate('/login') }
   const title = status?.title || 'Pocket Core'
-  const items = nav.filter(n => n.to !== '/users' || user?.role === 'admin')
+  const admin = user?.role === 'admin'
+  const items = nav.filter(n => admin || ['/', '/devices', '/settings'].includes(n.to))
   return (
     <div className="app">
       <aside className={`sidebar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>

@@ -4,7 +4,7 @@ import { uptime, when } from '../lib/format'
 import type { OIDCClient, Settings as S, SystemInfo } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
-import { Tokens } from './Users'
+import { CredentialsModal, Tokens } from './Users'
 
 export default function Settings() {
   const { user, refresh } = useApp()
@@ -41,6 +41,7 @@ export default function Settings() {
               <div className="form-actions"><button className="btn primary">Save</button></div>
             </form>
           </Card>
+          {!admin && user && <MyCredentials user={user} />}
           {!admin && <Tokens />}
         </div>
         <div className="grid" style={{ gap: 16 }}>
@@ -101,6 +102,17 @@ function OIDCClients() {
         <div className="mt-sm"><Secret value={secret.secret} /></div>
         <div className="form-actions mt"><button className="btn primary" onClick={() => setSecret(null)}>Done</button></div></Modal>}
       {del && <Confirm title="Delete client" message={<>Delete <b>{del.name}</b>? Logins through it stop immediately.</>} onConfirm={async () => { await api.del(`${V1}/oidc/clients/${del.id}`); setDel(null); reload() }} onCancel={() => setDel(null)} />}
+    </Card>
+  )
+}
+
+function MyCredentials({ user }: { user: NonNullable<ReturnType<typeof useApp>['user']> }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Card title="My logins">
+      <p className="muted small">Your phone receives the household's credentials unless you set your own here, for example your Jellyfin user.</p>
+      <div className="form-actions"><button className="btn" onClick={() => setOpen(true)}>Edit my logins</button></div>
+      {open && <CredentialsModal user={user} onClose={() => setOpen(false)} />}
     </Card>
   )
 }

@@ -46,6 +46,10 @@ Core's own topics: `core.app.registered|removed|ok|down`, `core.device.paired|re
 
 Discovery at `/.well-known/openid-configuration`. Authorization code with PKCE (`S256`, `plain`), `client_secret_basic`, `client_secret_post` or `none` (public clients must use PKCE). Claims: `sub` (user id as string), `email`, `email_verified`, `name`, `preferred_username`, `groups` (`users`, `admin`). Redirect URIs match exactly. No consent screen.
 
+## 5a. Households
+
+A box has admins and members. Members own devices, pair, and manage their own credential overrides; they cannot read the service list, the registry or the bus. A service's `audience` (`all`, `admins`, `users` + ids) decides whose profile it lands in. The SDK persists the OIDC client Core mints for an app next to the app token (`OIDCFile`), so an app can offer "Sign in with <box>" with zero configuration.
+
 ## 6. Compatibility promise
 
 Within major version 1: fields are only added, never removed or re-typed; token prefixes keep their meaning; topics Core emits keep their names; the env keys in the catalog only grow. Apps should ignore unknown fields.

@@ -36,7 +36,8 @@ Pairing is how the **Pocket Homelab** iPhone/Mac client learns about every servi
 
 - **Registered Pocket apps**: `<PREFIX>_URL` = the app's public URL, `<PREFIX>_API_KEY` = the device token. Apps validate it through [introspection](manifest.md#accepting-device-tokens).
 - **Services added by an admin** (Jellyfin, Immich, Nextcloud… the full list is `GET /api/v1/catalog`, mirroring the client's template): the URL plus the credential fields entered, stored encrypted with `secret.key`.
-- Anything switched off under Services is left out.
+- Anything switched off under Services is left out, and so is anything whose **audience** excludes the person: `all` (default), `admins`, or `users` with a list. Admin keys (TrueNAS, AdGuard, the arr apps) belong on `admins`.
+- **Per-person overrides** (Users → Credentials, or Settings → My logins for a member) replace the service's URL and/or fields for that person: their own Jellyfin user id, their Navidrome login. Everything else falls through to the box-wide value.
 
 Env prefixes and field names match the client's template exactly, e.g. `NEXTCLOUD_URL` / `NEXTCLOUD_USERNAME` / `NEXTCLOUD_APP_PASSWORD`, `SERVICES_SSH_HOST` / `SERVICES_SSH_PORT`.
 

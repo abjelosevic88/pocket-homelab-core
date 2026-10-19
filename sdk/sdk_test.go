@@ -27,6 +27,9 @@ func TestRegisterStoresToken(t *testing.T) {
 		out := map[string]any{"app": map[string]any{"slug": "demo"}, "core": map[string]any{"base_url": "x"}}
 		if calls == 1 {
 			out["token"] = "pca_minted"
+			out["oidc"] = map[string]any{"client_id": "pocket-demo", "client_secret": "pcs_s", "issuer": "http://core"}
+		} else {
+			out["oidc"] = map[string]any{"client_id": "pocket-demo", "issuer": "http://core"}
 		}
 		_ = json.NewEncoder(w).Encode(out)
 	}))
@@ -46,6 +49,9 @@ func TestRegisterStoresToken(t *testing.T) {
 	c2 := New(srv.URL, Options{TokenFile: tf})
 	if c2.Token() != "pca_minted" {
 		t.Fatalf("token not reloaded from file")
+	}
+	if o := c2.OIDC(); o.ClientID != "pocket-demo" || o.ClientSecret != "pcs_s" || o.Issuer != "http://core" {
+		t.Fatalf("oidc client not persisted across registrations: %+v", o)
 	}
 }
 

@@ -191,24 +191,33 @@ func (s *Server) Router() http.Handler {
 			r.Get("/system", s.handleSystem)
 			r.Get("/overview", s.handleOverview)
 
-			r.Get("/apps", s.handleListApps)
-			r.Get("/apps/{slug}", s.handleGetApp)
-			r.Get("/resolve", s.handleResolve)
+			r.Get("/users/{id}/credentials", s.handleListCredentials)
+			r.Put("/users/{id}/credentials/{sid}", s.handlePutCredential)
+			r.Delete("/users/{id}/credentials/{sid}", s.handleDeleteCredential)
 
-			r.Get("/services", s.handleListServices)
-			r.Get("/services/{id}", s.handleGetService)
+			// The registry, the service list and the bus are for admins and apps;
+			// a household member only sees their own devices, profile and credentials.
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireAdminOrApp)
+				r.Get("/apps", s.handleListApps)
+				r.Get("/apps/{slug}", s.handleGetApp)
+				r.Get("/resolve", s.handleResolve)
 
-			r.Post("/events", s.handlePublish)
-			r.Get("/events", s.handleListEvents)
-			r.Get("/events/topics", s.handleTopics)
-			r.Get("/events/stream", s.handleStream)
-			r.Get("/events/{id}", s.handleGetEvent)
-			r.Get("/webhooks", s.handleListWebhooks)
-			r.Post("/webhooks", s.handleCreateWebhook)
-			r.Put("/webhooks/{id}", s.handleUpdateWebhook)
-			r.Delete("/webhooks/{id}", s.handleDeleteWebhook)
-			r.Post("/webhooks/{id}/test", s.handleTestWebhook)
-			r.Get("/webhooks/{id}/deliveries", s.handleDeliveries)
+				r.Get("/services", s.handleListServices)
+				r.Get("/services/{id}", s.handleGetService)
+
+				r.Post("/events", s.handlePublish)
+				r.Get("/events", s.handleListEvents)
+				r.Get("/events/topics", s.handleTopics)
+				r.Get("/events/stream", s.handleStream)
+				r.Get("/events/{id}", s.handleGetEvent)
+				r.Get("/webhooks", s.handleListWebhooks)
+				r.Post("/webhooks", s.handleCreateWebhook)
+				r.Put("/webhooks/{id}", s.handleUpdateWebhook)
+				r.Delete("/webhooks/{id}", s.handleDeleteWebhook)
+				r.Post("/webhooks/{id}/test", s.handleTestWebhook)
+				r.Get("/webhooks/{id}/deliveries", s.handleDeliveries)
+			})
 
 			r.Post("/pair", s.handlePairNew)
 			r.Get("/pair/{code}", s.handlePairStatus)
@@ -367,9 +376,26 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleOverview is the home page in one call.
+// handleOverview is the home page in one call. Members get a short version:
+// their box, their devices, how many services their profile holds.
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	p := principalFrom(ctx)
+	if !p.IsAdmin() && p.App == nil {
+		st, _ := s.store.GetSettings(ctx)
+		devices, _ := s.store.ListDevices(ctx, p.UserID())
+		n := 0
+		if list, err := s.store.ListServices(ctx); err == nil {
+			for _, sv := range list {
+				if sv.VisibleTo(p.User) {
+					n++
+				}
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"box_name": st.BoxName, "version": Version, "member": true, "devices": devices, "services_enabled": n,
+			"apps": []store.App{}, "recent_events": []store.Event{}, "deliveries": map[string]int{}, "listeners": 0, "apps_up": 0, "services_total": n})
+		return
+	}
 	apps, err := s.store.ListApps(ctx)
 	if err != nil {
 		s.fail(w, err, "list apps")

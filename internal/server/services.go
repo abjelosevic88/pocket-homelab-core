@@ -67,13 +67,15 @@ func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {
 }
 
 type serviceIn struct {
-	Type      *string            `json:"type"`
-	Name      *string            `json:"name"`
-	URL       *string            `json:"url"`
-	PublicURL *string            `json:"public_url"`
-	Fields    *map[string]string `json:"fields"`
-	Enabled   *bool              `json:"enabled"`
-	Notes     *string            `json:"notes"`
+	Audience      *string            `json:"audience"`
+	AudienceUsers *[]int64           `json:"audience_users"`
+	Type          *string            `json:"type"`
+	Name          *string            `json:"name"`
+	URL           *string            `json:"url"`
+	PublicURL     *string            `json:"public_url"`
+	Fields        *map[string]string `json:"fields"`
+	Enabled       *bool              `json:"enabled"`
+	Notes         *string            `json:"notes"`
 }
 
 func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +161,134 @@ func applyService(sv *store.Service, in serviceIn) {
 	if in.Notes != nil {
 		sv.Notes = *in.Notes
 	}
+	if in.Audience != nil {
+		sv.Audience = strings.ToLower(strings.TrimSpace(*in.Audience))
+	}
+	if in.AudienceUsers != nil {
+		sv.AudienceUsers = *in.AudienceUsers
+	}
+}
+
+// ---- per-user credential overrides ----
+
+type overrideOut struct {
+	Service serviceOut        `json:"service"`
+	URL     string            `json:"url"`
+	Fields  map[string]string `json:"fields"` // masked
+	Set     bool              `json:"set"`
+	Visible bool              `json:"visible"`
+}
+
+// handleListCredentials lists, for one user, every service with that user's
+// overrides (masked). Admins see anyone; a member sees only themselves.
+func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
+	uid := idParam(r, "id")
+	p := principalFrom(r.Context())
+	if !p.IsAdmin() && p.UserID() != uid {
+		writeErr(w, http.StatusForbidden, "not yours")
+		return
+	}
+	u, err := s.store.GetUser(r.Context(), uid)
+	if err != nil {
+		s.fail(w, err, "get user")
+		return
+	}
+	list, err := s.store.ListServices(r.Context())
+	if err != nil {
+		s.fail(w, err, "list services")
+		return
+	}
+	ovs, err := s.store.ListOverrides(r.Context(), uid)
+	if err != nil {
+		s.fail(w, err, "list overrides")
+		return
+	}
+	out := []overrideOut{}
+	for _, sv := range list {
+		e := s.entryForCtx(r, &sv)
+		o := overrideOut{Service: maskService(sv, e), Fields: map[string]string{}, Visible: sv.VisibleTo(u)}
+		if !p.IsAdmin() {
+			// a member only sees the shape, never the box-wide values
+			o.Service.Fields = map[string]string{}
+			o.Service.URL, o.Service.PublicURL = "", ""
+		}
+		if ov, ok := ovs[sv.ID]; ok {
+			o.Set, o.URL = true, ov.URL
+			for k, v := range ov.Fields {
+				if e.IsSecret(k) && v != "" {
+					o.Fields[k] = masked
+				} else {
+					o.Fields[k] = v
+				}
+			}
+		}
+		out = append(out, o)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handlePutCredential(w http.ResponseWriter, r *http.Request) {
+	uid, sid := idParam(r, "id"), idParam(r, "sid")
+	p := principalFrom(r.Context())
+	if !p.IsAdmin() && p.UserID() != uid {
+		writeErr(w, http.StatusForbidden, "not yours")
+		return
+	}
+	sv, err := s.store.GetService(r.Context(), sid)
+	if err != nil {
+		s.fail(w, err, "get service")
+		return
+	}
+	var in struct {
+		URL    *string            `json:"url"`
+		Fields *map[string]string `json:"fields"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	ovs, _ := s.store.ListOverrides(r.Context(), uid)
+	cur := ovs[sid]
+	o := &store.Override{ServiceID: sid, UserID: uid, URL: cur.URL, Fields: cur.Fields}
+	if o.Fields == nil {
+		o.Fields = map[string]string{}
+	}
+	if in.URL != nil {
+		o.URL = strings.TrimRight(strings.TrimSpace(*in.URL), "/")
+	}
+	if in.Fields != nil {
+		f := map[string]string{}
+		for k, v := range *in.Fields {
+			k = strings.ToUpper(strings.TrimSpace(k))
+			if v == masked {
+				v = cur.Fields[k]
+			}
+			if k != "" {
+				f[k] = strings.TrimSpace(v)
+			}
+		}
+		o.Fields = f
+	}
+	e := s.entryForCtx(r, sv)
+	if err := s.store.SaveOverride(r.Context(), o, e.IsSecret); err != nil {
+		s.fail(w, err, "save override")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "set": o.URL != "" || len(o.Fields) > 0})
+}
+
+func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
+	uid, sid := idParam(r, "id"), idParam(r, "sid")
+	p := principalFrom(r.Context())
+	if !p.IsAdmin() && p.UserID() != uid {
+		writeErr(w, http.StatusForbidden, "not yours")
+		return
+	}
+	if err := s.store.DeleteOverride(r.Context(), sid, uid); err != nil {
+		s.fail(w, err, "delete override")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {

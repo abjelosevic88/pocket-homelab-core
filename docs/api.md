@@ -2,7 +2,7 @@
 
 Base path `/api/v1`. JSON in and out. Authenticate with the session cookie (browser), `Authorization: Bearer <token>` or `X-API-Key: <token>`; see [configuration.md](configuration.md#tokens-at-a-glance) for the token kinds. Errors are `{"error": "…"}`.
 
-Who may call what: **anyone authenticated** = users, apps and devices; **user** = a person (session, `pcu_`, `pco_`) or a device acting for its owner; **admin** = a user with the admin role; **app** = a registered app's `pca_` token.
+Who may call what: **anyone authenticated** = users, apps and devices; **user** = a person (session, `pcu_`, `pco_`) or a device acting for its owner; **admin** = a user with the admin role; **app** = a registered app's `pca_` token. The registry (`/apps`, `/resolve`), the service list and the bus (`/events`, `/webhooks`) are **admin or app** only; a household member sees their own devices, profile and credentials.
 
 ## Auth & account
 | Method | Path | Who | Notes |
@@ -18,9 +18,9 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | POST | `/apps/register` | registration key or app token | the [manifest](manifest.md) |
-| GET | `/apps` | anyone | |
-| GET | `/apps/{slug}` | anyone | `{app, webhooks, oidc_client}` |
-| GET | `/resolve?slug=` | anyone | `{url, public_url, status, version}`; without `slug` a map of every app |
+| GET | `/apps` | admin, app | |
+| GET | `/apps/{slug}` | admin, app | `{app, webhooks, oidc_client}` |
+| GET | `/resolve?slug=` | admin, app | `{url, public_url, status, version}`; without `slug` a map of every app |
 | PUT/DELETE | `/apps/{slug}` | admin | edit descriptive fields / remove (cascades to service, webhooks, OIDC client) |
 | POST | `/apps/{slug}/rotate` · `/apps/{slug}/check` | admin | new token (shown once) / health check now |
 
@@ -28,8 +28,10 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | GET | `/catalog` | – | every service type with its env prefix and fields |
-| GET | `/services` · `/services/{id}` | anyone | secrets masked as `••••••••`; a masked value sent back in a PUT means "keep" |
-| POST/PUT/DELETE | `/services`, `/services/{id}` | admin | `{type, name, url, public_url, fields:{API_KEY:…}, enabled, notes}`; services that mirror a registered app cannot be deleted or re-typed |
+| GET | `/services` · `/services/{id}` | admin, app | secrets masked as `••••••••`; a masked value sent back in a PUT means "keep" |
+| POST/PUT/DELETE | `/services`, `/services/{id}` | admin | `{type, name, url, public_url, fields:{API_KEY:…}, enabled, notes, audience: all\|admins\|users, audience_users:[ids]}`; services that mirror a registered app cannot be deleted or re-typed |
+| GET | `/users/{id}/credentials` | owner, admin | every service with that person's overrides (masked); members do not see box-wide values |
+| PUT/DELETE | `/users/{id}/credentials/{sid}` | owner, admin | `{url?, fields?}` per-person override merged over the service in that person's profile |
 | POST | `/services/{id}/test` | admin | plain reachability of `url` |
 
 ## Events
