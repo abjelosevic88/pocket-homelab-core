@@ -133,6 +133,24 @@ Turning it off puts the saved original back (provider, secret, methods; linked a
 
 **Events** are polled ([topics](events.md#audiobookshelf-source-connectoraudiobookshelf)): `listening_started`, `listening_ended`, `item_finished`, `item_added`, `episode_added`, `user_created`, `user_deleted`. Listening and finished items carry `user_email` when the Audiobookshelf account is linked to a person.
 
+## Radarr, Sonarr, Lidarr
+
+Needs: the service in Core with its URL, public URL and **API key** (Settings → General). These are household tools: no per-person accounts and no OpenID sign-in, so the connector does **events only**. **Test** shows the version and whether Core's connection exists.
+
+| Call (`/api/v3`, Lidarr `/api/v1`) | Used by | Writes? |
+|---|---|---|
+| `GET /system/status` | Test | – |
+| `GET /notification` | Test, keeping the connection in step | – |
+| `GET /notification/schema` | Events on: the Webhook template of this version | – |
+| `POST /notification?forceSave=true` | Events on: add the connection | **yes** |
+| `DELETE /notification/:id` | Events off | **yes** |
+
+Switching **Events** on adds one **Webhook** connection named *Pocket Core* (Settings → Connect): `POST` to `https://<core>/api/v1/connectors/hooks/<id>` with Core's secret in the `X-Pocket-Hook` header. `forceSave` skips the app's test call, which Core could not answer before it has saved the hook. Core re-creates the connection if someone deletes it, removes it when Events go off, and never touches other connections (Apprise, ntfy, Jellyfin…).
+
+Triggers switched on (only those the version has): grab, import (Lidarr: release import), upgrade, added, deleted, file deleted (not "deleted for upgrade"), album deleted (Lidarr), download and import failures (Lidarr), manual interaction required, health issue and restored (**errors only**: `includeHealthWarnings` off, warnings flap with every WAN blip), application update. Renames and retags stay off: they repeat what an import said.
+
+Every delivery is a **household event**: no `user_email` (connectors mark such deliveries `Shared`, and Core publishes them without looking up a person). Test calls are dropped; the same body twice inside 24 h is published once (health and update events are never deduplicated, they legitimately repeat).
+
 ## Nextcloud
 
 Needs: the Nextcloud service in Core with its URL, its public URL, and a Nextcloud **admin**:

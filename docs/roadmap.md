@@ -22,6 +22,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.10** — **Audiobookshelf connector**: accounts (linked by email, created with their own API key, never taken over by name), linking by hand, "Sign in with Pocket Core" through the built-in OpenID (one provider: the previous one, e.g. PocketID, is saved and put back when switched off; linked accounts get the person's email and are detached from the old provider; reloaded without a restart), and polled `audiobookshelf.listening_started` / `listening_ended` / `item_finished` / `item_added` / `episode_added` / `user_*`. Connectors receive `SSOConfig.People` (email → linked account).
 
+**0.11** — **Radarr, Sonarr and Lidarr connectors** (events only): one *Pocket Core* Webhook connection per app with Core's secret header, kept in step with the Events switch, for grabs, imports and upgrades, additions and deletions, failures, manual interaction, health errors and app updates (`radarr.*`, `sonarr.*`, `lidarr.*`). Deliveries can now be **household events** (`Delivery.Shared`): published without a person.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.

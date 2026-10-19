@@ -330,7 +330,7 @@ func (s *Server) ensureHooks(ctx context.Context, sv *store.Service, c connector
 		}
 		secret := crypto.Token("", 32)
 		rid, err := p.Subscribe(ctx, t, connectors.Subscription{Trigger: tr.Trigger, Name: tr.Name, URL: s.hookURL(id),
-			Description: "Managed by Pocket Core (" + s.cfg.BaseURL + "): sends each asset to Core's event bus. Turn Events off in Core to remove it.",
+			Description: "Managed by Pocket Core (" + s.cfg.BaseURL + "): sends what happens here to Core's event bus. Turn Events off in Core to remove it.",
 			HeaderName:  connectors.PushHeader, HeaderValue: secret})
 		if err != nil {
 			if known {
@@ -514,7 +514,11 @@ func (s *Server) acceptDelivery(ctx context.Context, h *store.ConnectorHook, bod
 	}
 	var u *store.User
 	var linked string // when Core connected the person (connector_accounts.updated_at)
-	if h.UserID != 0 {
+	if d.Shared {
+		if h.UserID != 0 {
+			return false, "a household event on a person's hook", nil
+		}
+	} else if h.UserID != 0 {
 		a, err := s.store.GetConnectorAccount(ctx, sv.ID, h.UserID)
 		if err != nil || a.RemoteID == "" || a.RemoteID != d.OwnerID {
 			return false, "asset owner is not this hook's person", nil
@@ -537,10 +541,10 @@ func (s *Server) acceptDelivery(ctx context.Context, h *store.ConnectorHook, bod
 			return false, "asset owner is not a Core user", nil
 		}
 	}
-	if u.Disabled || !sv.InAudience(u) {
+	if u != nil && (u.Disabled || !sv.InAudience(u)) {
 		return false, "asset owner is disabled or outside the audience", nil
 	}
-	if at, err := time.Parse(time.RFC3339Nano, linked); err == nil && !d.At.IsZero() && !d.At.After(at.Truncate(time.Second)) {
+	if at, err := time.Parse(time.RFC3339Nano, linked); u != nil && err == nil && !d.At.IsZero() && !d.At.After(at.Truncate(time.Second)) {
 		return false, "happened before Core connected the person", nil
 	}
 	key := fmt.Sprintf("%d|%s", sv.ID, d.DedupeKey)
@@ -548,7 +552,9 @@ func (s *Server) acceptDelivery(ctx context.Context, h *store.ConnectorHook, bod
 		return false, "duplicate delivery", nil
 	}
 	ev := d.Event
-	ev.UserEmail = u.Email
+	if u != nil {
+		ev.UserEmail = u.Email
+	}
 	if err := s.publishConnectorEvent(ctx, c, ev); err != nil {
 		s.hookSeen.forget(key)
 		return false, "", err

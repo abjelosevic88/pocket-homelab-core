@@ -66,6 +66,24 @@ Polled every check interval from listening sessions, each account's progress, th
 | `audiobookshelf.episode_added` | `episode:<id>` | a podcast episode was downloaded | `episode_id`, `item_id`, `title`, `podcast`, `published_at`, `added_at`, `url` |
 | `audiobookshelf.user_created` · `user_deleted` | `audiobookshelf-user:<id>` | account changes | `audiobookshelf_user_id`, `audiobookshelf_user`, `type`, plus `user_email` when linked |
 
+### Radarr, Sonarr, Lidarr (sources `connector:radarr` · `sonarr` · `lidarr`)
+
+Pushed by a Webhook connection in each app, as it happens. Household events: **no `user_email`**. Topic prefix = the app (`radarr.imported`, `sonarr.grabbed`…).
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `<app>.grabbed` | `movie:<id>` · `series:<id>` · `artist:<id>` | a release was sent to the download client | the item (below), `release_title`, `indexer`, `quality`, `release_group`, `size`, `download_client`, `download_id` |
+| `<app>.imported` · `<app>.upgraded` | same | a file was imported (upgraded = it replaced a worse one) | the item, `file`, `quality`, `release_group`, `size`, release fields |
+| `<app>.added` · `<app>.removed` | same | a movie, series or artist was added or deleted | the item |
+| `<app>.file_deleted` | same | a file was deleted (not for an upgrade) | the item, `file`, `reason` |
+| `lidarr.album_removed` | `artist:<id>` | an album was deleted | the item |
+| `lidarr.download_failed` · `lidarr.import_failed` | `artist:<id>`, else `download_failure` · `import_failure` | a download or import failed | `release_title`, `quality`, `download_client`, `message` |
+| `<app>.manual_interaction_required` | the item | an import needs a person | the item, `release_title`, `quality`, `messages` |
+| `<app>.health_issue` · `<app>.health_restored` | `health:<check>` | a health error appeared or cleared | `level`, `check`, `message`, `wiki_url`, `title` (= message) |
+| `<app>.updated` | `update:<version>` | the app updated itself | `previous_version`, `new_version`, `message` |
+
+The item: Radarr `movie_id`, `movie`, `year`, `tmdb_id`, `imdb_id`; Sonarr `series_id`, `series`, `year`, `tvdb_id`, `imdb_id`, `episodes` [`season`, `episode`, `title`, `air_date`] and, for one episode, `season`, `episode`, `episode_title`; Lidarr `artist_id`, `artist`, `musicbrainz_id`, `album` (`albums` when several), `release_date`, `tracks`. Always `event` (the app's eventType), `instance`, a readable `title` (`Dune (2021)`, `Severance S02E01`, `Massive Attack – Mezzanine`) and `url` into the app.
+
 ### Nextcloud (source `connector:nextcloud`)
 
 Pushed by Nextcloud's webhooks (arrive with its cron, within about 5 minutes). `user_email` is the person Core linked to the account.

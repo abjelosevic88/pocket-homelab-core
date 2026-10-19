@@ -164,6 +164,9 @@ type Delivery struct {
 	DedupeKey string // the same key inside the dedupe window is the same delivery again
 	Event     Event  // Name, Subject and Payload; Core adds user_email
 	Drop      string // set: do not publish, and why
+	// Shared: about the whole household (a download, a health check), not
+	// one person: published without user_email and no owner is looked up.
+	Shared bool
 	// At: when it happened in the app (zero = unknown). Core drops what
 	// happened before it connected the person: an account's welcome files
 	// are not news.
