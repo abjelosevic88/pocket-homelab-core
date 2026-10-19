@@ -103,6 +103,12 @@ export default function Services() {
   )
 }
 
+function groupBy(items: CatalogEntry[]): [string, CatalogEntry[]][] {
+  const m = new Map<string, CatalogEntry[]>()
+  for (const c of items) m.set(c.group, [...(m.get(c.group) || []), c])
+  return [...m.entries()]
+}
+
 function hue(text: string) { let h = 0; for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 360; return h }
 
 // ServiceIcon tries the service's own icon, then a coloured initial.
@@ -180,7 +186,15 @@ function AddService({ catalog, onClose, onSaved }: { catalog: CatalogEntry[]; on
   if (!entry) return (
     <Modal title="Add a service" onClose={onClose} size="lg">
       <div className="toolbar"><div className="search"><span className="ico">⌕</span><input autoFocus placeholder="Jellyfin, Immich, Paperless…" value={q} onChange={e => setQ(e.target.value)} /></div></div>
-      <div className="sel-list">{items.map(c => <button key={c.type} type="button" className="btn" onClick={() => setEntry(c)}><span className="grow">{c.name}</span><span className="muted small">{c.group}</span></button>)}</div>
+      {items.length === 0 ? <p className="muted small">Nothing matches. Use “Something else” below for a custom entry.</p> :
+        (q ? [['Results', items] as [string, CatalogEntry[]]] : groupBy(items)).map(([g, list]) => <div key={g} className="pick-group">
+          {!q && <div className="pick-group-head">{g}</div>}
+          <div className="pick-grid">{list.map(c => (
+            <button key={c.type} type="button" className="pick-tile" onClick={() => setEntry(c)} title={c.name}>
+              <span className="pick-ico" style={{ background: `hsl(${hue(c.name)} 70% 92%)`, color: `hsl(${hue(c.name)} 55% 35%)` }}>{c.name[0]}</span>
+              <span className="pick-text"><span className="pick-name">{c.name}</span>{q && <span className="pick-group-label">{c.group}</span>}</span>
+            </button>))}</div>
+        </div>)}
       <details className="mt"><summary className="muted small">Something else</summary>
         <div className="row mt-sm"><input placeholder="prefix, e.g. GRAFANA" value={custom} onChange={e => setCustom(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} /><button type="button" className="btn" disabled={!custom} onClick={() => setEntry({ type: custom.toLowerCase(), name: custom, prefix: custom, group: 'Custom', url_key: 'URL', pocket: false, fields: [{ key: 'API_KEY', label: 'API key', secret: true }] })}>Use</button></div>
         <p className="muted small mt-sm">Custom entries land in the profile as <span className="inline-code">PREFIX_URL</span> and <span className="inline-code">PREFIX_API_KEY</span>; the client ignores keys it does not know.</p></details>
