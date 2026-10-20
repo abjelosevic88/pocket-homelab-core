@@ -31,6 +31,15 @@ Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, t
 
 Admins see every link two ways: a **diagram** (each Pocket app a card, one arrow per acting app → target app labelled with its scopes' names, IDs on hover, coloured on / partly off / off / can't work; apps without links sit as chips in a **Not linked** strip under it, and move onto the diagram once they get a link) and a **list**. Tap an arrow for its switches, or a card for everything that app uses, lets others use, and offers that nobody uses yet. Cards can be dragged; the layout is kept in the browser. **Full screen** gives the diagram the whole window (real full screen where the browser allows, a page-covering view on iPhone), with the tapped arrow or app in a floating panel; Esc leaves.
 
+Four more views read the same links differently, all with the same switches:
+
+- **Grid**: apps that act down the side, apps they act in across the top; each cell says what the pair adds up to (👁 sees, ✎ changes) and its state. Best for "who does what" at a glance.
+- **Focus**: one app in the middle, the apps that act in it on one side and the apps it acts in on the other, in plain sentences with a switch per scope; tap an app to move the focus to it.
+- **Access**: by data instead of by app: "Your Money: *See your transactions* — Day, Travel; *Book transactions* — Garage", including scopes an app offers that nobody uses yet. Best for "who can see or change my stuff".
+- **List**: every pair with its switches.
+
+A line above every view counts the links, how many are on, off or can't work, and the tokens issued.
+
 ## When a link works
 
 A link issues tokens for a person only when all of these hold (the first that fails is the `reason`):

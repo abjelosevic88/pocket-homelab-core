@@ -1,10 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago } from '../lib/format'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
 import { Card, Empty, Loading, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
 import { appOffers, LinkCanvas, scopeLabel, type CanvasSel, type LinkGroup } from '../components/LinkCanvas'
+import { AccessView, FocusView, LinkSummary, MatrixView } from '../components/LinkViews'
+
+type View = 'diagram' | 'grid' | 'focus' | 'access' | 'list'
+const VIEWS: { value: View; label: string; title: string }[] = [
+  { value: 'diagram', label: 'Diagram', title: 'Apps and arrows' },
+  { value: 'grid', label: 'Grid', title: 'Who acts in whom, one cell per pair' },
+  { value: 'focus', label: 'Focus', title: 'One app: what it uses and what uses it' },
+  { value: 'access', label: 'Access', title: 'Your data in each app, and who can see or change it' },
+  { value: 'list', label: 'List', title: 'Every link with its switch' },
+]
 
 // Group links by (acting app → target app) so each pair reads as one sentence.
 export function groupLinks(links: AppLink[]) {
@@ -84,11 +94,14 @@ export default function Links() {
   const { toast } = useToast()
   const { data, loading, reload } = useAsync(() => api.get<AppLink[]>(`${V1}/links`), [])
   const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`), [])
-  const [mode, setModeState] = useState<'diagram' | 'list'>(() => localStorage.getItem('core.links.view') === 'list' ? 'list' : 'diagram')
+  const [mode, setModeState] = useState<View>(() => (VIEWS.find(v => v.value === localStorage.getItem('core.links.view'))?.value || 'diagram'))
   const [sel, setSel] = useState<CanvasSel>(null)
+  const detailRef = useRef<HTMLDivElement>(null)
+  // Grid and Access open the details below; bring them into view on a phone.
+  useEffect(() => { if (sel && (mode === 'grid' || mode === 'access')) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [sel, mode])
   if (loading && !data) return <Loading />
   const groups = groupLinks(data || [])
-  const setMode = (m: 'diagram' | 'list') => { localStorage.setItem('core.links.view', m); setModeState(m) }
+  const setMode = (m: View) => { localStorage.setItem('core.links.view', m); setModeState(m); setSel(null) }
   const flip = async (l: AppLink, on: boolean) => { await api.put(`${V1}/links/${l.id}`, { enabled: on }); reload(); toast(on ? 'Link on' : 'Link off for everyone') }
   const pair = sel?.kind === 'pair' ? groups.find(g => g.key === sel.key) : undefined
   const detail = pair ? <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
@@ -96,8 +109,17 @@ export default function Links() {
   return (
     <>
       <PageHeader title="Links" sub="What one Pocket app may do in another for a person. Apps ask for these in their manifest; Core hands out a five-minute token for each request, valid only in the target app."
-        actions={<Segmented size="sm" value={mode} onChange={setMode} options={[{ value: 'diagram', label: 'Diagram' }, { value: 'list', label: 'List' }]} />} />
-      {mode === 'diagram' ? <>
+        actions={<Segmented size="sm" value={mode} onChange={setMode} options={VIEWS} />} />
+      <LinkSummary groups={groups} />
+      {groups.length > 0 && (mode === 'grid' || mode === 'access') ? <>
+        <Card flush={mode === 'grid'}>{mode === 'grid' ? <MatrixView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} /> : <AccessView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} />}</Card>
+        <div ref={detailRef}><Card>
+          {detail || <p className="muted small lc-hint">{mode === 'grid'
+            ? <>Each cell is what the app on the left may do in the app on top: <b>👁 sees</b> your data there, <b>✎ changes</b> it. Tap a cell for its switches, or an app for everything it uses and offers.</>
+            : <>Your data in each app, and which apps may see (👁) or change (✎) it for you. Tap an app to see and switch that link.</>}</p>}
+        </Card></div>
+      </> : groups.length > 0 && mode === 'focus' ? <Card><FocusView groups={groups} apps={apps || []} flip={flip} /></Card>
+      : mode === 'diagram' ? <>
         <Card flush className="lc-card-wrap"><LinkCanvas groups={groups} apps={apps || []} sel={sel} onSelect={setSel} detail={detail} /></Card>
         <Card>
           {detail || <p className="muted small lc-hint">{groups.length === 0
