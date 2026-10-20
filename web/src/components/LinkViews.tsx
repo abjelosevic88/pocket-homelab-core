@@ -27,15 +27,14 @@ export function Mark({ s, title }: { s: MarkState; title?: string }) {
   return <span className={`lv-mark ${s}`} title={t} aria-label={t}>{s === 'no' ? '✕' : '✓'}</span>
 }
 
-// "sees", "changes" or both: what a pair's scopes add up to, each with its mark.
+// One word per pair: "changes" when the app may change anything there (it can
+// see it too), else "sees"; the mark covers all its scopes. With every write
+// switched off but a read still on, it only sees.
 function verbs(links: AppLink[]) {
-  const reads = links.filter(l => isRead(l.scope)), writes = links.filter(l => !isRead(l.scope))
-  return (
-    <span className="lv-verbs">
-      {reads.length > 0 && <span className={`lv-verb ${markOf(reads)}`}><Mark s={markOf(reads)} /> sees</span>}
-      {writes.length > 0 && <span className={`lv-verb ${markOf(writes)}`}><Mark s={markOf(writes)} /> changes</span>}
-    </span>
-  )
+  const writesOn = links.some(l => !isRead(l.scope) && l.enabled)
+  const hasWrites = links.some(l => !isRead(l.scope))
+  const word = writesOn || (hasWrites && markOf(links) === 'no') ? 'changes' : 'sees'
+  return <span className={`lv-verb ${markOf(links)}`}><Mark s={markOf(links)} /> {word}</span>
 }
 
 /** One line on top of every view: how many links, and how they stand. */
