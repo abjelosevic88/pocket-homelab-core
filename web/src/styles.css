@@ -745,3 +745,65 @@ html, body { overflow-x: hidden; }
 .link-scopes { margin-top: 8px; display: grid; gap: 8px; }
 .link-scope { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
 .link-scope .grow { flex: 1; min-width: 0; }
+
+/* Links diagram */
+.lc-card-wrap { overflow: hidden; }
+.lc-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.lc-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.lc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lc-key { display: inline-block; width: 20px; height: 0; border-top: 2px solid var(--accent); }
+.lc-key.partial { border-top-color: var(--warning); }
+.lc-key.off { border-top: 2px dashed var(--muted); }
+.lc-key.bad { border-top: 2px dashed var(--danger); }
+.lc-tools { display: flex; gap: 4px; align-items: center; margin-left: auto; }
+.lc-box { position: relative; height: min(62vh, 560px); min-height: 360px; background: var(--bg); }
+.lc-svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.lc-svg:active { cursor: grabbing; }
+.lc-grid-dot { fill: var(--border); }
+.lc-empty { position: absolute; inset: 0; display: grid; place-items: center; }
+.lc-section { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
+
+.lc-node { cursor: pointer; transition: opacity .15s; }
+.lc-card { fill: var(--surface); stroke: var(--border); stroke-width: 1; filter: drop-shadow(0 1px 2px rgba(16, 24, 40, .08)); }
+.lc-node:hover .lc-card { stroke: var(--accent); }
+.lc-node.sel .lc-card { stroke: var(--accent); stroke-width: 2; }
+.lc-node.idle .lc-card { fill: var(--surface-2); }
+.lc-node.idle { opacity: .75; }
+.lc-node.ghost .lc-card { stroke: var(--danger); stroke-dasharray: 5 4; }
+.lc-node.dim, .lc-edge.dim, .lc-label.dim { opacity: .22; }
+.lc-letter-bg { fill: var(--accent-soft); }
+.lc-letter { fill: var(--accent-hover); font-weight: 700; font-size: 14px; }
+.lc-name { fill: var(--text); font-weight: 650; font-size: 13.5px; }
+.lc-sub { fill: var(--muted); font-size: 11px; }
+.lc-status { fill: var(--muted); }
+.lc-status.ok { fill: var(--green); } .lc-status.down { fill: var(--red); } .lc-status.unknown { fill: var(--warning); }
+
+.lc-edge { cursor: pointer; transition: opacity .15s; }
+.lc-hit { fill: none; stroke: transparent; stroke-width: 16; }
+.lc-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.lc-edge.partial .lc-line { stroke: var(--warning); }
+.lc-edge.off .lc-line { stroke: var(--muted); stroke-dasharray: 6 5; }
+.lc-edge.bad .lc-line { stroke: var(--danger); stroke-dasharray: 6 5; }
+.lc-edge:hover .lc-line, .lc-edge.sel .lc-line { stroke-width: 3; }
+.lc-flow { fill: none; stroke: var(--accent-hover); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 2 14; animation: lc-flow 1.2s linear infinite; pointer-events: none; opacity: .8; }
+@keyframes lc-flow { to { stroke-dashoffset: -16; } }
+@media (prefers-reduced-motion: reduce) { .lc-flow { animation: none; display: none; } }
+.lc-mk.on { fill: var(--accent); } .lc-mk.partial { fill: var(--warning); } .lc-mk.off { fill: var(--muted); } .lc-mk.bad { fill: var(--danger); }
+
+.lc-label { cursor: pointer; transition: opacity .15s; }
+.lc-label rect { fill: var(--surface); stroke: var(--accent); stroke-width: 1; }
+.lc-label.partial rect { stroke: var(--warning); } .lc-label.off rect { stroke: var(--muted); stroke-dasharray: 4 3; } .lc-label.bad rect { stroke: var(--danger); }
+.lc-label.sel rect { stroke-width: 2; }
+.lc-label text { font-family: var(--mono); font-size: 11px; fill: var(--text); }
+.lc-label text.off { fill: var(--muted); text-decoration: line-through; }
+
+.lc-h { margin: 14px 0 0; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.lc-h + .link-pair { padding-top: 8px; }
+.lc-hint { margin: 0; }
+.lc-hint .linkish { margin-left: 4px; }
+.linkish { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+@media (max-width: 640px) {
+  .lc-box { height: 52vh; min-height: 320px; }
+  .lc-legend { gap: 8px; }
+}

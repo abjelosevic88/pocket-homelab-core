@@ -26,6 +26,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.12** — **Uptime Kuma, Dawarich and Maloja connectors** (events, polled): Kuma down / up / certificate warnings for every monitor (`/metrics` with an API key) or a status page's; Dawarich tracking stopped / resumed, visits and city / country changes for the linked account, never coordinates; Maloja scrobbles and first listens for the linked listener. Connectors that can only link (no provisioning) get the people table.
 
+**0.13** — the Links page draws the links as a **diagram**: app cards, an arrow per app pair with its scopes, colours by state, tap for switches or an app's uses and offers, drag, pan and pinch / scroll zoom. The list stays one tap away.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.

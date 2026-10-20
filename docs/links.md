@@ -27,6 +27,10 @@ The acting app lists what it needs under `uses`; the target lists what it allows
 
 Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, target, scope). A link is created switched **on**: the apps on a box are installed by its admin, and both sides had to ask for it. Registering again without a use deletes its links.
 
+## The Links page
+
+Admins see every link two ways: a **diagram** (each Pocket app a card, one arrow per acting app → target app with its scopes on it, coloured on / partly off / off / can't work, apps without links in a grid below) and a **list**. Tap an arrow for its switches, or a card for everything that app uses, lets others use, and offers that nobody uses yet. Cards can be dragged; the layout is kept in the browser.
+
 ## When a link works
 
 A link issues tokens for a person only when all of these hold (the first that fails is the `reason`):
