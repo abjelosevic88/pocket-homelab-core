@@ -110,6 +110,9 @@ func cleanUses(self string, in []Use) []store.LinkWant {
 
 // linkState decides whether a link works for a person right now.
 func (s *Server) linkState(ctx context.Context, l *store.AppLink, u *store.User) string {
+	if _, ok := serviceType(l.TargetSlug); ok {
+		return s.serviceLinkState(ctx, l, u)
+	}
 	target, err := s.store.GetAppBySlug(ctx, l.TargetSlug)
 	if err != nil {
 		return linkNoTarget
@@ -179,6 +182,10 @@ func (s *Server) handleLinkToken(w http.ResponseWriter, r *http.Request) {
 	}
 	target := strings.ToLower(strings.TrimSpace(in.App))
 	scopes := splitScopes(in.Scope, in.Scopes)
+	if _, ok := serviceType(target); ok {
+		writeErr(w, http.StatusBadRequest, "services are reached through /api/v1/services/credential")
+		return
+	}
 	if target == "" || len(scopes) == 0 {
 		writeErr(w, http.StatusBadRequest, "app and scope required")
 		return
@@ -299,7 +306,9 @@ func (s *Server) linkView(ctx context.Context, l *store.AppLink, u *store.User) 
 	v := map[string]any{"id": l.ID, "app_slug": l.AppSlug, "app_name": l.AppName, "target_slug": l.TargetSlug, "target_name": l.TargetSlug,
 		"scope": l.Scope, "scope_name": l.Scope, "scope_description": "", "reason": l.Reason, "enabled": l.Enabled,
 		"uses": l.Uses, "last_used_at": l.LastUsedAt, "opt_outs": l.OptOuts, "target_registered": false, "offered": false}
-	if target, err := s.store.GetAppBySlug(ctx, l.TargetSlug); err == nil {
+	if typ, ok := serviceType(l.TargetSlug); ok {
+		s.serviceLinkView(ctx, v, typ)
+	} else if target, err := s.store.GetAppBySlug(ctx, l.TargetSlug); err == nil {
 		v["target_name"], v["target_registered"] = target.Name, true
 		if o, ok := appOffers(target)[l.Scope]; ok {
 			v["offered"] = true

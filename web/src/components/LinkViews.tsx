@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from './AppIcon'
+import { bundledIcon } from '../lib/icons'
 import { Switch } from './ui'
 import { appOffers, pairState, scopeLabel, type CanvasSel, type LinkGroup } from './LinkCanvas'
 
@@ -13,7 +14,9 @@ const stateWord = { on: 'On', partial: 'Partly off', off: 'Off', bad: "Can't wor
 
 function Ico({ slug, name, apps }: { slug: string; name: string; apps: App[] }) {
   const a = apps.find(x => x.slug === slug)
-  return a ? <AppIcon a={a} small /> : <span className="feed-ico">{short(name)[0]}</span>
+  if (a) return <AppIcon a={a} small />
+  const icon = slug.startsWith('service:') ? bundledIcon(slug.slice(8)) : ''
+  return <span className="feed-ico">{icon ? <img src={icon} alt="" /> : short(name)[0]}</span>
 }
 
 // A green check when allowed, a red cross when switched off, amber when only some are on.

@@ -30,6 +30,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.14** — the Links page gets **Grid**, **Focus** and **Access** views next to the diagram and the list, plus a summary line; the diagram got a layered layout (labels in their own slots, lanes between cards) and sturdier phone gestures.
 
+**0.15** — **service connections**: apps list third-party services in their manifest and get the address plus the person's own key from Core (`ServiceFor`), the box-wide key only when acting for an admin; switchable on the Links page like app links. Apps page Open lands in the app signed in.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.

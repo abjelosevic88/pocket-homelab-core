@@ -918,3 +918,4 @@ html, body { overflow-x: hidden; }
 .lv-mark.no { background: var(--red); }
 .lv-mark.some { background: var(--warning); }
 .lv-scope .lv-mark, .lv-right-what .lv-mark { width: 20px; height: 20px; font-size: 12px; }
+.lc-node.service .lc-card { fill: var(--surface-2); stroke-dasharray: none; }

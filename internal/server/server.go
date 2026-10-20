@@ -213,6 +213,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/auth/introspect", s.handleIntrospect)
 			r.Post("/links/token", s.handleLinkToken)
 			r.Get("/links/status", s.handleLinkStatus)
+			r.Post("/services/credential", s.handleServiceCredential)
 			r.Get("/me/links", s.handleMyLinks)
 			r.Put("/me/links/{id}", s.handleUpdateMyLink)
 

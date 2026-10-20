@@ -40,6 +40,7 @@ Content-Type: application/json
 | `publishes` | no | Informational list of topics. |
 | `subscribes` | no | Webhooks Core should create. `url` may be relative to `url`. Deliveries carry `X-Pocket-Signature: sha256=<hmac>` when `secret` is set. Idempotent on `url`. |
 | `oidc` | no | Ask for an OpenID Connect client `pocket-<slug>`. `public: true` makes a PKCE-only client without a secret. |
+| `services` | no | Third-party services the app reaches for a person through Core: `{type, reason}` (catalog types like `immich`, `maloja`). Core hands out the address and the person's own key; see [links](links.md#service-connections). |
 | `offers` | no | Scopes other apps may use here for a person: `{scope, name, description}`. Shown to admins and people on the Links page. See [links](links.md). |
 | `uses` | no | What this app does in other apps for a person: `{app, scopes, reason}`. Core creates one link per scope, switched on; dropping a use deletes it. |
 

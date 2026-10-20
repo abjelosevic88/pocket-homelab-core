@@ -68,6 +68,8 @@ export interface AppLink {
   target_slug: string
   target_name: string
   target_registered: boolean
+  target_kind?: 'service'
+  target_type?: string
   offered: boolean
   scope: string
   scope_name: string

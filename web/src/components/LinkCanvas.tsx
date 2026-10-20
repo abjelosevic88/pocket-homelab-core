@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { App, AppLink } from '../lib/types'
 import { layoutGraph } from './linkLayout'
+import { bundledIcon } from '../lib/icons'
 
 // One arrow per (acting app → target app); its scopes ride on the arrow.
 export interface LinkGroup { key: string; app: string; appName: string; target: string; targetName: string; reason: string; links: AppLink[] }
@@ -358,21 +359,23 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
             })}
             {drawn.map(n => {
               const p = pos[n.slug]
-              const src = n.app ? iconSrc(n.app) : ''
+              const svc = n.slug.startsWith('service:') ? n.slug.slice(8) : ''
+              const src = n.app ? iconSrc(n.app) : svc ? bundledIcon(svc) : ''
+              const clip = 'lc-clip-' + n.slug.replace(/[^a-z0-9-]/gi, '-')
               const on = sel?.kind === 'app' && sel.slug === n.slug
               const dim = (focus && focus !== n.slug && !near.has(n.slug)) || (sel?.kind === 'pair' && !groups.some(g => g.key === sel.key && (g.app === n.slug || g.target === n.slug)))
               const sub = n.linked ? [n.out && `uses ${plural(n.out, 'app')}`, n.inn && `used by ${n.inn}`].filter(Boolean).join(' · ') : n.offers ? `offers ${plural(n.offers, 'scope')}` : 'no links'
               return (
                 <g key={n.slug} data-node={n.slug} transform={`translate(${p.x},${p.y})`}
-                  className={`lc-node${n.app ? '' : ' ghost'}${lifted === n.slug ? ' lifted' : ''}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}
+                  className={`lc-node${n.app ? '' : svc ? ' service' : ' ghost'}${lifted === n.slug ? ' lifted' : ''}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}
                   onPointerEnter={e => e.pointerType === 'mouse' && setHover(n.slug)} onPointerLeave={() => setHover('')}>
                   <rect width={W} height={H} rx={12} className="lc-card" />
-                  <clipPath id={`lc-clip-${n.slug}`}><rect x={12} y={13} width={32} height={32} rx={8} /></clipPath>
+                  <clipPath id={clip}><rect x={12} y={13} width={32} height={32} rx={8} /></clipPath>
                   {src && !badIcons.has(n.slug)
-                    ? <image href={src} x={12} y={13} width={32} height={32} clipPath={`url(#lc-clip-${n.slug})`} preserveAspectRatio="xMidYMid slice" onError={() => setBadIcons(s => new Set(s).add(n.slug))} />
+                    ? <image href={src} x={12} y={13} width={32} height={32} clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" onError={() => setBadIcons(s => new Set(s).add(n.slug))} />
                     : <><rect x={12} y={13} width={32} height={32} rx={8} className="lc-letter-bg" /><text x={28} y={34} textAnchor="middle" className="lc-letter">{short(n.name)[0]}</text></>}
                   <text x={54} y={27} className="lc-name">{short(n.name)}</text>
-                  <text x={54} y={44} className="lc-sub">{n.app ? sub : 'not registered'}</text>
+                  <text x={54} y={44} className="lc-sub">{n.app ? sub : svc ? `service · used by ${n.inn}` : 'not registered'}</text>
                   {n.app && <circle cx={W - 13} cy={13} r={4} className={`lc-status ${n.app.status}`}><title>{n.app.status}</title></circle>}
                 </g>)
             })}

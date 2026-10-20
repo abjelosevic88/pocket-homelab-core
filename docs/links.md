@@ -86,3 +86,15 @@ Core checks the links again at every introspection, and `ActAs` asks Core for a 
 | GET | `/me/links` · PUT `/me/links/{id}` | person | links that can act for the caller, with `on_for_me` / `{enabled}` (their own switch) |
 
 Changing the box-wide switch publishes `core.link.changed`.
+
+## Service connections
+
+The same switches cover a Pocket app reaching a **third-party service** (Immich, Maloja, Dawarich, Jellyfin…) for a person, instead of a URL and key pasted into the app.
+
+- The app lists the services in its manifest: `"services": [{"type": "immich", "reason": "Photos of the day"}]` (catalog types).
+- Core makes a link per service, target `service:<type>`, scope `account`, on by default; it shows on the Links page ("Use your Immich") with the admin's switch and each person's.
+- `POST /api/v1/services/credential {"user": "a@b.c", "type": "immich"}` with the app's `pca_` token returns `{url, public_url, key, fields, source}`. SDK: `core.ServiceFor(ctx, email, "immich")`. Ask every time; don't keep the key.
+- **Whose key:** the person's own credential (set in Core by hand or written by a connector) — `source: "personal"`. The service's box-wide key goes out **only when the app acts for an admin** (`source: "box"`), because it's usually the owner's account or an admin key that sees everyone. A member without their own credential gets `no_account`. Connector-only fields (admin keys the connector uses) never leave Core.
+- Keyless services (Maloja's read API) follow the same rule: the address alone goes to admins and to people with their own entry.
+- Refusals: `off_admin`, `off_person`, `no_account`, `not_in_audience` (the service isn't in the person's audience), `target_missing` (no such service in Core), `not_declared`, `unknown_user`. `GET /api/v1/links/status?user=…&app=service:immich` reports the state without handing anything out.
+- Service targets never get a `pcx_` token: `POST /links/token` refuses them.

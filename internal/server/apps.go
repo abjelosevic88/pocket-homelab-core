@@ -38,7 +38,9 @@ type Manifest struct {
 		Public       bool     `json:"public,omitempty"`
 	} `json:"oidc,omitempty"`
 	Offers []Offer `json:"offers,omitempty"` // what other apps may do here for a person
-	Uses   []Use   `json:"uses,omitempty"`   // what this app does in other apps for a person
+	// Services are third-party services the app reaches for a person through Core.
+	Services []ServiceUse `json:"services,omitempty"`
+	Uses     []Use        `json:"uses,omitempty"` // what this app does in other apps for a person
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
@@ -84,7 +86,7 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 	}
 	m.EnvPrefix = strings.ToUpper(m.EnvPrefix)
 	m.Offers = cleanOffers(m.Offers)
-	wants := cleanUses(m.Slug, m.Uses)
+	wants := append(cleanUses(m.Slug, m.Uses), cleanServiceUses(m.Services)...)
 	raw, _ := json.Marshal(m)
 
 	st, _ := s.store.GetSettings(ctx)

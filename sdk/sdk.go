@@ -56,6 +56,16 @@ type Manifest struct {
 	Offers []Offer `json:"offers,omitempty"`
 	// Uses are what this app does in other apps for a person.
 	Uses []Use `json:"uses,omitempty"`
+	// Services are third-party services (immich, maloja, dawarich…) the app
+	// reaches for a person through Core instead of a pasted URL and key.
+	Services []ServiceUse `json:"services,omitempty"`
+}
+
+// ServiceUse asks Core for people's way into a third-party service, by its
+// catalog type; Core shows it as a link the admin and each person can switch off.
+type ServiceUse struct {
+	Type   string `json:"type"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // Offer is one scope an app lets linked apps use for a person.
@@ -598,4 +608,59 @@ func (c *Client) LinkOn(ctx context.Context, email, target string, scopes ...str
 		}
 	}
 	return true, ""
+}
+
+// ServiceCred is a person's way into a third-party service, from Core: the
+// service's address and the person's own credential (Source "personal"), or
+// the box-wide one when the app acts for an admin (Source "box"). Key is the
+// first secret field (the API key / token); Fields has them all by catalog key.
+type ServiceCred struct {
+	Type      string            `json:"type"`
+	Name      string            `json:"name"`
+	URL       string            `json:"url"`
+	PublicURL string            `json:"public_url"`
+	Key       string            `json:"key"`
+	Fields    map[string]string `json:"fields"`
+	Source    string            `json:"source"`
+}
+
+// ServiceFor asks Core for the person's way into a service the manifest lists
+// under Services. Refusals are *LinkError (off_admin, off_person, no_account,
+// not_in_audience, target_missing, not_declared, unknown_user). Every call
+// asks Core, so a switch-off applies at once; don't keep the key around.
+func (c *Client) ServiceFor(ctx context.Context, email, typ string) (*ServiceCred, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+	b, _ := json.Marshal(map[string]any{"user": email, "type": typ})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/v1/services/credential", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token())
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.opts.UserAgent)
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode >= 300 {
+		var e struct {
+			Error  string `json:"error"`
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		if e.Reason != "" {
+			return nil, &LinkError{Reason: e.Reason, Message: e.Error}
+		}
+		return nil, fmt.Errorf("core: HTTP %d: %s", res.StatusCode, e.Error)
+	}
+	var out ServiceCred
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
