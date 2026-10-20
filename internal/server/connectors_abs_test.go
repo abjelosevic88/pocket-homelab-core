@@ -19,10 +19,11 @@ type fakeABS struct {
 	mu        sync.Mutex
 	adminKey  string
 	users     []map[string]any
-	keys      map[string]string // api key → user id
-	passwords map[string]string // username → password sent at creation
-	auth      map[string]any    // auth settings
-	inits     int               // times the OpenID client was (re)built
+	keys      map[string]string    // api key → user id
+	keyMeta   map[string][3]string // key id → api key, name, user id
+	passwords map[string]string    // username → password sent at creation
+	auth      map[string]any       // auth settings
+	inits     int                  // times the OpenID client was (re)built
 	patches   int
 	sessions  []map[string]any
 	progress  map[string][]map[string]any
@@ -32,7 +33,7 @@ type fakeABS struct {
 }
 
 func newFakeABS(t *testing.T) *fakeABS {
-	f := &fakeABS{adminKey: "abs-admin-key", keys: map[string]string{}, passwords: map[string]string{}, progress: map[string][]map[string]any{},
+	f := &fakeABS{adminKey: "abs-admin-key", keys: map[string]string{}, keyMeta: map[string][3]string{}, passwords: map[string]string{}, progress: map[string][]map[string]any{},
 		items: map[string][]map[string]any{"lib-books": {}, "lib-pods": {}}}
 	f.users = []map[string]any{
 		{"id": "u-root", "username": "root", "email": "aleks@b.c", "type": "root", "isActive": true, "hasOpenIDLink": true},
@@ -95,7 +96,23 @@ func newFakeABS(t *testing.T) *fakeABS {
 			f.n++
 			k := fmt.Sprintf("abs-key-%d", f.n)
 			f.keys[k] = fmt.Sprint(in["userId"])
+			f.keyMeta["k"+k] = [3]string{k, fmt.Sprint(in["name"]), fmt.Sprint(in["userId"])}
 			js(map[string]any{"apiKey": map[string]any{"apiKey": k, "id": "k" + k, "name": in["name"]}})
+		case p == "/api/api-keys" && r.Method == "GET":
+			out := []map[string]any{}
+			for id, m := range f.keyMeta {
+				out = append(out, map[string]any{"id": id, "name": m[1], "userId": m[2], "isActive": true})
+			}
+			js(map[string]any{"apiKeys": out})
+		case strings.HasPrefix(p, "/api/api-keys/") && r.Method == "DELETE":
+			id := strings.TrimPrefix(p, "/api/api-keys/")
+			m, ok := f.keyMeta[id]
+			if !ok {
+				w.WriteHeader(404)
+				return
+			}
+			delete(f.keys, m[0])
+			delete(f.keyMeta, id)
 		case strings.HasSuffix(p, "/openid-unlink"):
 			u := user(strings.TrimSuffix(strings.TrimPrefix(p, "/api/users/"), "/openid-unlink"))
 			if u == nil {

@@ -27,6 +27,8 @@ import (
 //	POST /api/users/                        Provision, missing user            WRITE
 //	POST /api/token/                        Provision, as the new user: their own token
 //	GET|POST|DELETE /api/workflows/         events                             WRITE
+//	POST /api/profile/generate_auth_token/  RotateKey, as the person           WRITE
+//	PATCH /api/users/{id}/                  RotateKey, stale token only        WRITE  (a new password)
 //
 // Accounts: linked by email; a missing person gets an account named like
 // the email's local part in the "Pocket Core" group (everything a person

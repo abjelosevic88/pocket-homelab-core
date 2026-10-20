@@ -34,22 +34,23 @@ var Version = "dev"
 
 // Server holds dependencies.
 type Server struct {
-	cfg      *config.Config
-	store    *store.Store
-	log      *slog.Logger
-	webFS    fs.FS
-	hub      *events.Hub
-	oidc     *oidc.Provider
-	sso      *ssoProvider // upstream provider for signing in to Core itself
-	started  time.Time
-	requests atomic.Int64
-	errors   atomic.Int64
-	http     *http.Client
-	connHTTP *http.Client    // connectors talking to third-party apps
-	ctx      context.Context // lives as long as the server; background work hangs off it
-	polling  sync.Map        // service id → struct{}: a poll is running
-	nextPoll sync.Map        // service id → time.Time: when the scheduler polls next
-	provMu   sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
+	cfg       *config.Config
+	store     *store.Store
+	log       *slog.Logger
+	webFS     fs.FS
+	hub       *events.Hub
+	oidc      *oidc.Provider
+	sso       *ssoProvider // upstream provider for signing in to Core itself
+	started   time.Time
+	requests  atomic.Int64
+	errors    atomic.Int64
+	http      *http.Client
+	connHTTP  *http.Client    // connectors talking to third-party apps
+	ctx       context.Context // lives as long as the server; background work hangs off it
+	polling   sync.Map        // service id → struct{}: a poll is running
+	nextPoll  sync.Map        // service id → time.Time: when the scheduler polls next
+	provMu    sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
+	rotations sync.WaitGroup  // background key replacements after a service link was switched off
 
 	hookMu    sync.Mutex // one subscription sync at a time
 	hookSyncs sync.Map   // service id → hookSyncResult: what the last sync found per person

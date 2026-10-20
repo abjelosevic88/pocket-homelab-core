@@ -33,6 +33,9 @@ import (
 //	POST /System/Configuration/branding    ConfigureSSO (login button)   WRITE
 //	GET  /System/ActivityLog/Entries       Poll (playback, accounts)     read
 //	GET  /Items                            Poll (new items, titles)      read
+//	POST /QuickConnect/*, /Users/AuthenticateWithQuickConnect  RotateKey  WRITE (a new session)
+//	POST /Users/{id}/Password              RotateKey, Quick Connect off  WRITE
+//	GET|DELETE /Devices                    RotateKey (Core's old sessions) WRITE
 //
 // Jellyfin accounts have no email, so a person matches an account whose
 // name is their email or the part before "@" (the same name Core sends as

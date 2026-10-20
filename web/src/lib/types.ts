@@ -36,7 +36,11 @@ export interface ConnectorView {
   last_poll_at?: string; last_error: string; type: string; service_name: string; capabilities: ConnectorCaps; configured: boolean
   redirects: string[]; issuer: string; oidc_client: OIDCClient | null; polling: boolean
   push?: ConnectorPush
+  /** Switching a service link off: "replaces" the connector-made key, "cannot", or "" (no keys to replace). */
+  key_rotation: KeyRotation
 }
+export type KeyRotation = '' | 'replaces' | 'cannot'
+export interface KeyReplacement { email: string; name: string; replaced_at: string; error: string; note: string }
 export type HookState = 'ok' | 'missing' | 'needs_key' | 'error' | 'off'
 export interface HookPerson {
   user_id: number; email: string; name: string; state: HookState; detail?: string
@@ -52,6 +56,7 @@ export type ConnectorStatus = '' | 'ok' | 'linked' | 'error'
 export interface ConnectorAccount {
   user_id: number; email: string; name: string; role: string; disabled: boolean; in_audience: boolean
   status: ConnectorStatus; remote_id: string; error: string; updated_at?: string; credential: '' | 'connector' | 'own'; manual?: boolean
+  key_replaced_at?: string; key_error?: string; key_note?: string
 }
 export interface RemoteAccount { id: string; name: string; admin: boolean; disabled: boolean }
 export interface UserConnector {
@@ -85,4 +90,6 @@ export interface AppLink {
   last_used_at?: string
   opt_outs?: number
   on_for_me?: boolean
+  key_rotation?: KeyRotation
+  key_replacements?: KeyReplacement[]
 }

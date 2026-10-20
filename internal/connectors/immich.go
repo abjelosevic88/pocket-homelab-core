@@ -31,6 +31,8 @@ import (
 //	GET  /workflows               Events: heal check           read   (workflow.read, as the person)
 //	POST /workflows               Events on                    WRITE  (workflow.create, as the person)
 //	DELETE /workflows/{id}        Events off                   WRITE  (workflow.delete, as the person)
+//	POST|GET /api-keys, DELETE /api-keys/{id}  RotateKey      WRITE  (as the person, see rotate.go)
+//	PUT  /admin/users/{id}        RotateKey, stale key only    WRITE  (adminUser.update: a new password)
 //
 // Events arrive by push: Immich workflows are per user (a workflow runs only
 // for its owner's assets), so Core creates, with each person's own key, an

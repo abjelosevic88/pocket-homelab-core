@@ -6,6 +6,7 @@ import { AppIcon } from '../components/AppIcon'
 import { Card, Empty, Loading, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
 import { appOffers, LinkCanvas, scopeLabel, type CanvasSel, type LinkGroup } from '../components/LinkCanvas'
 import { AccessView, FocusView, LinkSummary, MatrixView } from '../components/LinkViews'
+import { KeyLine } from '../components/ConnectorPanel'
 
 type View = 'diagram' | 'grid' | 'focus' | 'access' | 'list'
 const VIEWS: { value: View; label: string; title: string }[] = [
@@ -77,9 +78,23 @@ function ScopeRow({ l, flip }: { l: AppLink; flip: (l: AppLink, on: boolean) => 
         <div><b>{scopeLabel(l)}</b> <span className="mono small muted">{l.scope}</span> {l.state !== 'on' && l.state !== 'off_admin' && stateBadge(l)}</div>
         {l.scope_description && <div className="muted small">{l.scope_description}</div>}
         <div className="muted small">{l.uses ? `${l.uses} tokens · last ${ago(l.last_used_at)}` : 'not used yet'}{l.opt_outs ? ` · switched off by ${l.opt_outs} ${l.opt_outs === 1 ? 'person' : 'people'}` : ''}</div>
+        <KeyRotationNote l={l} />
       </div>
       <Switch on={l.enabled} onChange={on => flip(l, on)} title={l.enabled ? 'On for the box: each person can still switch it off' : 'Off for everyone'} />
     </div>
+  )
+}
+
+// What switching a service link off does to the keys its connector made.
+function KeyRotationNote({ l }: { l: AppLink }) {
+  if (!l.key_rotation) return null
+  return (
+    <>
+      <div className="muted small">{l.key_rotation === 'replaces'
+        ? `Switching off replaces the keys Core's connector made in ${l.target_name}, so copies apps kept stop working.`
+        : `Core can't replace keys in ${l.target_name} automatically: a key its connector made keeps working there after a switch-off.`}</div>
+      {(l.key_replacements || []).map(r => <KeyLine key={r.email} who={r.name || r.email} replacedAt={r.replaced_at} error={r.error} note={r.note} />)}
+    </>
   )
 }
 

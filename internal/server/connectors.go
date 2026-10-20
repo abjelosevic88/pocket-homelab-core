@@ -81,6 +81,7 @@ type connectorOut struct {
 	OIDCClient   *store.OIDCClient       `json:"oidc_client"`
 	Polling      bool                    `json:"polling"`
 	Push         *hookView               `json:"push,omitempty"` // events arrive by push: the subscriptions and their counters
+	KeyRotation  string                  `json:"key_rotation"`   // switching a service link off: "replaces" the connector-made key, "cannot", or ""
 }
 
 func (s *Server) connectorView(ctx context.Context, sv *store.Service, c connectors.Connector, row *store.Connector) connectorOut {
@@ -94,6 +95,7 @@ func (s *Server) connectorView(ctx context.Context, sv *store.Service, c connect
 		out.OIDCClient = cl
 	}
 	_, out.Polling = s.polling.Load(sv.ID)
+	out.KeyRotation = keyRotation(c.Type())
 	if p, ok := c.(connectors.Pusher); ok && out.Capabilities.Events {
 		out.Push = s.hookStatus(ctx, sv, p, row.Enabled && row.EventsEnabled)
 	}
@@ -670,6 +672,10 @@ type accountRow struct {
 	UpdatedAt  string `json:"updated_at,omitempty"`
 	Credential string `json:"credential"` // connector | own | ""
 	Manual     bool   `json:"manual"`     // linked by hand
+	// replacing the connector-made key after a service link was switched off
+	KeyReplacedAt string `json:"key_replaced_at,omitempty"`
+	KeyError      string `json:"key_error,omitempty"`
+	KeyNote       string `json:"key_note,omitempty"`
 }
 
 func (s *Server) handleConnectorAccounts(w http.ResponseWriter, r *http.Request) {
@@ -703,6 +709,7 @@ func (s *Server) handleConnectorAccounts(w http.ResponseWriter, r *http.Request)
 		row := accountRow{UserID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, Disabled: u.Disabled, InAudience: in}
 		if has {
 			row.Status, row.RemoteID, row.Error, row.UpdatedAt, row.Manual = a.Status, a.RemoteID, a.Error, a.UpdatedAt, a.Manual
+			row.KeyReplacedAt, row.KeyError, row.KeyNote = a.KeyReplacedAt, a.KeyError, a.KeyNote
 		}
 		if ovs, err := s.store.ListOverrides(ctx, u.ID); err == nil {
 			if ov, ok := ovs[sv.ID]; ok {

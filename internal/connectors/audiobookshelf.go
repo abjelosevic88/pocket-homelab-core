@@ -33,6 +33,7 @@ import (
 //	GET   /api/libraries                  Poll                          read
 //	GET   /api/libraries/:id/items        Poll (new books, podcasts)    read
 //	GET   /api/libraries/:id/recent-episodes  Poll (new episodes)       read
+//	GET|POST /api/api-keys, DELETE /api/api-keys/:id  RotateKey         WRITE
 //
 // Accounts carry emails, so a person matches the account with their email
 // and nothing else. The box-wide credential is an administrator's API key

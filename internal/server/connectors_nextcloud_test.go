@@ -91,6 +91,16 @@ func newFakeNextcloud(t *testing.T) *fakeNextcloud {
 			ap := "app-" + who
 			f.appPass[ap] = who
 			ocs(w, 200, map[string]string{"apppassword": ap})
+		case p == "/ocs/v2.php/core/apppassword/rotate" && r.Method == http.MethodPost:
+			if byPassword {
+				ocs(w, 403, nil) // only an app password can be rotated
+				return
+			}
+			delete(f.appPass, pw)
+			f.nextID++
+			ap := fmt.Sprintf("app-%s-r%d", who, f.nextID)
+			f.appPass[ap] = who
+			ocs(w, 200, map[string]string{"apppassword": ap})
 		case !admin:
 			ocs(w, 403, nil)
 		case p == "/ocs/v2.php/cloud/apps":

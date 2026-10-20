@@ -119,9 +119,13 @@ type ConnectorAccount struct {
 	Manual    bool   `json:"manual"` // linked by hand by an admin
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	// Replacing the connector-made key after a service link was switched off.
+	KeyReplacedAt string `json:"key_replaced_at,omitempty"` // when it last worked
+	KeyError      string `json:"key_error,omitempty"`       // the last attempt failed (or could not be made): the old key may still work
+	KeyNote       string `json:"key_note,omitempty"`        // a side effect of the last replacement
 }
 
-const connectorAccountCols = `service_id, user_id, remote_id, status, error, manual, created_at, updated_at`
+const connectorAccountCols = `service_id, user_id, remote_id, status, error, manual, created_at, updated_at, key_replaced_at, key_error, key_note`
 
 func (s *Store) listConnectorAccounts(ctx context.Context, where string, arg int64) ([]ConnectorAccount, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+connectorAccountCols+` FROM connector_accounts WHERE `+where+` = ? ORDER BY service_id, user_id`, arg)
@@ -132,7 +136,7 @@ func (s *Store) listConnectorAccounts(ctx context.Context, where string, arg int
 	out := []ConnectorAccount{}
 	for rows.Next() {
 		var a ConnectorAccount
-		if err := rows.Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.Manual, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.Manual, &a.CreatedAt, &a.UpdatedAt, &a.KeyReplacedAt, &a.KeyError, &a.KeyNote); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -154,7 +158,7 @@ func (s *Store) ListUserConnectorAccounts(ctx context.Context, userID int64) ([]
 func (s *Store) GetConnectorAccount(ctx context.Context, serviceID, userID int64) (*ConnectorAccount, error) {
 	var a ConnectorAccount
 	err := s.DB.QueryRowContext(ctx, `SELECT `+connectorAccountCols+` FROM connector_accounts WHERE service_id = ? AND user_id = ?`, serviceID, userID).
-		Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.Manual, &a.CreatedAt, &a.UpdatedAt)
+		Scan(&a.ServiceID, &a.UserID, &a.RemoteID, &a.Status, &a.Error, &a.Manual, &a.CreatedAt, &a.UpdatedAt, &a.KeyReplacedAt, &a.KeyError, &a.KeyNote)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -174,6 +178,15 @@ func (s *Store) SaveConnectorAccount(ctx context.Context, a *ConnectorAccount) e
 		*a = *n
 	}
 	return nil
+}
+
+// SetConnectorAccountKey records the outcome of replacing a person's key:
+// replaced (now) with an optional note, or the error. A failure keeps the
+// time of the last replacement that worked.
+func (s *Store) SetConnectorAccountKey(ctx context.Context, serviceID, userID int64, replaced bool, keyErr, note string) error {
+	q := `UPDATE connector_accounts SET key_error = ?, key_note = ?, key_replaced_at = CASE WHEN ? THEN ? ELSE key_replaced_at END WHERE service_id = ? AND user_id = ?`
+	_, err := s.DB.ExecContext(ctx, q, keyErr, note, boolInt(replaced), Now(), serviceID, userID)
+	return err
 }
 
 // DeleteConnectorAccount forgets a person's account in a service (unlink).

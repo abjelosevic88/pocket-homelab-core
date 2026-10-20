@@ -29,6 +29,7 @@ import (
 //	GET  /ocs/v2.php/core/getapppassword               Provision, as the new user: their own app password
 //	GET|POST|PUT|DELETE /ocs/v2.php/apps/user_oidc/api/v1/provider[/{id}]     sign-in (user_oidc app)
 //	GET|POST|DELETE /ocs/v2.php/apps/webhook_listeners/api/v1/webhooks[/{id}] events (webhook_listeners app)
+//	POST /ocs/v2.php/core/apppassword/rotate           RotateKey, as the person with the stored app password
 //
 // Accounts: a person is linked to the Nextcloud account with their email;
 // with none, an account named like the email's local part is created and

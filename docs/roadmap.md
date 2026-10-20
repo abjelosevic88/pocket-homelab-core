@@ -34,6 +34,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.16** — apps **report Direct connections** (`ReportModes`), shown across the Links views; `ServiceFor` gets a one-minute cache that rides out Core restarts.
 
+**0.17** — switching a service link off **replaces the person's connector-made key** in the service (Immich, Jellyfin, Audiobookshelf, Paperless, Nextcloud), so copies apps kept stop working; linked accounts and hand-set keys are never touched.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.

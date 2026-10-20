@@ -65,6 +65,18 @@ func newFakePaperless(t *testing.T) *fakePaperless {
 			_, _ = io.WriteString(w, `{"detail":"Invalid token."}`)
 			return
 		}
+		if p == "/api/profile/generate_auth_token/" && r.Method == http.MethodPost {
+			for tok, u := range f.tokens { // one token per account: the old one goes
+				if u == who {
+					delete(f.tokens, tok)
+				}
+			}
+			f.nextID++
+			tok := fmt.Sprintf("tok-%s-%d", who, f.nextID)
+			f.tokens[tok] = who
+			_ = json.NewEncoder(w).Encode(tok)
+			return
+		}
 		if p == "/api/ui_settings/" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{"username": who, "is_superuser": who == "admin"}})
 			return

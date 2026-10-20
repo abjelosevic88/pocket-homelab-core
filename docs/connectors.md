@@ -25,6 +25,21 @@ Connectors are opt-in per service and **off by default**. Everything runs throug
 
 Core also publishes `core.connector.provisioned` `{type, service_id, user_email, status, created}` after each successful provisioning.
 
+## Replacing keys when a link is switched off
+
+Apps that reach a service through Core ([service connections](links.md#service-connections)) may keep a person's key in memory. When one of that person's service links is **switched off**, Core **replaces the key in the service**: the old key is deleted there (so every copy of it, in any app, dies) and a new one is saved as the person's credential, which the apps still allowed get at their next `ServiceFor` (the SDK caches a credential for up to a minute).
+
+| | |
+|---|---|
+| When | a person switches a service link off for themselves (`PUT /me/links/{id}` → that person), or the admin switches it off for the box (`PUT /links/{id}` → everyone with a connector-made key in that service). Only on → off; switching back on does nothing extra. In the background (90 s per person), after the switch is saved |
+| Whose keys | only a key **the connector minted for an account it created**: account status `ok` (not `linked`, not linked by hand), the person's credential stored by the connector (`source: connector`) and holding a key. Never a linked account (the owner's), a credential set by hand, a hand-set or claimed copy of the box key (an entry holding the **service's box-wide key** is refused and says so), or the box-wide key itself |
+| Admin accounts | every connector checks the account in the app first and refuses an administrator's |
+| Outcome | on the connector account: `key_replaced_at`, `key_error` (the old key may still work), `key_note` (a side effect, e.g. a password Core had to reset). Shown in the connector's people table and on the Links page under the service link. A failure is recorded and logged, never fatal: the switch-off itself always stands |
+| Events | `core.service_key_replaced` `{type, service_id, user_email, reason: off_person \| off_admin, app, note?, error?}` (`error` = the new key is saved but an old one survived), `core.service_key_replace_failed` `{…, error}`. Never the key |
+| Connector off | nothing is replaced (`key_error` says so) |
+
+What it does per app (endpoints in each section below): **Immich**, **Jellyfin**, **Audiobookshelf**, **Paperless-ngx**, **Nextcloud** can replace keys. Jellyseerr has no per-person keys. A connector that can't replace keys records *Core can't replace keys in X automatically* on the person's account, and its panel and links say so.
+
 ## Events by push
 
 Polling only sees totals ("sani has 5 more photos"). An app that can call a URL when something happens gives one real event per thing instead, seconds after it happened. Core does that with **hooks**:
@@ -54,6 +69,9 @@ Needs: the Immich service in Core with its internal URL, its public URL (where p
 | `GET /workflows` | Events: which of the person's workflows still exist (as the person) | – |
 | `POST /workflows` | Events on / heal: create a workflow (as the person) | **yes** |
 | `DELETE /workflows/{id}` | Events off, person removed, re-create (as the person) | **yes** |
+| `GET /users/me`, `GET /api-keys/me` | Replacing a key: check the stored key is the account's, and its id (as the person) | – |
+| `POST /api-keys` · `GET /api-keys` · `DELETE /api-keys/{id}` | Replacing a key: mint the new one (`Pocket Core`, `all`) with the stored key, then, with the new one, delete the account's keys named `Pocket Core` and the stored key | **yes** |
+| `PUT /admin/users/{id}` `{password}` · `POST /auth/login` · `POST /auth/logout` | Replacing a key, **only when the stored key no longer works**: a new 40-character random password (needs `adminUser.update` on the box key, or `all`), one sign-in to mint the new key | **yes** |
 
 `/system-config` is deprecated since Immich 3.2 in favour of `/admin/config` (still alpha); the connector falls back to `/admin/config` if the old path ever answers 404.
 
@@ -68,6 +86,8 @@ Immich links an OIDC login to an existing account with the same email, so a pers
 How Immich (3.3) workflows behave, read from its source (`workflow-execution.service.ts`, `workflow.repository.ts`, `immich-plugin-core`): a workflow **belongs to the user who created it** and runs only for **that user's** assets (`AssetCreate` / `AssetMetadataExtracted` look up workflows by the asset owner). So Core creates, per connected person and **with that person's own key**, two workflows — `Pocket Core · uploads` (trigger `AssetCreate`) and `Pocket Core · details` (trigger `AssetMetadataExtraction`) — each with one step, the built-in `immich-plugin-core#webhook` (`{url, method: "POST", headerName: "X-Pocket-Hook", headerValue: <secret>}`), enabled, logging off. The step POSTs `{"type": "AssetV1", "trigger": "…", "data": {"asset": {…}}}` where `asset` carries `id`, `ownerId`, `type`, `originalFileName`, `fileCreatedAt`, `localDateTime`, `createdAt`, `visibility`, `exifInfo` (null until metadata extraction; GPS included) and more; Immich ignores the answer and does not retry.
 
 Whose key: a person's own override (the key Core minted at provisioning, or one set by hand); for a **linked** person without one, the service's box-wide key **only if** `GET /users/me` with it returns that person's Immich account (typically the owner whose admin key it is). Anyone else shows **needs a key** and gets no workflows. A key that belongs to a different Immich account is an error. A delivery is published only when the asset's `ownerId` is the hook's person's Immich account and that person is enabled and in the service's audience; the payload's `user_email` is their **Core** email.
+
+**Replacing a key** (a link switched off, see [above](#replacing-keys-when-a-link-is-switched-off)): Immich lets only a user mint their own keys, so Core uses the stored key itself to mint the new one, then deletes the account's old `Pocket Core` keys with the new key. Its password is not touched. Only if the stored key was already deleted does Core set a new random password on the account (Core made it, nobody knows the old one) and sign in once; the box key needs `adminUser.update` for that, else the replacement fails and says so. Workflows belong to the account, not the key, and keep running.
 
 The workflows are visible to the person under Immich → Utilities → Workflows; deleting one there is healed at the next check, so to stop events turn **Events** off in Core. To remove them by hand anyway (Core down for good): delete the two `Pocket Core · …` workflows in each person's Immich account.
 
@@ -87,10 +107,15 @@ Needs: the Jellyfin service in Core with its internal URL, its public URL and a 
 | `GET /Branding/Configuration` · `POST /System/Configuration/branding` | Sign-in on/off: the login button | **yes** |
 | `GET /System/ActivityLog/Entries` | Events | – |
 | `GET /Items` | Events (new items, titles) | – |
+| `POST /QuickConnect/Initiate` · `POST /QuickConnect/Authorize?code=` · `POST /Users/AuthenticateWithQuickConnect` | Replacing a key: a new session from a new device `pocket-core-<user id>-<time>`, approved with the stored token (or by the API key for the account, `&userId=`, Jellyfin 10.9+) | **yes** (a session) |
+| `POST /Users/{id}/Password` (or `/Users/Password?userId=`) · `POST /Users/AuthenticateByName` | Replacing a key, **only when Quick Connect is off**: a new random password, then sign in with it | **yes** |
+| `GET /Devices?userId=` · `DELETE /Devices?id=` | Replacing a key: delete the account's older *Pocket Core* devices (`pocket-core-…`), which revokes their tokens | **yes** |
 
 **Accounts.** Jellyfin accounts have no email, so a person matches an account named like their email or the part before `@` (the same name Core sends as `preferred_username`). A match is **linked**: Core saves the account's `USER_ID` as the person's credential and mints nothing, because Jellyfin cannot issue a token for someone else and the password is unknown. A new account gets `USER_ID` plus its own token as `API_KEY`. Nobody knows its password, so the person signs in with Pocket Core (needs the SSO plugin) or Quick Connect, or an admin sets a password in Jellyfin.
 
 **Linking by hand.** When the names don't line up (the owner watches as `root`), pick the account in the people table, or run `pocket-core connector jellyfin link <email> <account>`. A link made by hand is marked *by hand*, and provisioning never changes it. Unlinking removes the link and the credential Core saved for it, never one the person set themselves. One Jellyfin account can be linked to one person only.
+
+**Replacing a key** (a link switched off, see [above](#replacing-keys-when-a-link-is-switched-off)): the person's credential is a session token. Core opens a new session through Quick Connect and deletes Core's older devices of that account, so the old token stops working; the person's own devices (phone, TV) are left alone. With Quick Connect switched off in Jellyfin, Core sets a new random password to sign in (nobody knew the old one), and Jellyfin then **signs the account out on every device**; the person's account shows a note saying so.
 
 **Sign in with Pocket Core** needs the [SSO Authentication plugin](https://github.com/9p4/jellyfin-plugin-sso). Add the repository `https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json` under Dashboard → Plugins → Repositories, install it and restart Jellyfin. Without the plugin, or while it waits for a Jellyfin restart (status `Restart`), the switch refuses and says so.
 
@@ -120,8 +145,11 @@ Needs: the Audiobookshelf service in Core with its internal URL, its public URL 
 | `PATCH /api/users/:id/openid-unlink` | Sign-in on/off: detach a linked account from the previous provider | **yes** |
 | `GET /api/auth-settings` · `PATCH /api/auth-settings` | Test, sign-in on/off | **yes** |
 | `GET /api/sessions`, `GET /api/libraries`, `GET /api/libraries/:id/items`, `GET /api/libraries/:id/recent-episodes` | Events | – |
+| `POST /api/api-keys` · `GET /api/api-keys` · `DELETE /api/api-keys/:id` | Replacing a key: a new `Pocket Core · <email>` key for the account, then delete that account's other keys whose name starts with `Pocket Core` (keys the person made themselves stay) | **yes** |
 
 **Accounts.** A person matches the account with **their email** and nothing else. A match is **linked** with its `USER_ID` and Core mints nothing. A missing person gets a new account named like the part of their email before `@` (the full email if that name is taken: never taken over by name) plus `USER_ID` and their own API key as `TOKEN`. Nobody knows its password: they sign in with Pocket Core, or an admin sets one. **Linking by hand** works as for Jellyfin (service accounts without an email, the owner under another address).
+
+**Replacing a key** (a link switched off, see [above](#replacing-keys-when-a-link-is-switched-off)): all with the admin key; root and admin accounts are refused.
 
 **Sign in with Pocket Core** uses Audiobookshelf's built-in OpenID, which has **one provider**. Turning it on:
 1. Backs up the sign-in settings to `DATA_DIR/connectors/audiobookshelf-sso-<timestamp>.json`. If they point at another provider (PocketID…), they are also kept as `audiobookshelf-sso-original.json`.
@@ -190,6 +218,9 @@ Needs: the Nextcloud service in Core with its URL, its public URL, and a Nextclo
 | `GET /ocs/v2.php/core/getapppassword` | Provision: as the new account, its own app password (*Pocket Core* under its Devices & sessions) | **yes** |
 | `GET/POST/PUT/DELETE /ocs/v2.php/apps/user_oidc/api/v1/provider` | Sign-in on/off (writes with the login password; backed up first) | **yes** |
 | `GET/POST/DELETE /ocs/v2.php/apps/webhook_listeners/api/v1/webhooks` | Events on/off | **yes** |
+| `GET /ocs/v2.php/cloud/user` · `POST /ocs/v2.php/core/apppassword/rotate` | Replacing a key: as the person, with the stored app password: check it is theirs and not an admin, then Nextcloud's own rotation (the old app password stops working at once) | **yes** |
+
+**Replacing a key** (a link switched off, see [above](#replacing-keys-when-a-link-is-switched-off)) never touches the account's password: if the stored app password was already revoked, the replacement fails and says so; set a new one by hand.
 
 **Accounts.** A person is **linked** to the Nextcloud account with their email (nothing minted: Nextcloud cannot issue an app password for someone else). With none, Core creates one named like the email's local part and keeps the person's own `USERNAME` + `APP_PASSWORD`. An account with that name but **another email is never taken over**: provisioning stops with an error and an admin links the person by hand (people table, or `pocket-core connector nextcloud link <email> <account>`). Nextcloud sends its usual "account created" email to new accounts when mail is set up.
 
@@ -221,6 +252,8 @@ Needs: the Paperless service in Core with its URL, its public URL and a **superu
 | `POST /api/users/` | Provision: a missing person; user name = the email's local part, first/last name and email from Core, a 40-character random password used once and never stored, logged or returned | **yes** |
 | `POST /api/token/` | Provision: as the new account, its own API token | **yes** |
 | `GET/POST/DELETE /api/workflows/` | Events on/off | **yes** |
+| `GET /api/ui_settings/` · `POST /api/profile/generate_auth_token/` | Replacing a key: as the person, with the stored token: check it is theirs, then regenerate it (Paperless keeps one token per account, so the old one is gone) | **yes** |
+| `PATCH /api/users/{id}/` `{password}` · `POST /api/token/` | Replacing a key, **only when the stored token no longer works**: the superuser sets a new random password, Core signs in once for a token and regenerates it | **yes** |
 
 **Accounts.** A person is **linked** to the account with their email. With none, Core creates one in the **Pocket Core** group and keeps the person's own `TOKEN`. That group may view, add, change and delete documents, notes, tags, correspondents, document types, storage paths, custom fields, saved views, share links, mail accounts and rules, and see their tasks. It does not cover users, groups, workflows or settings. Paperless's object permissions still apply, so a member sees their own documents and what is shared with them; adjust the group in Paperless if the household wants more. An account with that name but **another email is never taken over**: link the person by hand. Paperless's first admin usually has `root@localhost` as email, so the owner is linked by hand (`pocket-core connector paperless link <email> admin`) before provisioning anyone.
 
@@ -300,6 +333,8 @@ func init() { Register(myApp{}) }
 ```
 
 An app without emails on its accounts also implements `Linker` (and sets `Capabilities.Link`): `RemoteAccounts` lists the accounts for the admin's picker, and `Link(ctx, Target, remoteID)` checks the account exists and returns `Account{Status: StatusLinked, Fields: {USER_ID…}}`. Poll events then carry `RemoteUserID`, and Core turns it into `user_email` through the accounts it linked.
+
+A connector that mints people's keys should also implement `KeyRotator`: `RotateKey(ctx, Target, AccountRef{RemoteID, Email, Fields}) (Rotated{Fields, Note}, error)`. Core calls it only for accounts the connector created and whose stored key it minted, when one of that person's service links is switched off. Mint a new key, delete the old one(s) Core made for that account, touch nothing else (check the account isn't an admin; never the box key). Return `Fields` *and* an error when the new key exists but an old one survived. Without it, Core records that keys there can't be replaced automatically.
 
 A connector whose app can call a URL also implements `Pusher`; Core then manages hooks for it (create, check, heal, delete, receive, dedupe, attribute, count) and the connector only translates:
 

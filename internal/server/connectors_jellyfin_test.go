@@ -19,9 +19,13 @@ type fakeJellyfin struct {
 	mu         sync.Mutex
 	adminKey   string
 	users      []map[string]any
-	passwords  map[string]string // name → password sent at creation
-	sessions   map[string]string // access token → user id
-	ssoPlugin  string            // "" = not installed, else its status (Active, Restart)
+	passwords  map[string]string    // name → password sent at creation
+	sessions   map[string]string    // access token → user id
+	devices    map[string][2]string // access token → device id, app name
+	qc         map[string]*fakeQC   // quick connect secret → request
+	qcOff      bool
+	pwChanges  int
+	ssoPlugin  string // "" = not installed, else its status (Active, Restart)
 	providers  map[string]map[string]any
 	disclaimer string
 	activity   []map[string]any
@@ -31,8 +35,49 @@ type fakeJellyfin struct {
 
 var tokenRe = regexp.MustCompile(`Token="([^"]+)"`)
 
+var (
+	deviceRe = regexp.MustCompile(`DeviceId="([^"]+)"`)
+	clientRe = regexp.MustCompile(`Client="([^"]+)"`)
+)
+
+type fakeQC struct {
+	code, device, app, user string
+}
+
+// login opens a session from the request's device.
+func (f *fakeJellyfin) login(r *http.Request, uid string) string {
+	dev, app := "", ""
+	if m := deviceRe.FindStringSubmatch(r.Header.Get("Authorization")); m != nil {
+		dev = m[1]
+	}
+	if m := clientRe.FindStringSubmatch(r.Header.Get("Authorization")); m != nil {
+		app = m[1]
+	}
+	for tok, d := range f.devices { // Jellyfin replaces the session of the same device
+		if d[0] == dev && f.sessions[tok] == uid {
+			delete(f.sessions, tok)
+			delete(f.devices, tok)
+		}
+	}
+	f.n++
+	at := fmt.Sprintf("session-%d", f.n)
+	f.sessions[at] = uid
+	f.devices[at] = [2]string{dev, app}
+	return at
+}
+
+func (f *fakeJellyfin) userByID(id string) map[string]any {
+	for _, u := range f.users {
+		if u["Id"] == id {
+			return u
+		}
+	}
+	return nil
+}
+
 func newFakeJellyfin(t *testing.T) *fakeJellyfin {
 	f := &fakeJellyfin{adminKey: "jf-admin-key", passwords: map[string]string{}, sessions: map[string]string{}, providers: map[string]map[string]any{},
+		devices: map[string][2]string{}, qc: map[string]*fakeQC{},
 		disclaimer: "Welcome home"}
 	f.users = []map[string]any{
 		{"Id": "u-aleks", "Name": "aleks", "Policy": map[string]any{"IsAdministrator": false}},
@@ -61,14 +106,54 @@ func newFakeJellyfin(t *testing.T) *fakeJellyfin {
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			for _, u := range f.users {
 				if u["Name"] == in.Username && f.passwords[in.Username] == in.Pw && in.Pw != "" {
-					f.n++
-					at := fmt.Sprintf("session-%d", f.n)
-					f.sessions[at] = u["Id"].(string)
-					js(map[string]any{"AccessToken": at, "User": u})
+					js(map[string]any{"AccessToken": f.login(r, u["Id"].(string)), "User": u})
 					return
 				}
 			}
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		case p == "/QuickConnect/Initiate" && r.Method == "POST":
+			if f.qcOff {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			f.n++
+			q := &fakeQC{code: fmt.Sprintf("%06d", f.n)}
+			if m := deviceRe.FindStringSubmatch(r.Header.Get("Authorization")); m != nil {
+				q.device = m[1]
+			}
+			sec := fmt.Sprintf("qc-secret-%d", f.n)
+			f.qc[sec] = q
+			js(map[string]any{"Secret": sec, "Code": q.code, "DeviceId": q.device})
+			return
+		case p == "/QuickConnect/Authorize" && r.Method == "POST":
+			uid := f.sessions[tok]
+			if admin {
+				uid = r.URL.Query().Get("userId")
+			}
+			if uid == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			for _, q := range f.qc {
+				if q.code == r.URL.Query().Get("code") {
+					q.user = uid
+					js(true)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			return
+		case p == "/Users/AuthenticateWithQuickConnect":
+			var in struct{ Secret string }
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			q := f.qc[in.Secret]
+			if q == nil || q.user == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			delete(f.qc, in.Secret)
+			js(map[string]any{"AccessToken": f.login(r, q.user), "User": f.userByID(q.user)})
 			return
 		}
 		if !admin {
@@ -76,6 +161,39 @@ func newFakeJellyfin(t *testing.T) *fakeJellyfin {
 			return
 		}
 		switch {
+		case p == "/Devices" && r.Method == "GET":
+			out := []map[string]any{}
+			for tok, d := range f.devices {
+				if uid := f.sessions[tok]; uid == r.URL.Query().Get("userId") {
+					out = append(out, map[string]any{"Id": d[0], "AppName": d[1], "LastUserId": uid})
+				}
+			}
+			js(map[string]any{"Items": out})
+		case p == "/Devices" && r.Method == "DELETE":
+			for tok, d := range f.devices {
+				if d[0] == r.URL.Query().Get("id") {
+					delete(f.devices, tok)
+					delete(f.sessions, tok)
+				}
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(p, "/Users/") && strings.HasSuffix(p, "/Password"):
+			u := f.userByID(strings.TrimSuffix(strings.TrimPrefix(p, "/Users/"), "/Password"))
+			if u == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			var in struct{ NewPw string }
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			f.passwords[u["Name"].(string)] = in.NewPw
+			f.pwChanges++
+			for tok, uid := range f.sessions { // Jellyfin signs the account out everywhere
+				if uid == u["Id"] {
+					delete(f.sessions, tok)
+					delete(f.devices, tok)
+				}
+			}
+			w.WriteHeader(http.StatusNoContent)
 		case p == "/System/Info":
 			js(map[string]any{"Version": "10.11.11"})
 		case p == "/Users" && r.Method == "GET":

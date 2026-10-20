@@ -22,7 +22,7 @@ import (
 
 // Account status values, stored per person in connector_accounts.
 const (
-	StatusOK     = "ok"     // Core made the account (or found it) and holds the person's credential
+	StatusOK     = "ok"     // Core made the account and (unless the person had their own) minted their credential
 	StatusLinked = "linked" // an account with the person's email already existed; no credential minted
 	StatusError  = "error"  // the last attempt failed; Error says why
 )
@@ -128,6 +128,35 @@ type Linker interface {
 	// Link checks the account exists and returns what to store for the
 	// person (Status linked, non-secret fields like USER_ID).
 	Link(ctx context.Context, t Target, remoteID string) (Account, error)
+}
+
+// ---- replacing a person's key ----
+
+// AccountRef is the account whose key Core replaces.
+type AccountRef struct {
+	RemoteID string            // the app's id for the account (as Provision returned it)
+	Email    string            // the Core person's email
+	Fields   map[string]string // the person's credential as Core stores it (catalog field keys); never logged
+}
+
+// Rotated is what RotateKey made.
+type Rotated struct {
+	Fields map[string]string // the new credential fields; Core lays them over the stored ones
+	Note   string            // a side effect worth showing (a password that was reset…)
+}
+
+// KeyRotator is implemented by connectors that can replace a person's key in
+// the app. Core calls it only for accounts the connector CREATED (never a
+// linked or hand-linked one) whose stored credential the connector minted,
+// when one of that person's service links is switched off: the old key must
+// stop working everywhere and the apps still allowed get the new one.
+//
+// RotateKey mints a new key for the account and deletes the old one(s) Core
+// minted for it, and touches nothing else: not an admin account, not another
+// person's keys, never the box-wide key. A result with Fields AND an error
+// means the new key exists but an old one could not be deleted.
+type KeyRotator interface {
+	RotateKey(ctx context.Context, t Target, a AccountRef) (Rotated, error)
 }
 
 // ---- push: the app calls Core for each thing that happens ----

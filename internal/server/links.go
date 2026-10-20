@@ -307,7 +307,7 @@ func (s *Server) linkView(ctx context.Context, l *store.AppLink, u *store.User) 
 		"scope": l.Scope, "scope_name": l.Scope, "scope_description": "", "reason": l.Reason, "enabled": l.Enabled,
 		"uses": l.Uses, "last_used_at": l.LastUsedAt, "opt_outs": l.OptOuts, "target_registered": false, "offered": false}
 	if typ, ok := serviceType(l.TargetSlug); ok {
-		s.serviceLinkView(ctx, v, typ)
+		s.serviceLinkView(ctx, v, typ, u)
 	} else if target, err := s.store.GetAppBySlug(ctx, l.TargetSlug); err == nil {
 		v["target_name"], v["target_registered"] = target.Name, true
 		if o, ok := appOffers(target)[l.Scope]; ok {
@@ -421,9 +421,13 @@ func (s *Server) handleUpdateLink(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "link")
 		return
 	}
+	wasOn := l.Enabled
 	if err := s.store.SetLinkEnabled(r.Context(), l.ID, *in.Enabled); err != nil {
 		s.fail(w, err, "link")
 		return
+	}
+	if wasOn && !*in.Enabled {
+		s.replaceKeysAfterSwitchOff(r.Context(), l, nil, linkOffAdmin) // everyone's connector-made key there
 	}
 	l, _ = s.store.GetLink(r.Context(), l.ID)
 	_ = s.hub.Publish(r.Context(), &store.Event{Topic: "core.link.changed", Source: "core", Subject: "app:" + l.AppSlug,
@@ -482,9 +486,13 @@ func (s *Server) handleUpdateMyLink(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "link")
 		return
 	}
+	wasOn := l.Enabled && !s.store.LinkOptedOut(r.Context(), l.ID, u.ID)
 	if err := s.store.SetLinkOptOut(r.Context(), l.ID, u.ID, !*in.Enabled); err != nil {
 		s.fail(w, err, "link")
 		return
+	}
+	if wasOn && !*in.Enabled {
+		s.replaceKeysAfterSwitchOff(r.Context(), l, u, linkOffPerson) // their connector-made key there
 	}
 	v := s.linkView(r.Context(), l, u)
 	v["on_for_me"] = *in.Enabled

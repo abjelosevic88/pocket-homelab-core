@@ -25,6 +25,17 @@ function HookBadge({ state }: { state: HookState }) {
   return <span className="badge">off</span>
 }
 
+/** The last replacement of a person's connector-made key. */
+export function KeyLine({ replacedAt, error, note, who }: { replacedAt?: string; error?: string; note?: string; who?: string }) {
+  if (!replacedAt && !error) return null
+  return (
+    <div className="small">
+      {replacedAt && <span className="muted" title={when(replacedAt)}>{who ? `${who}: k` : 'K'}ey replaced {ago(replacedAt)}{note ? ` · ${note}` : ''}</span>}
+      {error && <div style={{ color: 'var(--danger)' }}>{who && !replacedAt ? `${who}: ` : ''}{error}</div>}
+    </div>
+  )
+}
+
 /** What the app calls its push subscriptions. */
 const hookNoun = (push: ConnectorPush, type?: string) => push.per_user || type === 'paperless' ? 'workflows' : 'webhooks'
 
@@ -157,12 +168,16 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
       {(c.capabilities.provision || c.capabilities.link) && <div className="cx-people-block">
         <div className="cx-block-head"><b>People</b><span className="muted small">{people ? `${people.filter(p => p.status === 'ok' || p.status === 'linked').length} of ${people.length} connected` : ''}</span><span className="spacer" />
           {c.capabilities.provision && <button className="btn sm" disabled={off || busy === 'all'} onClick={() => provision({ all: true })} title="Everyone in the audience without an account">{busy === 'all' ? 'Working…' : 'Provision everyone missing'}</button>}</div>
+        {c.key_rotation && <p className="muted small">{c.key_rotation === 'replaces'
+          ? <>When someone's service link to {service.name} is switched off (by them or for everyone), Core replaces the key it made for an account it created here: the old key stops working in every app, and apps still allowed get the new one within a minute. Linked accounts and keys set by hand are never touched.</>
+          : <>Core can't replace keys in {service.name} automatically: when a service link is switched off, the key it made keeps working there until someone deletes it in {service.name}.</>}</p>}
         {!people ? <Loading /> : people.length === 0 ? <p className="muted small">Nobody is in this service's audience.</p> :
           <div className="cx-people">{people.map(p => (
             <div key={p.user_id} className={`cx-person ${p.disabled || !p.in_audience ? 'off' : ''}`}>
               <Avatar name={p.name} email={p.email} />
               <div className="grow"><b>{p.name || p.email}</b><div className="muted small">{p.email}</div>
-                {p.error && <div className="small" style={{ color: 'var(--danger)' }}>{p.error}</div>}</div>
+                {p.error && <div className="small" style={{ color: 'var(--danger)' }}>{p.error}</div>}
+                <KeyLine replacedAt={p.key_replaced_at} error={p.key_error} note={p.key_note} /></div>
               <span className="muted small" title={p.remote_id ? `${service.name} id ${p.remote_id}` : undefined}>{credLabel(p.credential)}</span>
               {remote && p.in_audience && !p.disabled && <div style={{ width: 170 }} title={`Which ${service.name} account is ${p.name || p.email}'s`}><Select ariaLabel={`${service.name} account`} value={p.remote_id || ''} disabled={off || busy === `l${p.user_id}`} onChange={v => link(p.user_id, v)}
                 options={remote.map(a => ({ value: a.id, label: a.name, hint: a.admin ? 'admin' : a.disabled ? 'disabled' : undefined }))} placeholder="Pick account…" clearLabel="Not linked" /></div>}

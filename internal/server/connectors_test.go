@@ -30,6 +30,11 @@ type fakeImmich struct {
 	passwords map[string]string // email → password sent at creation
 	keys      map[string]string // minted secret → user id
 	keyNames  []string
+	keyIDs    map[string]string // key id → secret
+	keyName   map[string]string // key id → name
+	noReset   bool              // the admin key may not set passwords (no adminUser.update)
+	keepOnDel bool              // DELETE /api-keys answers 204 but keeps the key
+	resets    int
 	sessions  map[string]string // access token → user id
 	config    map[string]any
 	workflows map[string]fakeWorkflow
@@ -78,6 +83,7 @@ func defaultImmichConfig() map[string]any {
 
 func newFakeImmich(t *testing.T) *fakeImmich {
 	f := &fakeImmich{adminKey: "immich-admin-key", memberKey: "immich-member-key", passwords: map[string]string{}, keys: map[string]string{},
+		keyIDs: map[string]string{}, keyName: map[string]string{},
 		sessions: map[string]string{}, config: defaultImmichConfig(), workflows: map[string]fakeWorkflow{},
 		users: []fakeImmichUser{
 			{ID: "u-admin", Email: "admin@b.c", Name: "Owner", IsAdmin: true},
@@ -110,6 +116,24 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 	session := func(r *http.Request) string {
 		return f.sessions[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 	}
+	// keyUser is whose API key a request carries.
+	keyUser := func(r *http.Request) string {
+		k := r.Header.Get("x-api-key")
+		if k == f.adminKey {
+			return "u-admin"
+		}
+		return f.keys[k]
+	}
+	// caller is who a request acts as: a session or a minted key.
+	caller := func(r *http.Request) string {
+		if uid := session(r); uid != "" {
+			return uid
+		}
+		if r.Header.Get("x-api-key") == f.adminKey {
+			return ""
+		}
+		return f.keys[r.Header.Get("x-api-key")]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/server/version", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]any{"major": 3, "minor": 3, "patch": 3, "prerelease": nil})
@@ -121,8 +145,69 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 		case f.memberKey:
 			reply(w, 200, map[string]any{"id": "k2", "name": "mine", "permissions": []string{"asset.read"}})
 		default:
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			for id, sec := range f.keyIDs {
+				if sec == r.Header.Get("x-api-key") {
+					reply(w, 200, map[string]any{"id": id, "name": f.keyName[id], "permissions": []string{"all"}})
+					return
+				}
+			}
 			deny(w, 401)
 		}
+	})
+	mux.HandleFunc("GET /api/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		uid := caller(r)
+		if uid == "" {
+			deny(w, 401)
+			return
+		}
+		out := []map[string]any{}
+		for id, sec := range f.keyIDs {
+			if f.keys[sec] == uid {
+				out = append(out, map[string]any{"id": id, "name": f.keyName[id]})
+			}
+		}
+		reply(w, 200, out)
+	})
+	mux.HandleFunc("DELETE /api/api-keys/{id}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		id := r.PathValue("id")
+		sec, ok := f.keyIDs[id]
+		if uid := caller(r); uid == "" || !ok || f.keys[sec] != uid {
+			reply(w, 400, map[string]any{"message": "API Key not found"})
+			return
+		}
+		if !f.keepOnDel {
+			delete(f.keys, sec)
+			delete(f.keyIDs, id)
+		}
+		w.WriteHeader(204)
+	})
+	mux.HandleFunc("PUT /api/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if !adminOnly(w, r) {
+			return
+		}
+		if f.noReset {
+			deny(w, 403)
+			return
+		}
+		var in struct{ Password string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		for _, u := range f.users {
+			if u.ID == r.PathValue("id") {
+				f.passwords[u.Email] = in.Password
+				f.resets++
+				reply(w, 200, u)
+				return
+			}
+		}
+		reply(w, 404, map[string]any{"message": "User not found"})
 	})
 	mux.HandleFunc("GET /api/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -178,7 +263,7 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 	mux.HandleFunc("POST /api/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		uid := session(r)
+		uid := caller(r)
 		if uid == "" {
 			deny(w, 401)
 			return
@@ -189,9 +274,12 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		secret := "imk_" + pccrypto.Token("", 16)
+		f.n++
+		id := fmt.Sprintf("key-%d", f.n)
 		f.keys[secret] = uid
+		f.keyIDs[id], f.keyName[id] = secret, in.Name
 		f.keyNames = append(f.keyNames, in.Name)
-		reply(w, 201, map[string]any{"id": "key-1", "name": in.Name, "secret": secret, "permissions": in.Permissions})
+		reply(w, 201, map[string]any{"secret": secret, "apiKey": map[string]any{"id": id, "name": in.Name, "permissions": in.Permissions}})
 	})
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -218,14 +306,6 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 		f.configPut++
 		reply(w, 200, in)
 	})
-	// keyUser is whose API key a request carries.
-	keyUser := func(r *http.Request) string {
-		k := r.Header.Get("x-api-key")
-		if k == f.adminKey {
-			return "u-admin"
-		}
-		return f.keys[k]
-	}
 	mux.HandleFunc("GET /api/users/me", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()

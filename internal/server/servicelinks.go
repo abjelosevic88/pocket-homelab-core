@@ -250,7 +250,7 @@ func (s *Server) serviceLinkState(ctx context.Context, l *store.AppLink, u *stor
 }
 
 // serviceLinkView fills a service link's names for the Links page.
-func (s *Server) serviceLinkView(ctx context.Context, v map[string]any, typ string) {
+func (s *Server) serviceLinkView(ctx context.Context, v map[string]any, typ string, u *store.User) {
 	name := typ
 	if e, ok := catalog.Get(typ); ok {
 		name = e.Name
@@ -264,6 +264,11 @@ func (s *Server) serviceLinkView(ctx context.Context, v map[string]any, typ stri
 	v["target_name"], v["target_kind"], v["target_type"], v["offered"] = name, "service", typ, true
 	v["scope_name"] = "Use your " + name
 	v["scope_description"] = "The app gets " + name + "'s address and your own key there ; the box's key never leaves Core."
+	// switching off replaces keys the connector made ("replaces"), or can't ("cannot")
+	v["key_rotation"] = keyRotation(typ)
+	if v["key_rotation"] != "" {
+		v["key_replacements"] = s.keyReplacements(ctx, typ, u)
+	}
 }
 
 // handleServiceCredential gives the calling app the service's address and the
