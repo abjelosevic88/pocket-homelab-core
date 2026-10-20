@@ -49,7 +49,7 @@ export function Empty({ title, children }: { title: string; children?: React.Rea
   return <div className="empty"><h3>{title}</h3>{children && <p className="muted">{children}</p>}</div>
 }
 
-export function Modal({ title, onClose, children, size = '' }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; size?: '' | 'lg' }) {
+export function Modal({ title, onClose, children, size = '', className = '' }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; size?: '' | 'lg'; className?: string }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', h)
@@ -57,7 +57,7 @@ export function Modal({ title, onClose, children, size = '' }: { title: React.Re
   }, [onClose])
   return (
     <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={`modal ${size}`} role="dialog" aria-modal="true">
+      <div className={`modal ${size} ${className}`} role="dialog" aria-modal="true">
         <div className="modal-head"><h2>{title}</h2><button className="btn ghost icon" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="modal-body">{children}</div>
       </div>

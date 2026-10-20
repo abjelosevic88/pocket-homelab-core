@@ -842,6 +842,13 @@ html, body { overflow-x: hidden; }
 .lv-dot.write { background: var(--warning-soft); }
 
 /* Grid */
+.lv-footer { margin-top: 20px; }
+.lv-modal-title { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lv-modal-title .feed-ico { width: 26px; height: 26px; border-radius: 8px; }
+.lv-modal-title .small { font-weight: 400; }
+.lv-modal .modal-body { max-height: calc(100vh - 170px); overflow-y: auto; }
+/* The dialog title already names the pair or app. */
+.lv-modal .modal-body > .link-pair:first-child > .link-pair-head, .lv-modal .modal-body > .link-pair-head:first-child { display: none; }
 .lv-grid-wrap { overflow-x: auto; padding: 4px 6px 10px; }
 .lv-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 10px 6px; font-size: 12px; color: var(--muted); }
 .lv-key { display: inline-flex; align-items: center; gap: 5px; }

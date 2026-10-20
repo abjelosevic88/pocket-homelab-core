@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago } from '../lib/format'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
-import { Card, Empty, Loading, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
+import { Card, Empty, Loading, Modal, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
 import { appOffers, LinkCanvas, scopeLabel, type CanvasSel, type LinkGroup } from '../components/LinkCanvas'
 import { AccessView, FocusView, LinkSummary, MatrixView } from '../components/LinkViews'
 import { KeyLine } from '../components/ConnectorPanel'
@@ -99,7 +99,7 @@ function KeyRotationNote({ l }: { l: AppLink }) {
 }
 
 // What a tapped card stands for: what the app may do elsewhere, and what others may do in it.
-function AppDetail({ slug, groups, apps, flip, onPick }: { slug: string; groups: LinkGroup[]; apps: App[]; flip: (l: AppLink, on: boolean) => void; onPick: (s: CanvasSel) => void }) {
+function AppDetail({ slug, groups, apps, flip, onPick, hint = true }: { slug: string; groups: LinkGroup[]; apps: App[]; flip: (l: AppLink, on: boolean) => void; onPick: (s: CanvasSel) => void; hint?: boolean }) {
   const a = apps.find(x => x.slug === slug)
   const out = groups.filter(g => g.app === slug), inn = groups.filter(g => g.target === slug)
   const used = new Set(inn.flatMap(g => g.links.map(l => l.scope)))
@@ -117,7 +117,7 @@ function AppDetail({ slug, groups, apps, flip, onPick }: { slug: string; groups:
         <div className="link-scopes">{idle.map(o => (
           <div key={o.scope} className="link-scope"><div className="grow"><div><b>{o.name || o.scope}</b> <span className="mono small muted">{o.scope}</span></div>{o.description && <div className="muted small">{o.description}</div>}</div></div>))}</div>
       </>}
-      {(out.length > 0 || inn.length > 0) && <p className="muted small lc-hint">Tap an arrow in the diagram to see just that pair. <button type="button" className="linkish" onClick={() => onPick(null)}>Clear</button></p>}
+      {hint && (out.length > 0 || inn.length > 0) && <p className="muted small lc-hint">Tap an arrow in the diagram to see just that pair. <button type="button" className="linkish" onClick={() => onPick(null)}>Clear</button></p>}
     </>
   )
 }
@@ -128,9 +128,6 @@ export default function Links() {
   const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`), [])
   const [mode, setModeState] = useState<View>(() => (VIEWS.find(v => v.value === localStorage.getItem('core.links.view'))?.value || 'grid'))
   const [sel, setSel] = useState<CanvasSel>(null)
-  const detailRef = useRef<HTMLDivElement>(null)
-  // Grid and Access open the details below; bring them into view on a phone.
-  useEffect(() => { if (sel && (mode === 'grid' || mode === 'access')) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [sel, mode])
   if (loading && !data) return <Loading />
   const groups = groupLinks(data || [])
   const setMode = (m: View) => { localStorage.setItem('core.links.view', m); setModeState(m); setSel(null) }
@@ -138,6 +135,17 @@ export default function Links() {
   const pair = sel?.kind === 'pair' ? groups.find(g => g.key === sel.key) : undefined
   const detail = pair ? <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
     : sel?.kind === 'app' ? <AppDetail slug={sel.slug} groups={groups} apps={apps || []} flip={flip} onPick={setSel} /> : null
+  // Grid and Access open what was tapped in a dialog over the page; its title carries the icons.
+  const ico = (slug: string) => { const a = (apps || []).find(x => x.slug === slug); return a ? <AppIcon a={a} small /> : null }
+  const selApp = sel?.kind === 'app' ? (apps || []).find(x => x.slug === sel.slug) : undefined
+  const dialog = pair ? (
+    <Modal className="lv-modal" onClose={() => setSel(null)} title={<span className="lv-modal-title">{ico(pair.app)}{pair.appName}<span className="muted">→</span>{ico(pair.target)}{pair.targetName}</span>}>
+      <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
+    </Modal>)
+    : sel?.kind === 'app' ? (
+    <Modal className="lv-modal" size="lg" onClose={() => setSel(null)} title={<span className="lv-modal-title">{ico(sel.slug)}{selApp?.name || groups.find(g => g.app === sel.slug)?.appName || groups.find(g => g.target === sel.slug)?.targetName || sel.slug}{selApp && <span className="muted small">v{selApp.version}</span>}</span>}>
+      <AppDetail slug={sel.slug} groups={groups} apps={apps || []} flip={flip} onPick={setSel} hint={false} />
+    </Modal>) : null
   return (
     <>
       <PageHeader title="Links" sub="What one Pocket app may do in another for a person. Apps ask for these in their manifest; Core hands out a five-minute token for each request, valid only in the target app."
@@ -145,11 +153,12 @@ export default function Links() {
       <LinkSummary groups={groups} />
       {groups.length > 0 && (mode === 'grid' || mode === 'access') ? <>
         <Card flush={mode === 'grid'}>{mode === 'grid' ? <MatrixView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} /> : <AccessView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} />}</Card>
-        <div ref={detailRef}><Card>
-          {detail || <p className="muted small lc-hint">{mode === 'grid'
+        {dialog}
+        <Card className="lv-footer">
+          <p className="muted small lc-hint">{mode === 'grid'
             ? <>Each cell is what the app on the left may do in the app on top: <b>sees</b> your data there or <b>changes</b> it (and so sees it too). Amber is partly switched off, dashed is off. Tap a cell for its switches, or an app for everything it uses and offers.</>
-            : <>Your data in each app, and which apps may see or change it for you: <span className="lv-mark yes">✓</span> someone holds it, <span className="lv-mark no">✕</span> nobody does. Tap an app to see and switch that link.</>}</p>}
-        </Card></div>
+            : <>Your data in each app, and which apps may see or change it for you: <span className="lv-mark yes">✓</span> someone holds it, <span className="lv-mark no">✕</span> nobody does. Tap an app to see and switch that link.</>}</p>
+        </Card>
       </> : groups.length > 0 && mode === 'focus' ? <Card><FocusView groups={groups} apps={apps || []} flip={flip} /></Card>
       : mode === 'diagram' ? <>
         <Card flush className="lc-card-wrap"><LinkCanvas groups={groups} apps={apps || []} sel={sel} onSelect={setSel} detail={detail} /></Card>
