@@ -101,18 +101,8 @@ func (s *Server) serviceCredential(ctx context.Context, sv *store.Service, u *st
 		return out
 	}
 	if ovs, err := s.store.ListOverrides(ctx, u.ID); err == nil {
-		if ov, has := ovs[sv.ID]; has {
-			if f := keep(ov.Fields); len(f) > 0 {
-				return f, "personal", true
-			}
-		}
-	}
-	// Keyless services (Maloja's read API): an entry with just the address counts.
-	if keyless(e, sv) {
-		if ovs, err := s.store.ListOverrides(ctx, u.ID); err == nil {
-			if ov, has := ovs[sv.ID]; has && ov.URL != "" {
-				return map[string]string{}, "personal", true
-			}
+		if ov, has := ovs[sv.ID]; has && ownCredential(e, sv, ov) {
+			return keep(ov.Fields), "personal", true
 		}
 	}
 	return nil, "", false
@@ -133,14 +123,29 @@ func boxFields(e catalog.Entry, sv *store.Service) map[string]string {
 // keyless: the service is used without a key on this box (none is filled in).
 func keyless(e catalog.Entry, sv *store.Service) bool { return len(boxFields(e, sv)) == 0 }
 
-// ownCredential: the person already has their own way in.
+// ownCredential: the person already has their own way in — their own key
+// (a user id alone, as connectors write for linked accounts, is not a way in),
+// or for a service used without a key, their own entry with its address.
 func ownCredential(e catalog.Entry, sv *store.Service, ov store.Override) bool {
+	secrets, any := false, false
 	for _, f := range e.Fields {
-		if !f.ConnectorOnly && strings.TrimSpace(ov.Fields[f.Key]) != "" {
-			return true
+		if f.ConnectorOnly {
+			continue
+		}
+		set := strings.TrimSpace(ov.Fields[f.Key]) != ""
+		if f.Secret {
+			secrets = true
+			if set {
+				return true
+			}
+		} else if set {
+			any = true
 		}
 	}
-	return keyless(e, sv) && ov.URL != ""
+	if keyless(e, sv) {
+		return ov.URL != "" || any
+	}
+	return !secrets && any
 }
 
 // ClaimBoxCredentials copies each service's box-wide credential into the
@@ -188,7 +193,18 @@ func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, on
 		if has && ownCredential(e, sv, ov) {
 			continue
 		}
-		o := &store.Override{ServiceID: sv.ID, UserID: u.ID, Fields: fields, URL: ov.URL}
+		// Add the key to what the person has (a connector's user id stays, and so
+		// does its marker), never replacing a value they set.
+		merged := map[string]string{}
+		for k, v := range ov.Fields {
+			merged[k] = v
+		}
+		for k, v := range fields {
+			if strings.TrimSpace(merged[k]) == "" {
+				merged[k] = v
+			}
+		}
+		o := &store.Override{ServiceID: sv.ID, UserID: u.ID, Fields: merged, URL: ov.URL, Source: ov.Source}
 		if len(fields) == 0 && o.URL == "" {
 			o.URL = sv.EffectivePublicURL() // keyless: the address is the way in
 		}

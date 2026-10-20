@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 	"github.com/abjelosevic88/pocket-homelab-core/sdk"
 )
 
@@ -48,16 +49,28 @@ func TestServiceLinks(t *testing.T) {
 		t.Fatalf("kid credential: %d", c)
 	}
 
+	// A user id alone (what a connector writes for a linked account) is no way in.
+	var jf struct {
+		ID int64 `json:"id"`
+	}
+	e.do("POST", "/api/v1/services", "", map[string]any{"type": "jellyfin", "url": "http://jf:8096", "fields": map[string]string{"API_KEY": "jf-admin"}}, &jf)
+	if err := e.st.SaveOverride(ctx, &store.Override{ServiceID: jf.ID, UserID: 1, Fields: map[string]string{"USER_ID": "abc"}, Source: store.OverrideByConnector}, func(k string) bool { return k == "API_KEY" }); err != nil {
+		t.Fatal(err)
+	}
 	// Nobody gets the box key, the owner (admin) included…
 	if _, err := core.ServiceFor(ctx, "owner@b.c", "immich"); !errors.As(err, &le) || le.Reason != linkNoAccount {
 		t.Fatalf("the box key must not go out, even for an admin: %v", err)
 	}
 	// …until it is claimed as the owner's own (pocket-core credentials claim-box).
 	owner, _ := e.st.GetUserByEmail(ctx, "owner@b.c")
-	if done, err := ClaimBoxCredentials(ctx, e.st, owner, nil, false); err != nil || strings.Join(done, ",") != "immich,maloja" {
+	if done, err := ClaimBoxCredentials(ctx, e.st, owner, []string{"immich", "maloja", "jellyfin"}, false); err != nil || strings.Join(done, ",") != "immich,jellyfin,maloja" {
 		t.Fatalf("claim: %v %v", done, err)
 	}
-	if again, _ := ClaimBoxCredentials(ctx, e.st, owner, nil, false); len(again) != 0 {
+	ovs, _ := e.st.ListOverrides(ctx, owner.ID)
+	if o := ovs[jf.ID]; o.Fields["USER_ID"] != "abc" || o.Fields["API_KEY"] != "jf-admin" || o.Source != store.OverrideByConnector {
+		t.Fatalf("the key joins the connector's user id, which stays the connector's: %+v", o)
+	}
+	if again, _ := ClaimBoxCredentials(ctx, e.st, owner, []string{"immich", "maloja", "jellyfin"}, false); len(again) != 0 {
 		t.Fatalf("claim twice: %v", again)
 	}
 	got, err := core.ServiceFor(ctx, "owner@b.c", "immich")
