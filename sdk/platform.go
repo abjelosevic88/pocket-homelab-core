@@ -26,6 +26,8 @@ func (c *Client) Init(ctx context.Context) error {
 			`CREATE TABLE IF NOT EXISTS pocket_platform (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS pocket_identities (issuer TEXT NOT NULL, subject TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(issuer,subject), UNIQUE(issuer,user_id))`,
 			`CREATE TABLE IF NOT EXISTS pocket_sessions (session_hash TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, issuer TEXT NOT NULL, subject TEXT NOT NULL, revision INTEGER NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS pocket_actions(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,payload BLOB NOT NULL,created_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',response BLOB,done_at INTEGER NOT NULL DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS pocket_operations (operation_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, response BLOB NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS pocket_outbox (id TEXT PRIMARY KEY, body BLOB NOT NULL, created_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '')`,
 		} {
 			if _, err = tx.ExecContext(ctx, q); err != nil {

@@ -35,9 +35,11 @@ func QueueEvent(ctx context.Context, tx SQLExecutor, topic, subject string, payl
 }
 
 type OutboxStatus struct {
-	Pending  int   `json:"pending"`
-	Retrying int   `json:"retrying"`
-	Oldest   int64 `json:"oldest,omitempty"`
+	ActionsPending  int   `json:"actions_pending"`
+	ActionsRetrying int   `json:"actions_retrying"`
+	Pending         int   `json:"pending"`
+	Retrying        int   `json:"retrying"`
+	Oldest          int64 `json:"oldest,omitempty"`
 }
 
 func (c *Client) OutboxStatus(ctx context.Context) (OutboxStatus, error) {
@@ -46,6 +48,10 @@ func (c *Client) OutboxStatus(ctx context.Context) (OutboxStatus, error) {
 		return s, nil
 	}
 	err := c.opts.DB.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(attempts>0),0),COALESCE(MIN(created_at),0) FROM pocket_outbox`).Scan(&s.Pending, &s.Retrying, &s.Oldest)
+	if err != nil {
+		return s, err
+	}
+	err = c.opts.DB.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(attempts>0),0) FROM pocket_actions WHERE done_at=0`).Scan(&s.ActionsPending, &s.ActionsRetrying)
 	return s, err
 }
 
