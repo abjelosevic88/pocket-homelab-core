@@ -31,7 +31,7 @@ func TestServiceLinks(t *testing.T) {
 		"services": []map[string]any{{"type": "immich", "reason": "Photos of the day"}, {"type": "maloja", "reason": "What played"}, {"type": "dawarich"}}}, &reg); c != 201 && c != 200 {
 		t.Fatalf("register: %d", c)
 	}
-	core := sdk.New(e.srv.URL, sdk.Options{Token: reg.Token})
+	core := sdk.New(e.srv.URL, sdk.Options{Token: reg.Token, ServiceCache: -1}) // switches must show at once here
 	ctx := context.Background()
 	var le *sdk.LinkError
 
@@ -125,6 +125,30 @@ func TestServiceLinks(t *testing.T) {
 	}
 	if _, err := core.ServiceFor(ctx, "kid@b.c", "immich"); err != nil {
 		t.Fatalf("kid unaffected by the owner's switch: %v", err)
+	}
+	// The app reports how it connects people; the Links page counts them.
+	if err := core.ReportModes(ctx, []sdk.ConnMode{{User: "owner@b.c", Target: "service:immich", Mode: "direct"}, {User: "kid@b.c", Target: "service:immich", Mode: "core"},
+		{User: "kid@b.c", Target: "service:immich", Mode: "bogus"}, {User: "nobody@b.c", Target: "service:immich", Mode: "core"}, {User: "kid@b.c", Target: "day", Mode: "core"}}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	links = nil
+	e.do("GET", "/api/v1/links", "", nil, &links)
+	for _, l := range links {
+		if l["target_slug"] == "service:immich" {
+			m := l["modes"].(map[string]any)
+			if m["direct"] != float64(1) || m["core"] != float64(1) || len(l["mode_people"].([]any)) != 2 {
+				t.Fatalf("modes on the immich link: %+v %+v", m, l["mode_people"])
+			}
+		}
+	}
+	// A later report replaces the person's mode.
+	_ = core.ReportModes(ctx, []sdk.ConnMode{{User: "owner@b.c", Target: "service:immich", Mode: "core"}})
+	links = nil
+	e.do("GET", "/api/v1/links", "", nil, &links)
+	for _, l := range links {
+		if l["target_slug"] == "service:immich" && l["modes"].(map[string]any)["direct"] != float64(0) {
+			t.Fatalf("mode not replaced: %+v", l["modes"])
+		}
 	}
 	// Status shows the reason without handing anything out.
 	st, err := core.LinkStatus(ctx, "guest@b.c", "service:immich")

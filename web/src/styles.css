@@ -919,3 +919,15 @@ html, body { overflow-x: hidden; }
 .lv-mark.some { background: var(--warning); }
 .lv-scope .lv-mark, .lv-right-what .lv-mark { width: 20px; height: 20px; font-size: 12px; }
 .lc-node.service .lc-card { fill: var(--surface-2); stroke-dasharray: none; }
+
+/* Direct connections: Core sees them, can't switch them */
+.lv-stat.direct::before { background: var(--warning); }
+.lv-direct { display: inline-block; margin-top: 3px; font-size: 10.5px; font-weight: 650; color: var(--warning); }
+.lv-holder .lv-direct { margin: 0 0 0 2px; }
+.lv-direct-line { margin: 6px 0 0; color: var(--warning); }
+.lc-label text.direct { fill: var(--warning); font-weight: 650; }
+.lv-modes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.lv-mode { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); }
+.lv-mode.core { border-color: var(--accent); color: var(--accent-hover); }
+.lv-mode.direct { border-color: var(--warning); color: var(--warning); }
+.lv-mode.off { color: var(--muted); }

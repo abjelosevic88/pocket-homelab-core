@@ -330,11 +330,81 @@ func (s *Server) handleListLinks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "links")
 		return
 	}
+	modes := s.modesByPair(r.Context())
 	out := []map[string]any{}
 	for i := range links {
-		out = append(out, s.linkView(r.Context(), &links[i], nil))
+		v := s.linkView(r.Context(), &links[i], nil)
+		people := modes[[2]any{links[i].AppID, links[i].TargetSlug}]
+		count := map[string]int{"core": 0, "direct": 0, "off": 0}
+		for _, m := range people {
+			count[m["mode"].(string)]++
+		}
+		v["modes"], v["mode_people"] = count, people
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// modesByPair groups the reported connection modes by (app id, target).
+func (s *Server) modesByPair(ctx context.Context) map[[2]any][]map[string]any {
+	out := map[[2]any][]map[string]any{}
+	list, err := s.store.ListLinkModes(ctx)
+	if err != nil {
+		return out
+	}
+	for _, m := range list {
+		k := [2]any{m.AppID, m.Target}
+		out[k] = append(out[k], map[string]any{"email": m.UserEmail, "name": m.UserName, "mode": m.Mode, "updated_at": m.UpdatedAt})
+	}
+	return out
+}
+
+// handleReportModes records how an app actually connects each person to each
+// target: "core", "direct" (a pasted URL and key Core can't switch) or "off".
+// Report only, so the Links page can show the whole map.
+//
+//	PUT /api/v1/links/modes {"modes": [{"user": "a@b.c", "target": "money", "mode": "direct"}]}
+func (s *Server) handleReportModes(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	caller := principalFrom(ctx)
+	if caller.App == nil {
+		writeErr(w, http.StatusForbidden, "apps only")
+		return
+	}
+	var in struct {
+		Modes []struct {
+			User   string `json:"user"`
+			Target string `json:"target"`
+			Mode   string `json:"mode"`
+		} `json:"modes"`
+	}
+	if err := decode(r, &in); err != nil || len(in.Modes) > 2000 {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	rows := []store.LinkMode{}
+	skipped := 0
+	for _, m := range in.Modes {
+		target := strings.ToLower(strings.TrimSpace(m.Target))
+		mode := strings.ToLower(strings.TrimSpace(m.Mode))
+		typ, isSvc := serviceType(target)
+		valid := (isSvc && slugRe.MatchString(typ)) || (!isSvc && slugRe.MatchString(target) && target != caller.App.Slug)
+		if !valid || (mode != "core" && mode != "direct" && mode != "off") {
+			skipped++
+			continue
+		}
+		u, err := s.linkPerson(ctx, m.User)
+		if err != nil {
+			skipped++
+			continue
+		}
+		rows = append(rows, store.LinkMode{UserID: u.ID, Target: target, Mode: mode})
+	}
+	if err := s.store.SetLinkModes(ctx, caller.App.ID, rows); err != nil {
+		s.fail(w, err, "link modes")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"recorded": len(rows), "skipped": skipped})
 }
 
 // handleUpdateLink flips the box-wide switch.
@@ -373,6 +443,7 @@ func (s *Server) handleMyLinks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "links")
 		return
 	}
+	modes := s.modesByPair(r.Context())
 	out := []map[string]any{}
 	for i := range links {
 		v := s.linkView(r.Context(), &links[i], u)
@@ -381,6 +452,11 @@ func (s *Server) handleMyLinks(w http.ResponseWriter, r *http.Request) {
 			continue // nothing the person could switch
 		}
 		v["on_for_me"] = !s.store.LinkOptedOut(r.Context(), links[i].ID, u.ID)
+		for _, m := range modes[[2]any{links[i].AppID, links[i].TargetSlug}] {
+			if m["email"] == u.Email {
+				v["my_mode"] = m["mode"]
+			}
+		}
 		delete(v, "opt_outs")
 		out = append(out, v)
 	}

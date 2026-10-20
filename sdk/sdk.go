@@ -172,6 +172,12 @@ type Options struct {
 	UserAgent string
 	// IntrospectCache is how long a verdict is reused (default 60 s).
 	IntrospectCache time.Duration
+	// ServiceCache is how long ServiceFor reuses a person's service credential
+	// (default 60 s; negative = ask Core every time). A refusal from Core always
+	// drops it. While Core can't be reached, the last one is used for up to
+	// ServiceStale (default 15 min) so a Core restart doesn't stop the apps.
+	ServiceCache time.Duration
+	ServiceStale time.Duration
 	// OIDCFile persists the relying-party client Core creates for the app
 	// (issuer, client id, secret) so sign-in needs no configuration. Defaults
 	// to TokenFile + ".oidc.json" when TokenFile is set.
@@ -194,6 +200,12 @@ type Client struct {
 	token string
 	oidc  OIDCClient
 	cache map[string]cached
+	svc   map[string]svcCached
+}
+
+type svcCached struct {
+	cred *ServiceCred
+	at   time.Time
 }
 
 type cached struct {
@@ -203,7 +215,7 @@ type cached struct {
 
 // New creates a client. An empty base URL yields a client whose calls return ErrNotConfigured.
 func New(baseURL string, opts Options) *Client {
-	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}}
+	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}, svc: map[string]svcCached{}}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -212,6 +224,12 @@ func New(baseURL string, opts Options) *Client {
 	}
 	if c.opts.IntrospectCache == 0 {
 		c.opts.IntrospectCache = time.Minute
+	}
+	if c.opts.ServiceCache == 0 {
+		c.opts.ServiceCache = time.Minute
+	}
+	if c.opts.ServiceStale == 0 {
+		c.opts.ServiceStale = 15 * time.Minute
 	}
 	if c.token == "" && opts.TokenFile != "" {
 		if b, err := os.ReadFile(opts.TokenFile); err == nil {
@@ -626,9 +644,44 @@ type ServiceCred struct {
 
 // ServiceFor asks Core for the person's way into a service the manifest lists
 // under Services. Refusals are *LinkError (off_admin, off_person, no_account,
-// not_in_audience, target_missing, not_declared, unknown_user). Every call
-// asks Core, so a switch-off applies at once; don't keep the key around.
+// not_in_audience, target_missing, not_declared, unknown_user). The answer is
+// reused for ServiceCache (a switch-off takes effect within that), and the
+// last one rides out Core being unreachable for up to ServiceStale; a refusal
+// drops it at once. Don't keep the key around yourself.
 func (c *Client) ServiceFor(ctx context.Context, email, typ string) (*ServiceCred, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+	k := strings.ToLower(email) + "\x00" + typ
+	c.mu.RLock()
+	hit, ok := c.svc[k]
+	c.mu.RUnlock()
+	if ok && c.opts.ServiceCache > 0 && time.Since(hit.at) < c.opts.ServiceCache {
+		return hit.cred, nil
+	}
+	cred, err := c.ServiceForFresh(ctx, email, typ)
+	var le *LinkError
+	switch {
+	case err == nil:
+		if c.opts.ServiceCache > 0 {
+			c.mu.Lock()
+			c.svc[k] = svcCached{cred: cred, at: time.Now()}
+			c.mu.Unlock()
+		}
+		return cred, nil
+	case errors.As(err, &le):
+		c.mu.Lock()
+		delete(c.svc, k)
+		c.mu.Unlock()
+		return nil, err
+	case ok && time.Since(hit.at) < c.opts.ServiceStale:
+		return hit.cred, nil // Core unreachable: the last answer, for a while
+	}
+	return nil, err
+}
+
+// ServiceForFresh is ServiceFor without the cache (connection tests, settings).
+func (c *Client) ServiceForFresh(ctx context.Context, email, typ string) (*ServiceCred, error) {
 	if !c.Configured() {
 		return nil, ErrNotConfigured
 	}
@@ -663,4 +716,27 @@ func (c *Client) ServiceFor(ctx context.Context, email, typ string) (*ServiceCre
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ConnMode is how the app actually connects one person to one target, for
+// ReportModes: Target is an app slug ("money") or "service:<type>"; Mode is
+// "core", "direct" (a URL and key pasted into the app) or "off".
+type ConnMode struct {
+	User   string `json:"user"`
+	Target string `json:"target"`
+	Mode   string `json:"mode"`
+}
+
+// ReportModes tells Core how the app connects people, so the Links page shows
+// Direct connections too (Core can see them, not switch them). Report on start,
+// whenever a person changes a mode, and now and then.
+func (c *Client) ReportModes(ctx context.Context, modes []ConnMode) error {
+	if !c.Configured() {
+		return ErrNotConfigured
+	}
+	if len(modes) == 0 {
+		return nil
+	}
+	_, err := c.do(ctx, http.MethodPut, "/api/v1/links/modes", c.Token(), map[string]any{"modes": modes}, nil)
+	return err
 }

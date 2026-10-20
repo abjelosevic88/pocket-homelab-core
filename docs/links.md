@@ -98,3 +98,14 @@ The same switches cover a Pocket app reaching a **third-party service** (Immich,
 - Keyless services (a box entry with no key filled in, like Maloja's read API): the person's own entry with just the address counts; `claim-box` writes that entry.
 - Refusals: `off_admin`, `off_person`, `no_account`, `not_in_audience` (the service isn't in the person's audience), `target_missing` (no such service in Core), `not_declared`, `unknown_user`. `GET /api/v1/links/status?user=…&app=service:immich` reports the state without handing anything out.
 - Service targets never get a `pcx_` token: `POST /links/token` refuses them.
+
+## Direct connections on the map
+
+Every app also lets a person connect **Direct** (a URL and key pasted into the app) or switch a connection **Off**. Core can't switch those, but apps report them so the Links page shows the whole map:
+
+- `PUT /api/v1/links/modes {"modes": [{"user": "a@b.c", "target": "money" | "service:immich", "mode": "core" | "direct" | "off"}]}` with the app's token; SDK `core.ReportModes(ctx, []sdk.ConnMode{…})`. Apps report on start, when a person changes a mode, and every 30 minutes. Report only: nothing in Core decides on it.
+- The admin's links list carries `modes` (counts) and `mode_people` per link; a person's own list carries `my_mode`. The views mark Direct connections (↗ Direct) and the summary line counts them.
+
+## Credential cache
+
+`ServiceFor` reuses a person's credential for a minute (`Options.ServiceCache`), so a page of 300 photos asks Core once; a refusal from Core drops it at once, and while Core can't be reached the last answer is used for up to 15 minutes (`Options.ServiceStale`) so a Core restart doesn't stop the apps. A switch-off therefore takes effect within a minute for third-party services (app links via `ActAs` still apply on the next request). `ServiceForFresh` skips the cache (connection tests).

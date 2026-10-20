@@ -69,6 +69,9 @@ export interface AppLink {
   target_name: string
   target_registered: boolean
   target_kind?: 'service'
+  modes?: { core: number; direct: number; off: number }
+  mode_people?: { email: string; name: string; mode: 'core' | 'direct' | 'off'; updated_at: string }[]
+  my_mode?: 'core' | 'direct' | 'off'
   target_type?: string
   offered: boolean
   scope: string

@@ -20,6 +20,9 @@ export function pairState(g: LinkGroup): 'on' | 'partial' | 'off' | 'bad' {
   return on === g.links.length ? 'on' : on === 0 ? 'off' : 'partial'
 }
 
+/** How many people the acting app connects to this target directly (pasted URL and key). */
+export const directCount = (g: LinkGroup) => g.links[0]?.modes?.direct || 0
+
 export function appOffers(a?: App): { scope: string; name?: string; description?: string }[] {
   const o = (a?.manifest as { offers?: unknown } | undefined)?.offers
   return Array.isArray(o) ? o as { scope: string; name?: string; description?: string }[] : []
@@ -111,7 +114,8 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
   const idle = useMemo(() => nodes.filter(n => !n.linked && n.app).sort((a, b) => a.name.localeCompare(b.name)), [nodes])
 
   // A label box fits its scope names; the layout reserves exactly that much room.
-  const labelSize = (g: LinkGroup) => ({ w: Math.ceil(Math.max(...g.links.map(l => textWidth(scopeLabel(l))))) + 20, h: g.links.length * 16 + 9 })
+  const labelLines = (g: LinkGroup) => [...g.links.map(scopeLabel), ...(directCount(g) ? [`↗ Direct for ${directCount(g)}`] : [])]
+  const labelSize = (g: LinkGroup) => { const ls = labelLines(g); return { w: Math.ceil(Math.max(...ls.map(textWidth))) + 20, h: ls.length * 16 + 9 } }
   const lay = useMemo(() => layoutGraph(drawn.map(n => n.slug), groups.map(g => ({ key: g.key, from: g.app, to: g.target })), { w: W, h: H },
     key => labelSize(groups.find(g => g.key === key)!)), [drawn, groups]) // eslint-disable-line react-hooks/exhaustive-deps
   const auto = lay.pos
@@ -355,6 +359,7 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
                   <title>{`${g.appName} → ${g.targetName}\n${g.links.map(l => `${scopeLabel(l)} (${l.scope})${l.enabled ? '' : ', off'}`).join('\n')}\n${plural(uses, 'token')} issued`}</title>
                   <rect width={w} height={h} rx={7} />
                   {g.links.map((l, i) => <text key={l.id} x={10} y={17 + i * 16} className={l.enabled ? '' : 'off'}>{scopeLabel(l)}</text>)}
+                  {directCount(g) > 0 && <text x={10} y={17 + g.links.length * 16} className="direct">↗ Direct for {directCount(g)}</text>}
                 </g>)
             })}
             {drawn.map(n => {

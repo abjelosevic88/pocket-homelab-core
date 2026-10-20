@@ -3,7 +3,7 @@ import type { App, AppLink } from '../lib/types'
 import { AppIcon } from './AppIcon'
 import { bundledIcon } from '../lib/icons'
 import { Switch } from './ui'
-import { appOffers, pairState, scopeLabel, type CanvasSel, type LinkGroup } from './LinkCanvas'
+import { appOffers, directCount, pairState, scopeLabel, type CanvasSel, type LinkGroup } from './LinkCanvas'
 
 // Other ways to read the same links: a grid (who acts in whom), a focus on one
 // app (what it uses, what uses it), and access by data (who can reach what).
@@ -48,6 +48,7 @@ export function LinkSummary({ groups }: { groups: LinkGroup[] }) {
   const off = links.filter(l => !l.enabled).length
   const bad = links.filter(l => !['on', 'off_admin', 'off_person'].includes(l.state)).length
   const tokens = links.reduce((a, l) => a + l.uses, 0)
+  const direct = groups.reduce((a, g) => a + directCount(g), 0)
   if (!links.length) return null
   return (
     <div className="lv-summary">
@@ -55,6 +56,7 @@ export function LinkSummary({ groups }: { groups: LinkGroup[] }) {
       <span className="lv-stat on"><b>{on}</b> on</span>
       {off > 0 && <span className="lv-stat off"><b>{off}</b> off</span>}
       {bad > 0 && <span className="lv-stat bad"><b>{bad}</b> can't work</span>}
+      {direct > 0 && <span className="lv-stat direct" title="Connections made with a URL and key pasted into the app: Core sees them but can't switch them off"><b>{direct}</b> on Direct</span>}
       <span className="muted"><b>{tokens}</b> tokens issued</span>
     </div>
   )
@@ -98,6 +100,7 @@ export function MatrixView({ groups, apps, sel, onSelect }: { groups: LinkGroup[
                       title={`${g.appName} → ${g.targetName}\n${g.links.map(l => `${scopeLabel(l)}${l.enabled ? '' : ' (off)'}`).join('\n')}`}>
                       {verbs(g.links)}
                       {st !== 'on' && <span className="lv-cell-state">{stateWord[st]}</span>}
+                      {directCount(g) > 0 && <span className="lv-direct" title="Pasted URL and key in the app: Core can't switch this">↗ Direct {directCount(g)}</span>}
                     </button>
                   </td>)
               })}
@@ -143,6 +146,7 @@ export function FocusView({ groups, apps, flip }: { groups: LinkGroup[]; apps: A
         </button>
         <p className="muted small lv-peer-why">{dir === 'out' ? `${short(cur.name)} may, in ${short(otherName)}:` : `${short(otherName)} may, in ${short(cur.name)}:`}</p>
         <CompactScopes links={g.links} flip={flip} />
+        {directCount(g) > 0 && <p className="small lv-direct-line">↗ Direct for {(g.links[0].mode_people || []).filter(m => m.mode === 'direct').map(m => m.name || m.email).join(', ')}: a pasted URL and key, which these switches don't control.</p>}
         {g.reason && <p className="muted small lv-reason">{g.reason}</p>}
       </div>)
   })
@@ -219,7 +223,7 @@ export function AccessView({ groups, apps, sel, onSelect }: { groups: LinkGroup[
                       return (
                         <button type="button" key={g.key} className={`lv-holder ${st}${picked ? ' picked' : ''}`} onClick={() => onSelect(picked ? null : { kind: 'pair', key: g.key })}
                           title={st === 'on' ? `${g.appName} may ${info.name.toLowerCase()}` : st === 'off' ? `${g.appName}: switched off` : l.detail}>
-                          <Ico slug={g.app} name={g.appName} apps={apps} />{short(g.appName)}
+                          <Ico slug={g.app} name={g.appName} apps={apps} />{short(g.appName)}{directCount(g) > 0 && <span className="lv-direct" title="Some people connect directly">↗</span>}
                         </button>)
                     }) : <span className="muted small">nobody</span>}
                   </div>

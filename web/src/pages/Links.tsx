@@ -49,6 +49,23 @@ export function LinkPair({ g, apps, children }: { g: LinkGroup; apps: App[]; chi
       </div>
       {g.reason && <p className="muted small link-reason">{g.reason}</p>}
       <div className="link-scopes">{children}</div>
+      <PairModes g={g} />
+    </div>
+  )
+}
+
+// How each person's connection is really made, as the acting app reports it.
+function PairModes({ g }: { g: LinkGroup }) {
+  const people = g.links[0]?.mode_people || []
+  if (!people.length) return null
+  const word = { core: 'Pocket Core', direct: 'Direct', off: 'Off' } as const
+  return (
+    <div className="lv-modes">
+      <span className="muted small">How people connect:</span>
+      {people.map(m => (
+        <span key={m.email} className={`lv-mode ${m.mode}`} title={m.mode === 'direct' ? 'A URL and key pasted into the app: the switches above don\'t control it; disconnect it in the app' : `${word[m.mode]} (reported ${ago(m.updated_at)})`}>
+          {m.name || m.email} · {word[m.mode]}
+        </span>))}
     </div>
   )
 }

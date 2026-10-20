@@ -165,3 +165,52 @@ func (s *Store) GetLinkToken(ctx context.Context, plain string) (*LinkToken, err
 	}
 	return &t, nil
 }
+
+// LinkMode is how one person's connection from an app to a target is made, as
+// the app reports it (core | direct | off).
+type LinkMode struct {
+	AppID     int64  `json:"app_id"`
+	UserID    int64  `json:"user_id"`
+	UserEmail string `json:"user_email"`
+	UserName  string `json:"user_name"`
+	Target    string `json:"target"`
+	Mode      string `json:"mode"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// SetLinkModes records what an app reports; one row per (app, person, target).
+func (s *Store) SetLinkModes(ctx context.Context, appID int64, modes []LinkMode) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := Now()
+	for _, m := range modes {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO link_modes (app_id, user_id, target, mode, updated_at) VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(app_id, user_id, target) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at`,
+			appID, m.UserID, m.Target, m.Mode, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ListLinkModes returns every reported mode with the person's name.
+func (s *Store) ListLinkModes(ctx context.Context) ([]LinkMode, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT m.app_id, m.user_id, u.email, u.name, m.target, m.mode, m.updated_at
+		FROM link_modes m JOIN users u ON u.id = m.user_id ORDER BY u.email`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []LinkMode{}
+	for rows.Next() {
+		var m LinkMode
+		if err := rows.Scan(&m.AppID, &m.UserID, &m.UserEmail, &m.UserName, &m.Target, &m.Mode, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
