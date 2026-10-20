@@ -794,7 +794,7 @@ html, body { overflow-x: hidden; }
 .lc-label rect { fill: var(--surface); stroke: var(--accent); stroke-width: 1; }
 .lc-label.partial rect { stroke: var(--warning); } .lc-label.off rect { stroke: var(--muted); stroke-dasharray: 4 3; } .lc-label.bad rect { stroke: var(--danger); }
 .lc-label.sel rect { stroke-width: 2; }
-.lc-label text { font-family: var(--mono); font-size: 11px; fill: var(--text); }
+.lc-label text { font-size: 11.5px; font-weight: 550; fill: var(--text); }
 .lc-label text.off { fill: var(--muted); text-decoration: line-through; }
 
 .lc-h { margin: 14px 0 0; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }

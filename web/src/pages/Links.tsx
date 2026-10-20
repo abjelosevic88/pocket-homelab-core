@@ -4,7 +4,7 @@ import { ago } from '../lib/format'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
 import { Card, Empty, Loading, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
-import { appOffers, LinkCanvas, type CanvasSel, type LinkGroup } from '../components/LinkCanvas'
+import { appOffers, LinkCanvas, scopeLabel, type CanvasSel, type LinkGroup } from '../components/LinkCanvas'
 
 // Group links by (acting app → target app) so each pair reads as one sentence.
 export function groupLinks(links: AppLink[]) {
@@ -47,7 +47,7 @@ function ScopeRow({ l, flip }: { l: AppLink; flip: (l: AppLink, on: boolean) => 
   return (
     <div className="link-scope">
       <div className="grow">
-        <div><b>{l.scope_name}</b> <span className="mono small muted">{l.scope}</span> {l.state !== 'on' && l.state !== 'off_admin' && stateBadge(l)}</div>
+        <div><b>{scopeLabel(l)}</b> <span className="mono small muted">{l.scope}</span> {l.state !== 'on' && l.state !== 'off_admin' && stateBadge(l)}</div>
         {l.scope_description && <div className="muted small">{l.scope_description}</div>}
         <div className="muted small">{l.uses ? `${l.uses} tokens · last ${ago(l.last_used_at)}` : 'not used yet'}{l.opt_outs ? ` · switched off by ${l.opt_outs} ${l.opt_outs === 1 ? 'person' : 'people'}` : ''}</div>
       </div>
@@ -129,7 +129,7 @@ export function MyLinks() {
           {g.links.map(l => (
             <div key={l.id} className="link-scope">
               <div className="grow">
-                <div><b>{l.scope_name}</b> {l.state === 'off_admin' && <span className="badge">Off for the box</span>}</div>
+                <div><b>{scopeLabel(l)}</b> {l.state === 'off_admin' && <span className="badge">Off for the box</span>}</div>
                 {l.scope_description && <div className="muted small">{l.scope_description}</div>}
               </div>
               <Switch on={!!l.on_for_me} onChange={on => flip(l, on)} />

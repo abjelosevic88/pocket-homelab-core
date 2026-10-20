@@ -28,6 +28,21 @@ const iconSrc = (a: App) => {
   const base = (a.public_url || a.url).replace(/\/$/, '')
   return a.icon ? (a.icon.startsWith('http') ? a.icon : base + (a.icon.startsWith('/') ? '' : '/') + a.icon) : ''
 }
+// Label widths from the real font, so names of any length get a snug pill.
+let ctx2d: CanvasRenderingContext2D | null = null
+const textWidth = (t: string) => {
+  if (!ctx2d) {
+    ctx2d = document.createElement('canvas').getContext('2d')
+    if (ctx2d) ctx2d.font = `550 11.5px ${getComputedStyle(document.documentElement).getPropertyValue('--font') || 'sans-serif'}`
+  }
+  return ctx2d ? ctx2d.measureText(t).width : t.length * 6.4
+}
+// The name the target app gives a scope; without one (not offered), "expenses:write" → "Write expenses".
+export const scopeLabel = (l: AppLink) => {
+  if (l.scope_name) return l.scope_name
+  const [what, verb] = l.scope.split(':')
+  return verb ? `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${what.replace(/[_-]/g, ' ')}` : l.scope
+}
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 // Columns by depth (apps nobody calls on the left, what they call to the right),
@@ -266,16 +281,16 @@ export function LinkCanvas({ groups, apps, sel, onSelect }: { groups: LinkGroup[
                 </g>)
             })}
             {edges.map(({ g, st, mid }) => {
-              const lines = g.links.map(l => l.scope)
-              const w = Math.max(...lines.map(s => s.length)) * 6.4 + 18, h = lines.length * 15 + 9
+              const lines = g.links.map(scopeLabel)
+              const w = Math.ceil(Math.max(...lines.map(textWidth))) + 20, h = lines.length * 16 + 9
               const on = sel?.kind === 'pair' && sel.key === g.key
               const dim = (focus && !touches(g)) || (sel?.kind === 'pair' && !on)
               const uses = g.links.reduce((a, l) => a + l.uses, 0)
               return (
                 <g key={g.key} data-pair={g.key} className={`lc-label ${st}${on ? ' sel' : ''}${dim ? ' dim' : ''}`} transform={`translate(${mid.x - w / 2},${mid.y - h / 2})`}>
-                  <title>{`${g.appName} → ${g.targetName}: ${plural(uses, 'token')} issued`}</title>
+                  <title>{`${g.appName} → ${g.targetName}\n${g.links.map(l => `${scopeLabel(l)} (${l.scope})${l.enabled ? '' : ', off'}`).join('\n')}\n${plural(uses, 'token')} issued`}</title>
                   <rect width={w} height={h} rx={7} />
-                  {g.links.map((l, i) => <text key={l.id} x={9} y={16 + i * 15} className={l.enabled ? '' : 'off'}>{l.scope}</text>)}
+                  {g.links.map((l, i) => <text key={l.id} x={10} y={17 + i * 16} className={l.enabled ? '' : 'off'}>{scopeLabel(l)}</text>)}
                 </g>)
             })}
             {nodes.map(n => {
