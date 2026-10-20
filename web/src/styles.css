@@ -807,3 +807,15 @@ html, body { overflow-x: hidden; }
   .lc-box { height: 52vh; min-height: 320px; }
   .lc-legend { gap: 8px; }
 }
+
+/* Links diagram in full screen */
+.lc.full { position: fixed; inset: 0; z-index: 45; display: flex; flex-direction: column; background: var(--surface); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.lc.full .lc-box { flex: 1; height: auto; min-height: 0; }
+.lc-full-btn svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.lc-float { position: absolute; right: 12px; bottom: 12px; width: min(400px, calc(100% - 24px)); max-height: min(60%, 520px); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .18); padding: 14px; overscroll-behavior: contain; }
+.lc-float-close { position: absolute; top: 8px; right: 8px; }
+.lc-float .link-pair-head { padding-right: 32px; }
+@media (max-width: 640px) {
+  .lc-full-btn span { display: none; }
+  .lc-float { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 48%; }
+}

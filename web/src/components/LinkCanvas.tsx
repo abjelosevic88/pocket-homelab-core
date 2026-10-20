@@ -99,12 +99,14 @@ function edgePath(a: Pos, b: Pos, bend: number) {
   return { d: `M${p0.x},${p0.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p3.x},${p3.y}`, mid }
 }
 
-export function LinkCanvas({ groups, apps, sel, onSelect }: { groups: LinkGroup[]; apps: App[]; sel: CanvasSel; onSelect: (s: CanvasSel) => void }) {
+export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: LinkGroup[]; apps: App[]; sel: CanvasSel; onSelect: (s: CanvasSel) => void; detail?: React.ReactNode }) {
   const [onlyLinked, setOnlyLinked] = useState(() => localStorage.getItem('core.links.only') === '1')
   const [saved, setSaved] = useState<Record<string, Pos>>(() => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') } catch { return {} } })
   const [view, setView] = useState<View>({ x: 20, y: 20, k: 1 })
   const [hover, setHover] = useState<string>('')
   const [badIcons, setBadIcons] = useState<Set<string>>(new Set())
+  const [full, setFull] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
 
@@ -161,6 +163,25 @@ export function LinkCanvas({ groups, apps, sel, onSelect }: { groups: LinkGroup[
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Full screen: the canvas covers the page (works everywhere, iPhone included)
+  // and asks the browser for real full screen where it can; Esc leaves both.
+  const toggleFull = () => {
+    if (full) { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); setFull(false); return }
+    setFull(true)
+    root.current?.requestFullscreen?.().catch(() => {})
+  }
+  useEffect(() => {
+    if (!full) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.fullscreenElement) setFull(false) }
+    const onFs = () => { if (!document.fullscreenElement) setFull(false) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('fullscreenchange', onFs)
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('fullscreenchange', onFs); document.body.style.overflow = overflow }
+  }, [full])
+  useEffect(() => { const id = requestAnimationFrame(() => fitRef.current()); return () => cancelAnimationFrame(id) }, [full])
 
   const zoomAt = (px: number, py: number, f: number) => setView(v => {
     const k = Math.max(0.25, Math.min(2.5, v.k * f))
@@ -242,7 +263,7 @@ export function LinkCanvas({ groups, apps, sel, onSelect }: { groups: LinkGroup[
   const resetLayout = () => { localStorage.removeItem(LAYOUT_KEY); setSaved({}); requestAnimationFrame(fit) }
 
   return (
-    <div className="lc">
+    <div className={`lc${full ? ' full' : ''}`} ref={root}>
       <div className="lc-bar">
         <div className="lc-legend">
           <span><i className="lc-key on" />On</span>
@@ -256,6 +277,12 @@ export function LinkCanvas({ groups, apps, sel, onSelect }: { groups: LinkGroup[
           <button type="button" className="btn sm ghost" onClick={() => { const el = box.current!; zoomAt(el.clientWidth / 2, el.clientHeight / 2, 1.25) }} aria-label="Zoom in">+</button>
           <button type="button" className="btn sm ghost" onClick={fit}>Fit</button>
           {Object.keys(saved).length > 0 && <button type="button" className="btn sm ghost" onClick={resetLayout} title="Forget where you dragged the cards">Reset layout</button>}
+          <button type="button" className="btn sm ghost lc-full-btn" onClick={toggleFull} title={full ? 'Leave full screen (Esc)' : 'Full screen'} aria-label={full ? 'Leave full screen' : 'Full screen'}>
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">{full
+              ? <path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
+              : <path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5" />}</svg>
+            <span>{full ? 'Exit' : 'Full screen'}</span>
+          </button>
         </div>
       </div>
       <div className="lc-box" ref={box}>
@@ -316,6 +343,11 @@ export function LinkCanvas({ groups, apps, sel, onSelect }: { groups: LinkGroup[
           </g>
         </svg>
         {nodes.length === 0 && <div className="lc-empty muted">No apps registered yet.</div>}
+        {full && sel && detail && (
+          <div className="lc-float">
+            <button type="button" className="btn sm ghost lc-float-close" onClick={() => onSelect(null)} aria-label="Close">✕</button>
+            {detail}
+          </div>)}
       </div>
     </div>
   )

@@ -91,18 +91,18 @@ export default function Links() {
   const setMode = (m: 'diagram' | 'list') => { localStorage.setItem('core.links.view', m); setModeState(m) }
   const flip = async (l: AppLink, on: boolean) => { await api.put(`${V1}/links/${l.id}`, { enabled: on }); reload(); toast(on ? 'Link on' : 'Link off for everyone') }
   const pair = sel?.kind === 'pair' ? groups.find(g => g.key === sel.key) : undefined
+  const detail = pair ? <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
+    : sel?.kind === 'app' ? <AppDetail slug={sel.slug} groups={groups} apps={apps || []} flip={flip} onPick={setSel} /> : null
   return (
     <>
       <PageHeader title="Links" sub="What one Pocket app may do in another for a person. Apps ask for these in their manifest; Core hands out a five-minute token for each request, valid only in the target app."
         actions={<Segmented size="sm" value={mode} onChange={setMode} options={[{ value: 'diagram', label: 'Diagram' }, { value: 'list', label: 'List' }]} />} />
       {mode === 'diagram' ? <>
-        <Card flush className="lc-card-wrap"><LinkCanvas groups={groups} apps={apps || []} sel={sel} onSelect={setSel} /></Card>
+        <Card flush className="lc-card-wrap"><LinkCanvas groups={groups} apps={apps || []} sel={sel} onSelect={setSel} detail={detail} /></Card>
         <Card>
-          {pair ? <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
-            : sel?.kind === 'app' ? <AppDetail slug={sel.slug} groups={groups} apps={apps || []} flip={flip} onPick={setSel} />
-            : <p className="muted small lc-hint">{groups.length === 0
-              ? <>No links yet. An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</>
-              : <>Tap an arrow to see and switch its permissions, or an app to see everything it uses and offers. Drag cards to rearrange; drag the background to move around, scroll or pinch to zoom.</>}</p>}
+          {detail || <p className="muted small lc-hint">{groups.length === 0
+            ? <>No links yet. An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</>
+            : <>Tap an arrow to see and switch its permissions, or an app to see everything it uses and offers. Drag cards to rearrange; drag the background to move around, scroll or pinch to zoom.</>}</p>}
         </Card>
       </> : groups.length === 0 ? <Card><Empty title="No links yet">An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</Empty></Card> :
         <Card>{groups.map(g => (
