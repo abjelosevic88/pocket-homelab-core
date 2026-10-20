@@ -6,6 +6,7 @@ export interface App {
   id: number; slug: string; name: string; description: string; icon: string; version: string; url: string; public_url: string
   health_path: string; env_prefix: string; manifest: Record<string, unknown>; token_prefix: string
   status: 'ok' | 'down' | 'unknown'; last_seen_at?: string; last_check_at?: string; last_error: string; created_at: string; updated_at: string
+  open_url?: string
 }
 export interface CatalogField { key: string; label: string; secret: boolean; help?: string }
 export interface CatalogEntry { type: string; name: string; prefix: string; group: string; url_key: string; pocket: boolean; fields: CatalogField[] }

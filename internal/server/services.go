@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -387,18 +388,7 @@ func (s *Server) handleMyServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ovs, _ := s.store.ListOverrides(ctx, p.User.ID)
-	// A registered app's callback .../auth/oidc/callback has a sibling .../auth/oidc/start
-	// that signs the visitor in through Core and lands them in the app as themselves.
-	starts := map[int64][]string{}
-	if clients, err := s.store.ListOIDCClients(ctx); err == nil {
-		for _, c := range clients {
-			for _, cb := range c.RedirectURIs {
-				if c.AppID > 0 && strings.HasSuffix(cb, "/auth/oidc/callback") {
-					starts[c.AppID] = append(starts[c.AppID], strings.TrimSuffix(cb, "/callback")+"/start")
-				}
-			}
-		}
-	}
+	starts := s.signInStarts(ctx)
 	out := []myService{}
 	seen := map[string]bool{}
 	for _, sv := range list {
@@ -436,4 +426,35 @@ func (s *Server) handleMyServices(w http.ResponseWriter, r *http.Request) {
 		out = append(out, m)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// signInStarts maps app ids to their "sign in with Pocket Core" entry points: a
+// registered app's callback .../auth/oidc/callback has a sibling .../auth/oidc/start
+// that signs the visitor in through Core and lands them in the app as themselves.
+func (s *Server) signInStarts(ctx context.Context) map[int64][]string {
+	starts := map[int64][]string{}
+	clients, err := s.store.ListOIDCClients(ctx)
+	if err != nil {
+		return starts
+	}
+	for _, c := range clients {
+		for _, cb := range c.RedirectURIs {
+			if c.AppID > 0 && strings.HasSuffix(cb, "/auth/oidc/callback") {
+				starts[c.AppID] = append(starts[c.AppID], strings.TrimSuffix(cb, "/callback")+"/start")
+			}
+		}
+	}
+	return starts
+}
+
+// signedInURL is where opening the app should go: its Core sign-in on its public
+// address when it has one, else the address itself.
+func signedInURL(starts map[int64][]string, appID int64, public string) string {
+	public = strings.TrimRight(public, "/")
+	for _, st := range starts[appID] {
+		if public != "" && strings.HasPrefix(st, public+"/") {
+			return st
+		}
+	}
+	return public
 }

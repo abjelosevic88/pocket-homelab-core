@@ -220,7 +220,17 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "list apps")
 		return
 	}
-	writeJSON(w, http.StatusOK, apps)
+	// open_url: Open on the Apps page lands in the app already signed in.
+	type appOut struct {
+		store.App
+		OpenURL string `json:"open_url"`
+	}
+	starts := s.signInStarts(r.Context())
+	out := make([]appOut, 0, len(apps))
+	for i := range apps {
+		out = append(out, appOut{App: apps[i], OpenURL: signedInURL(starts, apps[i].ID, apps[i].EffectivePublicURL())})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {

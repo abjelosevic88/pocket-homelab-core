@@ -62,7 +62,8 @@ function AppTile({ a }: { a: App }) {
         <span className="env" title={`${a.env_prefix}_URL\ninternal ${a.url}`}>{a.env_prefix}_*</span>
         <span className="muted small" title={when(a.last_seen_at)}>seen {ago(a.last_seen_at || a.last_check_at)}</span>
         <span className="grow" />
-        {pub && <a className="btn sm" href={pub} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>Open ↗</a>}
+        {pub && <a className="btn sm" href={a.open_url || pub} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+          title={a.open_url && a.open_url !== pub.replace(/\/$/, '') ? 'Opens signed in with your Pocket Core account' : undefined}>Open ↗</a>}
       </div>
     </div>
   )

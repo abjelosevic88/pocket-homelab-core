@@ -377,6 +377,14 @@ func TestAudienceAndOverrides(t *testing.T) {
 	if !found {
 		t.Fatalf("kitchen missing from launcher %+v", mine)
 	}
+	// The Apps page opens it the same way.
+	var listed []map[string]any
+	e.do("GET", "/api/v1/apps", "", nil, &listed)
+	for _, a := range listed {
+		if a["slug"] == "kitchen" && a["open_url"] != "https://kitchen.example/api/v1/auth/oidc/start" {
+			t.Fatalf("apps list should open kitchen through its Core sign-in: %+v", a)
+		}
+	}
 	// An app whose service is for admins only refuses the member's token.
 	var settings struct {
 		RegistrationKey string `json:"registration_key"`
