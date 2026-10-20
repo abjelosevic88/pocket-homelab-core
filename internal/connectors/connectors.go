@@ -166,7 +166,8 @@ type KeyRotator interface {
 // ---- push: the app calls Core for each thing that happens ----
 
 // PushHeader carries a push subscription's secret on every delivery. Apps
-// that can only set Authorization send "Bearer <secret>" there instead.
+// that can only set Authorization send "Bearer <secret>" there instead, and
+// apps with only a username and password send it as the Basic password.
 const PushHeader = "X-Pocket-Hook"
 
 // PushTrigger is one kind of delivery Core subscribes to.

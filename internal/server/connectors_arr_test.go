@@ -23,6 +23,9 @@ type fakeArr struct {
 	forceSave bool
 	coreURL   string // where http://core.test really is
 	tested    int    // test calls made before saving
+	// noHeaders: the Webhook has only a username and password (Prowlarr, Chaptarr)
+	noHeaders   bool
+	unsupported map[string]bool // triggers listed but supportsOn… false
 }
 
 func newFakeArr(t *testing.T, app, api string, triggers []string) *fakeArr {
@@ -43,11 +46,16 @@ func newFakeArr(t *testing.T, app, api string, triggers []string) *fakeArr {
 		case p == "/system/status":
 			js(map[string]any{"appName": f.app, "instanceName": f.app, "version": "9.9.9"})
 		case p == "/notification/schema":
-			s := map[string]any{"implementation": "Webhook", "name": "", "tags": []any{}, "includeHealthWarnings": true,
-				"fields": []any{map[string]any{"name": "url"}, map[string]any{"name": "method", "value": 1}, map[string]any{"name": "username"},
-					map[string]any{"name": "password"}, map[string]any{"name": "headers", "value": []any{}}}}
+			fields := []any{map[string]any{"name": "url"}, map[string]any{"name": "method", "value": 1}, map[string]any{"name": "username"}, map[string]any{"name": "password"}}
+			if !f.noHeaders {
+				fields = append(fields, map[string]any{"name": "headers", "value": []any{}})
+			}
+			s := map[string]any{"implementation": "Webhook", "name": "", "tags": []any{}, "includeHealthWarnings": true, "fields": fields}
 			for _, k := range f.triggers {
 				s[k] = false
+				if strings.HasPrefix(k, "on") {
+					s["supportsO"+k[1:]] = !f.unsupported[k]
+				}
 			}
 			js([]any{map[string]any{"implementation": "Ntfy"}, s})
 		case p == "/notification" && r.Method == "GET":
@@ -98,13 +106,17 @@ func (f *fakeArr) testCall(n map[string]any) string {
 	if !enabled {
 		return ""
 	}
-	var u string
+	var u, user, pass string
 	hdr := map[string]string{}
 	for _, x := range n["fields"].([]any) {
 		m := x.(map[string]any)
 		switch m["name"] {
 		case "url":
 			u = fmt.Sprint(m["value"])
+		case "username":
+			user, _ = m["value"].(string)
+		case "password":
+			pass, _ = m["value"].(string)
 		case "headers":
 			if l, ok := m["value"].([]any); ok {
 				for _, h := range l {
@@ -118,6 +130,9 @@ func (f *fakeArr) testCall(n map[string]any) string {
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range hdr {
 		req.Header.Set(k, v)
+	}
+	if user != "" || pass != "" {
+		req.SetBasicAuth(user, pass)
 	}
 	f.tested++
 	res, err := http.DefaultClient.Do(req)
@@ -152,6 +167,14 @@ func (f *fakeArr) ours(t *testing.T) (map[string]any, string, string) {
 					t.Fatalf("header %+v", h)
 				}
 				secret = fmt.Sprint(h["value"])
+			case "password":
+				if f.noHeaders {
+					secret = fmt.Sprint(m["value"])
+				}
+			case "username":
+				if v, _ := m["value"].(string); f.noHeaders != (v == "pocket-core") {
+					t.Fatalf("username %q (no headers: %v)", v, f.noHeaders)
+				}
 			}
 		}
 		return n, strings.TrimPrefix(u, "http://core.test"), secret
@@ -170,12 +193,15 @@ func TestArrConnectors(t *testing.T) {
 		return code
 	}
 	call("POST", "/api/v1/auth/setup", map[string]string{"email": "aleks@b.c", "password": "password123", "name": "Aleks"}, nil)
+	basic := false // the app sends the secret as a Basic auth password
 	deliver := func(path, secret string, body any) (int, string) {
 		t.Helper()
 		b, _ := json.Marshal(body)
 		req, _ := http.NewRequest("POST", e.srv.URL+path, bytes.NewReader(b))
 		req.Header.Set("Content-Type", "application/json")
-		if secret != "" {
+		if secret != "" && basic {
+			req.SetBasicAuth("pocket-core", secret)
+		} else if secret != "" {
 			req.Header.Set("X-Pocket-Hook", secret)
 		}
 		res, err := http.DefaultClient.Do(req)
@@ -205,34 +231,64 @@ func TestArrConnectors(t *testing.T) {
 		off      []string // left off
 		import1  map[string]any
 		check    func(p map[string]any) string
+		event    string // what import1 is published as
+		basic    bool   // no headers field
+		unsup    []string
 	}{
-		{"radarr", "/api/v3", []string{"onGrab", "onDownload", "onUpgrade", "onRename", "onMovieAdded", "onMovieDelete", "onMovieFileDelete", "onMovieFileDeleteForUpgrade", "onHealthIssue", "onHealthRestored", "onApplicationUpdate", "onManualInteractionRequired"},
-			[]string{"onGrab", "onDownload", "onUpgrade", "onMovieAdded", "onHealthIssue"}, []string{"onRename", "onMovieFileDeleteForUpgrade"},
-			map[string]any{"eventType": "Download", "instanceName": "Radarr", "isUpgrade": false, "movie": map[string]any{"id": 7, "title": "Dune", "year": 2021, "tmdbId": 438631},
+		{app: "radarr", api: "/api/v3", event: "imported", triggers: []string{"onGrab", "onDownload", "onUpgrade", "onRename", "onMovieAdded", "onMovieDelete", "onMovieFileDelete", "onMovieFileDeleteForUpgrade", "onHealthIssue", "onHealthRestored", "onApplicationUpdate", "onManualInteractionRequired"},
+			want: []string{"onGrab", "onDownload", "onUpgrade", "onMovieAdded", "onHealthIssue"}, off: []string{"onRename", "onMovieFileDeleteForUpgrade"},
+			import1: map[string]any{"eventType": "Download", "instanceName": "Radarr", "isUpgrade": false, "movie": map[string]any{"id": 7, "title": "Dune", "year": 2021, "tmdbId": 438631},
 				"movieFile": map[string]any{"relativePath": "Dune (2021).mkv", "quality": "Bluray-2160p", "size": 50}, "release": map[string]any{"releaseTitle": "Dune.2021.2160p", "indexer": "Nyaa"}, "downloadClient": "qBittorrent"},
-			func(p map[string]any) string {
+			check: func(p map[string]any) string {
 				if p["title"] != "Dune (2021)" || p["tmdb_id"] != float64(438631) || p["quality"] != "Bluray-2160p" || p["url"] != "https://radarr.example/movie/438631" || p["file"] != "Dune (2021).mkv" {
 					return "radarr payload"
 				}
 				return ""
 			}},
-		{"sonarr", "/api/v3", []string{"onGrab", "onDownload", "onUpgrade", "onImportComplete", "onRename", "onSeriesAdd", "onSeriesDelete", "onEpisodeFileDelete", "onEpisodeFileDeleteForUpgrade", "onHealthIssue", "onHealthRestored", "onApplicationUpdate", "onManualInteractionRequired"},
-			[]string{"onDownload", "onSeriesAdd", "onEpisodeFileDelete"}, []string{"onImportComplete", "onRename"},
-			map[string]any{"eventType": "Download", "isUpgrade": true, "series": map[string]any{"id": 3, "title": "Severance", "titleSlug": "severance", "tvdbId": 371980},
+		{app: "sonarr", api: "/api/v3", event: "upgraded", triggers: []string{"onGrab", "onDownload", "onUpgrade", "onImportComplete", "onRename", "onSeriesAdd", "onSeriesDelete", "onEpisodeFileDelete", "onEpisodeFileDeleteForUpgrade", "onHealthIssue", "onHealthRestored", "onApplicationUpdate", "onManualInteractionRequired"},
+			want: []string{"onDownload", "onSeriesAdd", "onEpisodeFileDelete"}, off: []string{"onImportComplete", "onRename"},
+			import1: map[string]any{"eventType": "Download", "isUpgrade": true, "series": map[string]any{"id": 3, "title": "Severance", "titleSlug": "severance", "tvdbId": 371980},
 				"episodes": []any{map[string]any{"seasonNumber": 2, "episodeNumber": 1, "title": "Hello, Ms. Cobel"}}, "episodeFile": map[string]any{"relativePath": "S02E01.mkv", "quality": "WEBDL-1080p"}},
-			func(p map[string]any) string {
+			check: func(p map[string]any) string {
 				if p["title"] != "Severance S02E01" || p["season"] != float64(2) || p["episode_title"] != "Hello, Ms. Cobel" || p["url"] != "https://sonarr.example/series/severance" {
 					return "sonarr payload"
 				}
 				return ""
 			}},
-		{"lidarr", "/api/v1", []string{"onGrab", "onReleaseImport", "onUpgrade", "onRename", "onArtistAdd", "onArtistDelete", "onAlbumDelete", "onHealthIssue", "onHealthRestored", "onDownloadFailure", "onImportFailure", "onTrackRetag", "onApplicationUpdate"},
-			[]string{"onReleaseImport", "onDownloadFailure", "onImportFailure"}, []string{"onTrackRetag", "onRename"},
-			map[string]any{"eventType": "Download", "artist": map[string]any{"id": 4, "name": "Massive Attack", "mbId": "10adbe5e"}, "album": map[string]any{"title": "Mezzanine", "releaseDate": "1998-04-20"},
+		{app: "lidarr", api: "/api/v1", event: "imported", triggers: []string{"onGrab", "onReleaseImport", "onUpgrade", "onRename", "onArtistAdd", "onArtistDelete", "onAlbumDelete", "onHealthIssue", "onHealthRestored", "onDownloadFailure", "onImportFailure", "onTrackRetag", "onApplicationUpdate"},
+			want: []string{"onReleaseImport", "onDownloadFailure", "onImportFailure"}, off: []string{"onTrackRetag", "onRename"},
+			import1: map[string]any{"eventType": "Download", "artist": map[string]any{"id": 4, "name": "Massive Attack", "mbId": "10adbe5e"}, "album": map[string]any{"title": "Mezzanine", "releaseDate": "1998-04-20"},
 				"tracks": []any{map[string]any{"id": 1}, map[string]any{"id": 2}}},
-			func(p map[string]any) string {
+			check: func(p map[string]any) string {
 				if p["title"] != "Massive Attack – Mezzanine" || p["tracks"] != float64(2) || p["url"] != "https://lidarr.example/artist/10adbe5e" {
 					return "lidarr payload"
+				}
+				return ""
+			}},
+		// Prowlarr 2.6: no headers field, grabs for the other apps
+		{app: "prowlarr", api: "/api/v1", event: "grabbed", basic: true,
+			triggers: []string{"onGrab", "includeManualGrabs", "onHealthIssue", "onHealthRestored", "onApplicationUpdate"},
+			want:     []string{"onGrab", "includeManualGrabs", "onHealthIssue", "onHealthRestored", "onApplicationUpdate"},
+			import1: map[string]any{"eventType": "Grab", "instanceName": "Prowlarr", "release": map[string]any{"releaseTitle": "Dune.2021.2160p", "indexer": "Nyaa", "size": 50, "categories": []any{"Movies/UHD"}},
+				"trigger": "api", "source": "Radarr", "host": "radarr", "downloadClient": "qBittorrent"},
+			check: func(p map[string]any) string {
+				if p["title"] != "Dune.2021.2160p" || p["source"] != "Radarr" || p["indexer"] != "Nyaa" || p["trigger"] != "api" || p["url"] != "https://prowlarr.example/history" {
+					return "prowlarr payload"
+				}
+				return ""
+			}},
+		// Chaptarr 0.9: a Readarr fork, no headers field, no failure triggers
+		{app: "chaptarr", api: "/api/v1", event: "imported", basic: true,
+			triggers: []string{"onGrab", "onReleaseImport", "onUpgrade", "onRename", "onAuthorAdded", "onBookAdded", "onAuthorDelete", "onBookDelete", "onBookFileDelete", "onBookFileDeleteForUpgrade", "onHealthIssue", "onDownloadFailure", "onImportFailure", "onBookRetag", "onApplicationUpdate"},
+			unsup:    []string{"onDownloadFailure", "onImportFailure"},
+			want:     []string{"onGrab", "onReleaseImport", "onUpgrade", "onAuthorAdded", "onBookAdded", "onBookDelete", "onHealthIssue"},
+			off:      []string{"onRename", "onBookRetag", "onBookFileDeleteForUpgrade", "onDownloadFailure", "onImportFailure"},
+			import1: map[string]any{"eventType": "Download", "isUpgrade": false, "author": map[string]any{"id": 9, "name": "Ursula K. Le Guin", "path": "/books/Ursula K. Le Guin", "goodreadsId": "874602"},
+				"book":      map[string]any{"id": 31, "title": "The Dispossessed", "goodreadsId": "13651", "releaseDate": "1974-05-01T00:00:00Z"},
+				"bookFiles": []any{map[string]any{"id": 5, "path": "/books/Ursula K. Le Guin/The Dispossessed/The Dispossessed.epub", "quality": "EPUB", "size": 900}}},
+			check: func(p map[string]any) string {
+				if p["title"] != "Ursula K. Le Guin – The Dispossessed" || p["author"] != "Ursula K. Le Guin" || p["book_id"] != float64(31) || p["file"] != "The Dispossessed.epub" || p["quality"] != "EPUB" || p["url"] != "https://chaptarr.example" {
+					return "chaptarr payload"
 				}
 				return ""
 			}},
@@ -240,6 +296,11 @@ func TestArrConnectors(t *testing.T) {
 	for _, tc := range cases {
 		f := newFakeArr(t, strings.ToUpper(tc.app[:1])+tc.app[1:], tc.api, tc.triggers)
 		f.coreURL = e.srv.URL
+		f.noHeaders, basic = tc.basic, tc.basic
+		f.unsupported = map[string]bool{}
+		for _, k := range tc.unsup {
+			f.unsupported[k] = true
+		}
 		var sv struct {
 			ID int64 `json:"id"`
 		}
@@ -317,10 +378,7 @@ func TestArrConnectors(t *testing.T) {
 		}
 		deliver(path, secret, tc.import1) // a replay is published once
 		deliver(path, secret, map[string]any{"eventType": "Health", "level": "error", "message": "Indexers unavailable", "type": "IndexerStatusCheck", "wikiUrl": "https://wiki"})
-		name := tc.app + ".imported"
-		if tc.app == "sonarr" {
-			name = tc.app + ".upgraded"
-		}
+		name := tc.app + "." + tc.event
 		got := events(name)
 		if len(got) != 1 {
 			t.Fatalf("%s: %d %s events", tc.app, len(got), name)

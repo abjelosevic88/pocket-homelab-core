@@ -161,11 +161,11 @@ Turning it off puts the saved original back (provider, secret, methods; linked a
 
 **Events** are polled ([topics](events.md#audiobookshelf-source-connectoraudiobookshelf)): `listening_started`, `listening_ended`, `item_finished`, `item_added`, `episode_added`, `user_created`, `user_deleted`. Listening and finished items carry `user_email` when the Audiobookshelf account is linked to a person.
 
-## Radarr, Sonarr, Lidarr
+## Radarr, Sonarr, Lidarr, Prowlarr, Chaptarr
 
-Needs: the service in Core with its URL, public URL and **API key** (Settings → General). These are household tools: no per-person accounts and no OpenID sign-in, so the connector does **events only**. **Test** shows the version and whether Core's connection exists.
+Needs: the service in Core with its URL, public URL and **API key** (Settings → General). Chaptarr is a Readarr fork; Test accepts either name. These are household tools: no per-person accounts and no OpenID sign-in, so the connector does **events only**. **Test** shows the version and whether Core's connection exists.
 
-| Call (`/api/v3`, Lidarr `/api/v1`) | Used by | Writes? |
+| Call (`/api/v3`; Lidarr, Prowlarr, Chaptarr `/api/v1`) | Used by | Writes? |
 |---|---|---|
 | `GET /system/status` | Test | – |
 | `GET /notification` | Test, keeping the connection in step | – |
@@ -173,9 +173,9 @@ Needs: the service in Core with its URL, public URL and **API key** (Settings �
 | `POST /notification?forceSave=true` | Events on: add the connection | **yes** |
 | `DELETE /notification/:id` | Events off | **yes** |
 
-Switching **Events** on adds one **Webhook** connection named *Pocket Core* (Settings → Connect): `POST` to `https://<core>/api/v1/connectors/hooks/<id>` with Core's secret in the `X-Pocket-Hook` header. Saving an enabled connection makes the app call it once with a *Test* event first (`forceSave` only silences warnings), so Core records every hook **before** it subscribes; the test call authenticates and is dropped. Core re-creates the connection if someone deletes it, removes it when Events go off, and never touches other connections (Apprise, ntfy, Jellyfin…).
+Switching **Events** on adds one **Webhook** connection named *Pocket Core* (Settings → Connect): `POST` to `https://<core>/api/v1/connectors/hooks/<id>` with Core's secret in the `X-Pocket-Hook` header. Prowlarr's and Chaptarr's Webhook has no headers field, only a username and password: Core sets the username `pocket-core` and its secret as the password, and accepts the secret as a Basic-auth password. Saving an enabled connection makes the app call it once with a *Test* event first (`forceSave` only silences warnings), so Core records every hook **before** it subscribes; the test call authenticates and is dropped. Core re-creates the connection if someone deletes it, removes it when Events go off, and never touches other connections (Apprise, ntfy, Jellyfin…).
 
-Triggers switched on (only those the version has): grab, import (Lidarr: release import), upgrade, added, deleted, file deleted (not "deleted for upgrade"), album deleted (Lidarr), download and import failures (Lidarr), manual interaction required, health issue and restored (**errors only**: `includeHealthWarnings` off, warnings flap with every WAN blip), application update. Renames and retags stay off: they repeat what an import said.
+Triggers switched on (only those the version has **and supports**: a trigger whose `supportsOn…` is false stays off): grab, import (Lidarr, Chaptarr: release import), upgrade, added, deleted, file deleted (not "deleted for upgrade"), album deleted (Lidarr), book added and deleted (Chaptarr), download and import failures (Lidarr; Chaptarr lists them but does not support them), manual interaction required, health issue and restored (**errors only**: `includeHealthWarnings` off, warnings flap with every WAN blip), application update. Renames and retags stay off: they repeat what an import said. Prowlarr: grabs (manual ones too, `includeManualGrabs`; a grab for Radarr also arrives as `radarr.grabbed`, Prowlarr's says which app asked), health issue and restored, application update.
 
 Every delivery is a **household event**: no `user_email` (connectors mark such deliveries `Shared`, and Core publishes them without looking up a person). Test calls are dropped; the same body twice inside 24 h is published once (health and update events are never deduplicated, they legitimately repeat).
 
@@ -189,6 +189,101 @@ Events only, **polled** (no accounts or sign-in; adding a notification in Kuma n
 | `GET /api/status-page/:slug` · `/api/status-page/heartbeat/:slug` | `STATUS_SLUG` (public) | the page's monitors and the message of their last check |
 
 With an API key Core watches every monitor; with only a slug, the monitors on that page. With both, events carry the last check's message. Down, up and certificate events are **household events** (no `user_email`). The first check records what is already down or expiring without announcing it; *pending* (Kuma retrying) is not down. Choose the check interval in the Events section: down is noticed within one interval.
+
+## Changedetection.io
+
+Events only, **polled**, read-only, with the `API_KEY` (Settings → API). Changedetection has one password and no accounts.
+
+| Call (header `x-api-key`) | Used by |
+|---|---|
+| `GET /api/v1/systeminfo` | Test: version, watches, overdue checks |
+| `GET /api/v1/watch` | every watch's last change, last check and last error (**never** with `recheck_all`, which queues a recheck of everything) |
+| `GET /api/v1/tags` | group names, and which groups are muted |
+
+A newer `last_changed` is `changedetection.change_detected` (linking to the diff page); an error appearing or clearing is `check_failed` / `check_recovered`. A watch whose groups are **all muted** stays quiet, as in Changedetection's own notifications. At most 50 events per check; the rest come next time.
+
+## Scrutiny
+
+Events only, **polled**, read-only, no credential (Scrutiny has no API authentication): `GET /api/health` (Test) and `GET /api/summary` (every disk's status, temperature and last collection; archived disks ignored). Optional fields: `TEMP_WARN` (°C, default 55) and `STALE_HOURS` (default 48).
+
+`device_status` is a bit set: 1 = the drive's own SMART self-assessment failed, 2 = Scrutiny's failure model says it is failing. Changes become `scrutiny.disk_failing` / `disk_passing`; a disk at or above `TEMP_WARN` is `disk_hot` once, and again only after it cooled 5 °C below; `disk_added` / `disk_removed`; a host whose collector sent nothing for `STALE_HOURS` is `host_silent`, then `host_reporting`.
+
+## Speedtest Tracker
+
+Events only, **polled**, read-only. With a `TOKEN` (Settings → API Tokens, *Read results*) Core reads `GET /api/v1/results?sort=-created_at` (every test, failed ones, Speedtest Tracker's thresholds); without one, the public `GET /api/speedtest/latest` (the newest finished test at each check, no thresholds).
+
+Every finished test is `speedtest.finished` (Mbit/s, ms); a failed one `speedtest.failed`; with a token, the line dropping below the thresholds is `speedtest.degraded` and coming back `speedtest.recovered`. A test still running waits for the next check (one stuck while later tests finished is skipped). The WAN address in a result is never copied.
+
+## Kavita
+
+Needs: an **admin's auth key** (`API_KEY`: User Settings → Auth Keys, signed in as a Kavita admin), sent in the `x-api-key` header (never in a URL; Kavita's plugin sign-in logs a failed key, so Core does not use it). Accounts, linking by hand, sign-in, key replacement and events.
+
+| Feature | Calls | Writes? |
+|---|---|---|
+| Test | `GET /api/health`, `/api/Account` (version, must be admin), `/api/Users?includePending=true`, `/api/Settings` | – |
+| Accounts | `GET /api/Users`, `/api/Library/libraries`, `/api/Account/invite-url` (an invitation nobody accepted) | – |
+| Make an account | `POST /api/Account/invite`, `POST /api/Account/confirm-email` (with the invite token), `POST /api/Account/create-auth-key` (as the person) | **yes** |
+| Sign-in | `GET /api/Settings`, `POST /api/Settings` (everything sent back, only `oidcConfig` changed) | **yes** |
+| Replace a key | `GET /api/Account/auth-keys`, `POST /api/Account/rotate-auth-key` (as the person); only when the stored key is dead: `POST /api/Account/reset-password` (admin) and one `login` | **yes** |
+| Events | `GET /api/Users`, `/api/Activity/current`, `POST /api/Series/all-v2` (a search), `GET /api/Series/volume`, `/api/Series/:id` | – |
+
+People are matched by email (an accepted account: linked, no key; an admin is left alone). Otherwise Core invites them and completes the invitation with a random password nobody knows, then mints their own auth key *Pocket Core* (not the built-in *opds* key, so replacing it kills only Core's). Username: the email's local part, else the full email. Role `Login` (Kavita's invite default) and **every library** the admin key sees, no age restriction; libraries added later are granted in Kavita. If Kavita has email set up, its own invitation mail goes out too (its link stops working once Core completed it).
+
+**Sign-in**: Core backs up the settings to `DATA_DIR/connectors/kavita-sso-<stamp>.json` (SMTP password left out), keeps the previous provider in `kavita-sso-original.json`, and sets authority = Core's issuer, client id and secret, provider name = the button text, *provision accounts* off, *sync user settings* off (claims never change roles or libraries), no custom scopes. Password login, auto-login and the verified-email rule stay as they were. Kavita matches a sign-in by subject, then email; Core refuses to switch on, changing nothing, when a hand-linked person's Kavita account has another email. Off puts the saved provider back exactly, except a previous provider's client secret (Kavita never shows it): Core then says to re-enter it. **Kavita reads its provider at start: restart the Kavita container after switching sign-in on or off.** Redirect: `<public>/signin-oidc`.
+
+**Events**: an admin cannot read other people's reading history in Kavita 0.9, so reading comes from the admin's view of **active sessions** (kept 10 minutes after the last page turn; the default 5-minute check sees each session end). `reading_started` and `reading_ended` are a person's own (`Personal`: dropped unless the Kavita account is linked to someone), as is `book_finished` (the last page of a single-chapter volume; manga and comic chapters are counted in `reading_ended`). New series (`series_added`, or one `series_added_bulk` for more than 10 at once) and accounts are household events.
+
+## Forgejo
+
+Needs: a **site administrator's** token (`TOKEN`: read:admin, write:admin, read:user). Accounts, linking by hand, key replacement and events; no sign-in switch.
+
+| Feature | Calls (`/api/v1`) | Writes? |
+|---|---|---|
+| Test | `GET /version`, `/user` (must be admin), `/users/:admin/tokens` (the stored token's scopes), `/admin/users?limit=1`, `/admin/hooks` | – |
+| Accounts | `GET /admin/users` (paged), `/admin/emails/search` (secondary emails), `/users/:name` (is the name free) | – |
+| Make an account | `POST /admin/users`, `POST /admin/users/:u/tokens` | **yes** |
+| Replace a key | `GET /user` with the old token, `POST`/`GET`/`DELETE /admin/users/:u/tokens…`, then the old token must get 401 | **yes** |
+| Events | `GET /admin/hooks`, `POST /admin/hooks`, `DELETE /admin/hooks/:id` | **yes** |
+| New and removed accounts | `GET /admin/users` (polled) | – |
+
+People are matched by primary, then secondary email (linked, no key; an admin account is left alone). Otherwise Core makes an account with a random password nobody knows, a username from the email or name (never one a user or organisation has, never a reserved one), and mints the person's own token *Pocket Core* through Forgejo 16's admin token API (older Forgejo and Gitea: by Basic auth with that password). The person's token may read their user, organisations, repositories and packages and write issues, pull request comments and notifications: it cannot push, change settings, mint tokens or administer. Replacing a key deletes only that account's *Pocket Core* tokens.
+
+**Sign-in** cannot be set over Forgejo's API (auth sources live in the admin UI and the CLI). Switching it on returns the command to run instead: `forgejo admin auth add-oauth --name PocketCore --provider openidConnect --key <client id> --secret <secret> --auto-discover-url <issuer>/.well-known/openid-configuration`, then a restart; redirect `<public>/user/oauth2/PocketCore/callback`. People land in Core-made accounts only with `[oauth2_client] ENABLE_AUTO_REGISTRATION=true` and `ACCOUNT_LINKING=auto` (Forgejo matches the username first, then the email).
+
+**Events** come by push: one **system webhook** per kind (push, create, delete, release, issues, pull request, repository, fork), JSON, with Core's secret as `Authorization: Bearer <secret>` (Forgejo cannot set other headers; Core accepts either). Created with `config.is_system_webhook: "true"`: without it Forgejo makes a *default* hook, copied only into repositories created later. Every delivery belongs to the **sender**: people Core has not linked are dropped, as are ghost, Actions and `[bot]` senders, mirror syncs, tag and empty pushes (create/delete cover them), drafts and other actions. Comments, labels, reviews, wiki, packages and Actions runs are left out.
+
+**Forgejo blocks webhooks to private and tailnet addresses** unless allowed: set `FORGEJO__webhook__ALLOWED_HOST_LIST: core.bjelke.org` (Core's host) on the container and restart Forgejo before switching Events on.
+
+## Backrest
+
+Events only, **polled**, strictly read-only: Core never starts, cancels or changes anything. `USERNAME` and `PASSWORD` go as HTTP Basic auth on every call (Backrest checks it per request; empty when auth is off in Backrest, which Test warns about). Connect RPC, JSON:
+
+| Call | Used by |
+|---|---|
+| `POST /v1.Backrest/GetConfig` | instance name, repo ids, plans with their repo and schedule, whether auth is off |
+| `POST /v1.Backrest/GetSummaryDashboard` | Test, and on the first check each plan's last good backup |
+| `POST /v1.Backrest/GetOperations` (`selector.instanceId`, `modnoGte`, `lastN`) | exactly the operations that changed since the last check |
+| `GET /` and its `assets/*.js` | the version (the API has none; empty if the UI bundle changes shape) |
+
+`GetConfig` returns the whole configuration, repository passwords included: Core decodes only the fields above and keeps nothing else (it already holds Backrest's login).
+
+Only finished operations count. Backups: `backup_finished`, `backup_warning` (e.g. unreadable files), `backup_failed`. Check, prune and forget: every failure, and one `…_recovered` at the next success. Restores, and failing hooks (`hook_failed`, with the condition). **Overdue**: a plan whose last good backup (a warning counts, as on Backrest's dashboard) ended longer ago than its schedule's longest gap plus a grace is `backup_overdue`, once per stretch, and `backup_resumed` when a good one arrives. The schedule is `maxFrequencyHours`/`Days` or a cron (sampled over 62 days; unreadable = daily, `schedule_guessed`); grace is `GRACE_HOURS`, else a quarter of the interval, at least 2 hours (30 h for a daily plan). Messages are cut to 500 characters with the password and URL credentials removed. At most 50 events per check.
+
+## Beszel
+
+Events only, **polled**, read-only. Core signs in with the service's `EMAIL` and `PASSWORD` (a Beszel user; if that fails, the same as a PocketBase superuser, the `/_/` login) on every check and never stores the token. Reads `GET /api/beszel/info` (version), `/api/collections/systems/records`, `/api/collections/alerts/records` (Test) and `/api/collections/alerts_history/records`. Signing in changes nothing Beszel shows; PocketBase notes the login origin (a fixed User-Agent, `Pocket Core (Beszel connector)`).
+
+A user sees only the systems shared with them and **only their own alerts**: alert events come from the alerts that account set. A superuser sees everyone's; the same alert set by two users is then merged into one event. **Paused and pending are never down**; down → pending → down is one outage. Alert history stores the alert's threshold, not the reading that fired it: events carry `threshold` and, for metrics on a system that is up, `current_value` (the reading at the check, not the average that fired). Up to 50 new alert records per check; the rest come next time.
+
+Not implemented: sign-in and accounts. Both would need a PocketBase **superuser**: OIDC is `PATCH /api/collections/users` (`oauth2.providers`, redirect `<public>/api/oauth2-redirect`; new people only with `USER_CREATION=true`), accounts `POST /api/collections/users/records` plus adding them to each system's users.
+
+## Komodo
+
+Events, **polled**, and people **linked by hand**. Save an API key and secret (`API_KEY`, `API_SECRET`: Profile → API Keys, or a service user's under Settings → Users); an admin's key lets Core list Komodo's users for linking and see every resource, any other key works with what that user may read. Read-only: `GET /user` and `POST /read` (`{"type", "params"}`) with `GetVersion`, `ListUsers`, the servers/stacks/deployments summaries, `ListUpdates`, `GetUpdate`, `ListAlerts`, `GetAlert` and the resource lists for names.
+
+No provisioning (Komodo has no per-person keys to mint; admins make users in Komodo, or Komodo's OpenID login makes them on first sign-in) and no sign-in switch: Komodo reads OpenID from its environment. To sign in with Core, set on the Komodo Core container `KOMODO_OIDC_ENABLED=true`, `KOMODO_OIDC_PROVIDER=<Core's issuer>`, `KOMODO_OIDC_CLIENT_ID`, `KOMODO_OIDC_CLIENT_SECRET` and `KOMODO_HOST=<Komodo's public URL>`; Komodo's redirect URI is `<KOMODO_HOST>/auth/oidc/callback`.
+
+Finished operations (deploys, stack up/down/restart/pull, builds, repo pulls, procedures, actions, syncs, resource changes) and alerts are **household events**. An operation run by a Komodo user linked to a person also carries their `user_email`; schedules, webhooks, procedures and Komodo's other built-in operators never do. Operations still running are announced when they finish; failures are one `operation_failed`. Logs and resource TOML never go on the bus. At most 50 operations per check (the rest come next check) and 50 alert events.
 
 ## Dawarich
 
@@ -333,6 +428,8 @@ func init() { Register(myApp{}) }
 ```
 
 An app without emails on its accounts also implements `Linker` (and sets `Capabilities.Link`): `RemoteAccounts` lists the accounts for the admin's picker, and `Link(ctx, Target, remoteID)` checks the account exists and returns `Account{Status: StatusLinked, Fields: {USER_ID…}}`. Poll events then carry `RemoteUserID`, and Core turns it into `user_email` through the accounts it linked.
+
+Polled events about one person carry `RemoteUserID` (the app account); Core fills in `user_email` from the linked person. Set `Personal: true` on events that are someone's own activity (what they read, listen to, push): Core then **drops** them when that account is linked to nobody, instead of publishing them for the household. Pushed deliveries are attributed through `Delivery.OwnerID` and dropped the same way unless `Shared`. An app that cannot send `X-Pocket-Hook` may send the secret as `Authorization: Bearer <secret>` or as a Basic-auth password.
 
 A connector that mints people's keys should also implement `KeyRotator`: `RotateKey(ctx, Target, AccountRef{RemoteID, Email, Fields}) (Rotated{Fields, Note}, error)`. Core calls it only for accounts the connector created and whose stored key it minted, when one of that person's service links is switched off. Mint a new key, delete the old one(s) Core made for that account, touch nothing else (check the account isn't an admin; never the box key). Return `Fields` *and* an error when the new key exists but an old one survived. Without it, Core records that keys there can't be replaced automatically.
 

@@ -91,10 +91,11 @@ var entries = []Entry{
 	{Type: "truenas", Name: "TrueNAS", Prefix: "TRUENAS", Group: "Server", Fields: apiKey("Read-only key is enough")},
 	{Type: "kuma", Name: "Uptime Kuma", Prefix: "KUMA", Group: "Server", Fields: []Field{{Key: "STATUS_SLUG", Label: "Status page slug"}, {Key: "API_KEY", Label: "API key", Secret: true, Help: "Settings → API Keys (lets Core read every monitor's status from /metrics)"}}},
 	{Type: "komodo", Name: "Komodo", Prefix: "KOMODO", Group: "Server", Fields: []Field{{Key: "API_KEY", Label: "API key", Secret: true}, {Key: "API_SECRET", Label: "API secret", Secret: true}}},
-	{Type: "backrest", Name: "Backrest", Prefix: "BACKREST", Group: "Server", Fields: append(userPass("USERNAME", "PASSWORD"), Field{Key: "GRACE_HOURS", Label: "Grace hours"})},
-	{Type: "scrutiny", Name: "Scrutiny", Prefix: "SCRUTINY", Group: "Server"},
-	{Type: "speedtest", Name: "Speedtest Tracker", Prefix: "SPEEDTEST", Group: "Server"},
-	{Type: "beszel", Name: "Beszel", Prefix: "BESZEL", Group: "Server", Fields: []Field{{Key: "EMAIL", Label: "Email"}, {Key: "PASSWORD", Label: "Password", Secret: true}, {Key: "GLANCES", Label: "Glances system name"}}},
+	{Type: "backrest", Name: "Backrest", Prefix: "BACKREST", Group: "Server", Fields: append(userPass("USERNAME", "PASSWORD"), Field{Key: "GRACE_HOURS", Label: "Grace hours", Help: "hours past a plan's schedule before a missing backup is announced (empty: a quarter of the interval, at least 2)"})},
+	{Type: "scrutiny", Name: "Scrutiny", Prefix: "SCRUTINY", Group: "Server", Fields: []Field{{Key: "TEMP_WARN", Label: "Hot disk (°C)", Help: "Core's connector announces a disk at or above this; default 55"}, {Key: "STALE_HOURS", Label: "Silent host (hours)", Help: "a host with no disk data for this long is announced; default 48"}}},
+	{Type: "speedtest", Name: "Speedtest Tracker", Prefix: "SPEEDTEST", Group: "Server", Fields: token("Settings → API Tokens, with Read results (without one Core sees only the newest result)")},
+	{Type: "changedetection", Name: "Changedetection.io", Prefix: "CHANGEDETECTION", Group: "Server", Fields: apiKey("Settings → API")},
+	{Type: "beszel", Name: "Beszel", Prefix: "BESZEL", Group: "Server", Fields: []Field{{Key: "EMAIL", Label: "Email", Help: "a Beszel user's login; alert events come from that user's alerts"}, {Key: "PASSWORD", Label: "Password", Secret: true}, {Key: "GLANCES", Label: "Glances system name"}}},
 	{Type: "adguard", Name: "AdGuard Home", Prefix: "ADGUARD", Group: "Server", Fields: userPass("USERNAME", "PASSWORD")},
 	{Type: "ntfy", Name: "ntfy", Prefix: "NTFY", Group: "Server", Fields: []Field{{Key: "TOPICS", Label: "Topics (comma list)"}}},
 	{Type: "ssh", Name: "Services & jobs (SSH, Mac)", Prefix: "SERVICES_SSH", Group: "Server", URLKey: "HOST", Fields: []Field{{Key: "PORT", Label: "Port"}, {Key: "IDENTITY_FILE", Label: "Identity file"}}},
@@ -126,7 +127,7 @@ var entries = []Entry{
 	{Type: "paperless", Name: "Paperless-ngx", Prefix: "PAPERLESS", Group: "Files", Fields: token("A superuser's token: My Profile → API Auth Token")},
 	{Type: "nextcloud", Name: "Nextcloud", Prefix: "NEXTCLOUD", Group: "Files", Fields: []Field{{Key: "USERNAME", Label: "Username"}, {Key: "APP_PASSWORD", Label: "App password", Secret: true},
 		{Key: "ADMIN_PASSWORD", Label: "Login password (connector only)", Secret: true, ConnectorOnly: true, Help: "Only for the connector: Nextcloud wants the admin's real password, not an app password, to add accounts and change sign-in. Stays in Core, never sent to apps or devices."}}},
-	{Type: "forgejo", Name: "Forgejo / Gitea", Prefix: "FORGEJO", Group: "Files", Fields: token("Settings → Applications")},
+	{Type: "forgejo", Name: "Forgejo / Gitea", Prefix: "FORGEJO", Group: "Files", Fields: token("Settings → Applications (a site administrator's token: read:admin, write:admin, read:user)")},
 	{Type: "searxng", Name: "SearXNG", Prefix: "SEARXNG", Group: "Files"},
 
 	// ---- Money & life ----
@@ -135,6 +136,7 @@ var entries = []Entry{
 	{Type: "subscriptions", Name: "Subscriptions page", Prefix: "SUBSCRIPTIONS", Group: "Money"},
 	{Type: "lubelogger", Name: "LubeLogger", Prefix: "LUBELOGGER", Group: "Life", Fields: append(userPass("USERNAME", "PASSWORD"), Field{Key: "CURRENCY", Label: "Currency"}, Field{Key: "DISTANCE_UNIT", Label: "Distance unit"}, Field{Key: "VOLUME_UNIT", Label: "Volume unit"}, Field{Key: "VEHICLE_ID", Label: "Vehicle id"}, Field{Key: "DECIMAL", Label: "Decimal separator"})},
 	{Type: "dawarich", Name: "Dawarich", Prefix: "DAWARICH", Group: "Life", Fields: apiKey("Account → API key")},
+	{Type: "kavita", Name: "Kavita", Prefix: "KAVITA", Group: "Media", Fields: []Field{{Key: "API_KEY", Label: "API key", Secret: true, Help: "an admin's auth key: User Settings → Auth Keys (signed in as a Kavita admin)"}, {Key: "USER_ID", Label: "User id (optional)"}}},
 	{Type: "maloja", Name: "Maloja", Prefix: "MALOJA", Group: "Media", Fields: apiKey("Settings → API keys (for scrobbling devices; Core itself only reads)")},
 }
 

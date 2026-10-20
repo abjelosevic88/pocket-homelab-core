@@ -33,7 +33,7 @@ Actions:
                                   make accounts for people an admin creates from now on
   provision <email>               make or link that person's account now
   provision-all                   everyone in the service's audience who has no account yet
-  remote-accounts                 the app's accounts (connectors that link by hand: Jellyfin, Jellyseerr, Nextcloud, Paperless)
+  remote-accounts                 the app's accounts (connectors that link by hand: Jellyfin, Jellyseerr, Nextcloud, Paperless, Kavita, Forgejo, Komodo…)
   link <email> <account>          tie that person to an existing app account (name or id); provisioning leaves it alone
   unlink <email>                  forget the link (and the credential Core saved for it)
 

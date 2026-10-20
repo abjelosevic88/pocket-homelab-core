@@ -66,7 +66,7 @@ Polled every check interval from listening sessions, each account's progress, th
 | `audiobookshelf.episode_added` | `episode:<id>` | a podcast episode was downloaded | `episode_id`, `item_id`, `title`, `podcast`, `published_at`, `added_at`, `url` |
 | `audiobookshelf.user_created` · `user_deleted` | `audiobookshelf-user:<id>` | account changes | `audiobookshelf_user_id`, `audiobookshelf_user`, `type`, plus `user_email` when linked |
 
-### Radarr, Sonarr, Lidarr (sources `connector:radarr` · `sonarr` · `lidarr`)
+### Radarr, Sonarr, Lidarr, Prowlarr, Chaptarr (sources `connector:radarr` · `sonarr` · `lidarr` · `prowlarr` · `chaptarr`)
 
 Pushed by a Webhook connection in each app, as it happens. Household events: **no `user_email`**. Topic prefix = the app (`radarr.imported`, `sonarr.grabbed`…).
 
@@ -77,12 +77,14 @@ Pushed by a Webhook connection in each app, as it happens. Household events: **n
 | `<app>.added` · `<app>.removed` | same | a movie, series or artist was added or deleted | the item |
 | `<app>.file_deleted` | same | a file was deleted (not for an upgrade) | the item, `file`, `reason` |
 | `lidarr.album_removed` | `artist:<id>` | an album was deleted | the item |
+| `chaptarr.book_added` · `chaptarr.book_removed` | `author:<id>` | a book was added or deleted | the item |
 | `lidarr.download_failed` · `lidarr.import_failed` | `artist:<id>`, else `download_failure` · `import_failure` | a download or import failed | `release_title`, `quality`, `download_client`, `message` |
 | `<app>.manual_interaction_required` | the item | an import needs a person | the item, `release_title`, `quality`, `messages` |
 | `<app>.health_issue` · `<app>.health_restored` | `health:<check>` | a health error appeared or cleared | `level`, `check`, `message`, `wiki_url`, `title` (= message) |
 | `<app>.updated` | `update:<version>` | the app updated itself | `previous_version`, `new_version`, `message` |
+| `prowlarr.grabbed` | `grab` | Prowlarr handed a release to an app or a download client | `release_title` (= `title`), `indexer`, `size`, `categories`, `source` (the app that asked, e.g. Radarr), `host`, `trigger` (`api` \| `manual`), `download_client`, `url` (history) |
 
-The item: Radarr `movie_id`, `movie`, `year`, `tmdb_id`, `imdb_id`; Sonarr `series_id`, `series`, `year`, `tvdb_id`, `imdb_id`, `episodes` [`season`, `episode`, `title`, `air_date`] and, for one episode, `season`, `episode`, `episode_title`; Lidarr `artist_id`, `artist`, `musicbrainz_id`, `album` (`albums` when several), `release_date`, `tracks`. Always `event` (the app's eventType), `instance`, a readable `title` (`Dune (2021)`, `Severance S02E01`, `Massive Attack – Mezzanine`) and `url` into the app.
+The item: Radarr `movie_id`, `movie`, `year`, `tmdb_id`, `imdb_id`; Sonarr `series_id`, `series`, `year`, `tvdb_id`, `imdb_id`, `episodes` [`season`, `episode`, `title`, `air_date`] and, for one episode, `season`, `episode`, `episode_title`; Lidarr `artist_id`, `artist`, `musicbrainz_id`, `album` (`albums` when several), `release_date`, `tracks`; Chaptarr `author_id`, `author`, `goodreads_id`, `book`, `book_id` (`books` when several), `release_date`, `files`. Always `event` (the app's eventType), `instance`, a readable `title` (`Dune (2021)`, `Severance S02E01`, `Massive Attack – Mezzanine`) and `url` into the app.
 
 ### Uptime Kuma (source `connector:kuma`)
 
@@ -93,6 +95,110 @@ Polled. Household events: no `user_email`.
 | `kuma.monitor_down` | `monitor:<name>` | a monitor went down | `monitor`, `monitor_type`, `target` (URL or host:port), `message` (last check, with a status page), `checked_at`, `title`, `url` |
 | `kuma.monitor_up` | `monitor:<name>` | it is up again | same, plus `down_since`, `down_for_seconds` |
 | `kuma.cert_expiring` | `monitor:<name>` | the certificate passes 14, 7, 3 or 1 days left (one event per step) | same, plus `days_remaining` |
+
+### Changedetection.io (source `connector:changedetection`)
+
+Polled. Household events: no `user_email`. Watches whose groups are all muted are skipped.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `changedetection.change_detected` | `watch:<uuid>:<last_changed>` | a watched page changed | `watch` (title, page title or URL), `watch_id`, `target` (the watched URL), `groups`, `changed_at`, `title`, `url` (diff page) |
+| `changedetection.check_failed` | `watch:<uuid>` | checking the page started failing | same, plus `message` |
+| `changedetection.check_recovered` | `watch:<uuid>` | checks work again | same, plus `failing_since` |
+
+### Scrutiny (source `connector:scrutiny`)
+
+Polled. Household events: no `user_email`.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `scrutiny.disk_failing` | `disk:<wwn>` | a disk's status went bad (or changed while bad) | `disk` (host + device), `device`, `host`, `model`, `serial`, `wwn`, `capacity`, `temperature`, `power_on_hours`, `smart_failed`, `scrutiny_failed`, `title`, `url` |
+| `scrutiny.disk_passing` | `disk:<wwn>` | it passes again | the disk |
+| `scrutiny.disk_hot` | `disk:<wwn>` | at or above `TEMP_WARN` (again only after cooling 5 °C below) | the disk, `limit` |
+| `scrutiny.disk_added` · `disk_removed` | `disk:<wwn>` | a disk appeared, or left (removed or archived) | the disk, `status` · `disk`, `wwn` |
+| `scrutiny.host_silent` · `host_reporting` | `host:<host>` | no disk data from a host for `STALE_HOURS`, and again | `host`, `last_collected`, `title`, `url` |
+
+### Speedtest Tracker (source `connector:speedtest`)
+
+Polled. Household events: no `user_email`; never the WAN address.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `speedtest.finished` | `result:<id>` | a test finished | `result_id`, `download_mbps`, `upload_mbps`, `ping_ms`, `jitter_ms`, `packet_loss`, `server`, `isp`, `healthy`, `below_threshold` (failed benchmarks), `scheduled`, `tested_at`, `result_url` (speedtest.net), `title`, `url` |
+| `speedtest.failed` | `result:<id>` | a test failed | `result_id`, `message`, `server`, `scheduled`, `tested_at`, `title`, `url` |
+| `speedtest.degraded` · `recovered` | `result:<id>` | the line fell below Speedtest Tracker's thresholds, and is back (needs a token) | same as `finished` |
+
+### Kavita (source `connector:kavita`)
+
+Polled. Reading events are the person's own: published only when the Kavita account is linked to a Core person (`user_email`), never for the household. Every payload carries `title` and `url` (`/library/<lib>/series/<id>`).
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `kavita.reading_started` | per series and session | someone started reading a series | `series`, `series_id`, `library`, `chapter_id`, `chapter`, `started_at`, `device`, `kavita_user_id`, `kavita_user` |
+| `kavita.reading_ended` | per session | Kavita closed the session | `series`, `series_ids`, `pages_read`, `words_read`, `chapters_finished`, `started_at`, `ended_at`, `minutes`, `kavita_user_id`, `kavita_user` |
+| `kavita.book_finished` | per volume | the last page of a single-chapter volume (epub, pdf) | `series`, `series_id`, `volume`, `volume_id`, `chapter_id`, `pages`, `finished_at`, `library`, `kavita_user_id`, `kavita_user` |
+| `kavita.series_added` | `series:<id>` | a series appeared (household) | `series`, `series_id`, `library`, `library_id`, `pages`, `format` |
+| `kavita.series_added_bulk` | | more than 10 at once (household) | `count`, `series` (first 10) |
+| `kavita.user_created` · `user_deleted` | `kavita-user:<id>` | accounts (`user_email` when linked) | `kavita_user_id`, `kavita_user`, `admin` |
+
+### Forgejo (source `connector:forgejo`)
+
+Pushed by system webhooks. Each delivery is the sender's: `user_email` = the person their Forgejo account is linked to, and people Core has not linked are dropped. Every payload carries `repo`, `repo_url`, `private`, `forgejo_user`, `forgejo_user_id`, `title`, `url`.
+
+| Topic | Subject | When | Extra payload |
+|---|---|---|---|
+| `forgejo.pushed` | `repo:<id>` | commits pushed to a branch | `branch`, `ref`, `commits` (count), `commit_messages` (first lines, at most 5), `before`, `after`, `compare_url` |
+| `forgejo.branch_created` · `tag_created` · `branch_deleted` · `tag_deleted` | `repo:<id>` | a branch or tag | `ref`, `ref_type`, `branch` or `tag`, `sha` |
+| `forgejo.release_published` | `release:<id>` | a release was published | `release_id`, `tag`, `release_name`, `prerelease` |
+| `forgejo.issue_opened` · `issue_closed` · `issue_reopened` | `issue:<repo>#<n>` | an issue | `number`, `state` |
+| `forgejo.pull_request_opened` · `_closed` · `_merged` · `_reopened` | `pull:<repo>#<n>` | a pull request | `number`, `state`, `merged`, `draft`, `base`, `head` |
+| `forgejo.repo_created` · `repo_deleted` | `repo:<id>` | a repository | `mirror`, `fork` |
+| `forgejo.repo_forked` | `repo:<new id>` | a fork | `forked_from`, `forked_from_url` |
+| `forgejo.user_created` · `user_deleted` | `forgejo-user:<id>` | accounts (polled; `user_email` when linked) | `forgejo_user_id`, `forgejo_user`, `admin`, `full_name` |
+
+### Backrest (source `connector:backrest`)
+
+Polled. Household events: no `user_email`. Every operation event carries `repo`, `plan` (not for Backrest's internal plans), `operation_id`, `started_at`, `finished_at`, `duration_seconds`, `message` (when there is one), `title` and `url` (`/#/plan/<id>` or `/#/repo/<id>`).
+
+| Topic | Subject | When | Extra payload |
+|---|---|---|---|
+| `backrest.backup_finished` | `plan:<id>` | a backup succeeded | `snapshot_id`, `files_new`, `files_changed`, `files_processed`, `bytes_added`, `bytes_processed` |
+| `backrest.backup_warning` | `plan:<id>` | it finished with warnings (unreadable files…) | same, plus `error_count`, `errors` (first 3) |
+| `backrest.backup_failed` | `plan:<id>` | a backup failed | `message` |
+| `backrest.check_failed` · `check_recovered` · `prune_failed` · `prune_recovered` | `repo:<id>` | a failure, and the next success | `failing_since`; recovered: `failing_for_seconds` |
+| `backrest.forget_failed` · `forget_recovered` | `plan:<id>` | same | same |
+| `backrest.restore_finished` · `restore_failed` | `plan:<id>` | a restore ended | `snapshot_id`, `bytes_restored`, `files_restored` (never paths) |
+| `backrest.hook_failed` | `plan:<id>` or `repo:<id>` | a hook failed (or cancelled a backup) | `hook`, `condition` |
+| `backrest.backup_overdue` | `plan:<id>` | no good backup within the schedule + grace | `schedule`, `expected_every_hours`, `grace_hours`, `last_success_at`, `hours_since`, `schedule_guessed` |
+| `backrest.backup_resumed` | `plan:<id>` | a good backup after being overdue | `overdue_since`, `overdue_for_seconds`, `last_success_at` |
+
+### Beszel (source `connector:beszel`)
+
+Polled. Household events: no `user_email`.
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `beszel.system_down` | `system:<id>` | a system went down (paused and pending are not down) | `system`, `system_id`, `status`, `previous_status`, `host`, `down_since`, `title`, `url` |
+| `beszel.system_up` | `system:<id>` | it is up again | same, plus `down_for_seconds` |
+| `beszel.agent_updated` | `system:<id>` | the system's agent changed version | same, plus `from_version`, `to_version` |
+| `beszel.alert_triggered` | `alert:<system>/<name>[/<monitor>]` | an alert fired | `system`, `system_id`, `alert`, `alert_label`, `monitor`, `triggered_at`, `unit`, `threshold` (or `value` for network-monitor loss), `current_value`, `title`, `url` |
+| `beszel.alert_resolved` | same | it resolved | same, plus `resolved_at`, `duration_seconds` |
+
+### Komodo (source `connector:komodo`)
+
+Polled. Household events; an operation run by a Komodo user linked to a person also carries `user_email` (built-in operators such as schedules, Git webhooks, procedures and auto-redeploys never do).
+
+| Topic | Subject | When | Payload |
+|---|---|---|---|
+| `komodo.stack_deployed` · `stack_pulled` · `stack_started` · `stack_restarted` · `stack_stopped` · `stack_paused` · `stack_unpaused` · `stack_destroyed` · `stack_service_run` | `update:<id>` | a stack operation (whole stack or one service) finished | `update_id`, `operation`, `target_type`, `target_id`, `target` (name), `success`, `started_at`, `finished_at`, `duration_seconds`, `version`, `commit`, `operator`, `operator_id`, `operator_kind` (`user` / `system`), `title`, `url` (the update), `target_url` |
+| `komodo.deployment_deployed` · `deployment_pulled` · `deployment_started` · `deployment_restarted` · `deployment_stopped` · `deployment_paused` · `deployment_unpaused` · `deployment_destroyed` | `update:<id>` | a deployment operation finished | same |
+| `komodo.build_finished` · `build_cancelled` · `repo_cloned` · `repo_pulled` · `repo_built` · `repo_build_cancelled` | `update:<id>` | a build or repo operation finished | same (`version` for builds) |
+| `komodo.procedure_run` · `procedure_cancelled` · `action_run` · `action_cancelled` · `sync_run` · `sync_committed` · `auto_update_run` · `database_backed_up` | `update:<id>` | ran | same |
+| `komodo.resource_created` · `resource_updated` · `resource_renamed` · `resource_deleted` | `update:<id>` | a resource (server, stack, build, variable…) changed | same, plus `resource_type` |
+| `komodo.<operation>` | `update:<id>` | any other operation, snake_case (`prune_images`, `start_container`…) | same |
+| `komodo.operation_failed` | `update:<id>` | any operation failed | same, plus `event` (the name it would have had) and `failed_stage` |
+| `komodo.alert_opened` | `alert:<id>` | an alert opened (server unreachable, CPU, memory, disk, version mismatch, swarm unhealthy), or a one-shot notice (stack/container state change, image update available, auto-updated…; `one_shot: true`) | `alert_id`, `alert_type`, `level`, `target_type`, `target_id`, `target`, `server`, `title`, `message`, `opened_at`, `resolved`, type fields (`percentage`, `used_gb`, `total_gb`, `path`, `from`, `to`, `image`, `service`…), `url` (the alert), `target_url` |
+| `komodo.alert_resolved` | `alert:<id>` | an open alert resolved | same, plus `resolved_at`, `open_seconds` |
 
 ### Dawarich (source `connector:dawarich`)
 

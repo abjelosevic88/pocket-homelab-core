@@ -36,6 +36,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.17** — switching a service link off **replaces the person's connector-made key** in the service (Immich, Jellyfin, Audiobookshelf, Paperless, Nextcloud), so copies apps kept stop working; linked accounts and hand-set keys are never touched.
 
+**0.18** — **ten more connectors.** Accounts, sign-in and events: **Kavita** (accounts by invitation with their own auth key, "Sign in with Pocket Core" through its OpenID settings, reading sessions and finished books for linked people, new series) and **Forgejo** (accounts with their own token, system webhooks per kind for pushes, branches, releases, issues, pull requests and repositories, each the sender's; sign-in stays a CLI step). Events and linking: **Komodo** (finished operations attributed to their operator, alerts). Events only: **Backrest** (backups, warnings, failures, overdue plans), **Beszel** (systems down / up, alerts), **Scrutiny** (failing and hot disks, silent hosts), **Speedtest Tracker** (each test, failures, the line below thresholds), **Changedetection.io** (changes, failing checks) and, on the Webhook connector, **Prowlarr** and **Chaptarr**. Plumbing: `Event.Personal` (someone's own activity is dropped, not published for the household, when their account is linked to nobody); push secrets may arrive as `Authorization: Bearer` or a Basic-auth password for apps without custom headers.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.

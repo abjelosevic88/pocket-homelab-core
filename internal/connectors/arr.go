@@ -14,13 +14,14 @@ import (
 	"strings"
 )
 
-// Radarr (5+), Sonarr (4+) and Lidarr (2+) connector: events only. These
+// Radarr (5+), Sonarr (4+), Lidarr (2+), Prowlarr (1+) and Chaptarr/Readarr
+// connector: events only. These
 // are household tools with no per-person accounts and no OpenID sign-in, so
 // Core does one thing: keep a Webhook connection named "Pocket Core" in the
 // app (box-wide, with Core's secret header) while Events are on, and turn
 // each call into an event about the whole household (no user_email).
 //
-// Endpoints used (v3 for Radarr and Sonarr, v1 for Lidarr):
+// Endpoints used (v3 for Radarr and Sonarr, v1 for the others):
 //
 //	GET    /api/vN/system/status                 Test                read
 //	GET    /api/vN/notification                  Test, subscriptions read
@@ -31,9 +32,14 @@ import (
 // Saving an enabled connection makes the app call it once with a Test
 // event first (forceSave only turns warnings off), so Core records the hook
 // before subscribing and drops that call.
+//
+// Prowlarr's and Chaptarr's Webhook has no custom headers, only a username
+// and password: Core's secret goes in as the Basic auth password.
 type arr struct {
-	typ  string // radarr | sonarr | lidarr
+	typ  string // radarr | sonarr | lidarr | prowlarr | chaptarr
 	name string // Radarr
+	// also: other appName values that are the same app (a fork's upstream)
+	also []string
 	api  string // /api/v3
 	// on: the Webhook triggers Core switches on (only those the app has
 	// are set). Renames, retags and "deleted for upgrade" are left off:
@@ -46,6 +52,9 @@ func init() {
 	Register(arr{typ: "radarr", name: "Radarr", api: "/api/v3", on: append([]string{"onDownload", "onMovieAdded", "onMovieDelete", "onMovieFileDelete", "onManualInteractionRequired"}, common...)})
 	Register(arr{typ: "sonarr", name: "Sonarr", api: "/api/v3", on: append([]string{"onDownload", "onSeriesAdd", "onSeriesDelete", "onEpisodeFileDelete", "onManualInteractionRequired"}, common...)})
 	Register(arr{typ: "lidarr", name: "Lidarr", api: "/api/v1", on: append([]string{"onReleaseImport", "onArtistAdd", "onArtistDelete", "onAlbumDelete", "onDownloadFailure", "onImportFailure"}, common...)})
+	// Prowlarr: grabs (manual ones too; the others' grabs say which app asked), health, updates
+	Register(arr{typ: "prowlarr", name: "Prowlarr", api: "/api/v1", on: []string{"onGrab", "includeManualGrabs", "onHealthIssue", "onHealthRestored", "onApplicationUpdate"}})
+	Register(arr{typ: "chaptarr", name: "Chaptarr", also: []string{"Readarr"}, api: "/api/v1", on: append([]string{"onReleaseImport", "onAuthorAdded", "onBookAdded", "onAuthorDelete", "onBookDelete", "onBookFileDelete", "onDownloadFailure", "onImportFailure"}, common...)})
 }
 
 // ArrHookName is the connection Core keeps in each app.
@@ -153,7 +162,7 @@ func (a arr) Test(ctx context.Context, t Target) (Info, error) {
 	if err := a.call(ctx, t, http.MethodGet, "/system/status", nil, &st); err != nil {
 		return info, fmt.Errorf("cannot reach %s at %s: %w", a.name, t.BaseURL, err)
 	}
-	if st.AppName != "" && !strings.EqualFold(st.AppName, a.name) {
+	if st.AppName != "" && !a.isApp(st.AppName) {
 		return info, fmt.Errorf("%s answers as %s, not %s: check the service URL", t.BaseURL, st.AppName, a.name)
 	}
 	info.Version, info.Admin = st.Version, true
@@ -173,6 +182,18 @@ func (a arr) Test(ctx context.Context, t Target) (Info, error) {
 		info.Detail = fmt.Sprintf("no per-person accounts or sign-in here; switching Events on adds a Webhook connection %q under Settings → Connect (grabs, imports, upgrades, additions, deletions, health, updates)", ArrHookName)
 	}
 	return info, nil
+}
+
+func (a arr) isApp(name string) bool {
+	if strings.EqualFold(name, a.name) {
+		return true
+	}
+	for _, x := range a.also {
+		if strings.EqualFold(name, x) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- push ----
@@ -202,14 +223,25 @@ func (a arr) Subscribe(ctx context.Context, t Target, s Subscription) (string, e
 	}
 	hook["name"] = s.Name
 	for _, k := range a.on {
-		if _, ok := hook[k]; ok {
-			hook[k] = true
+		if _, ok := hook[k]; !ok {
+			continue
 		}
+		// a trigger the app lists but does not support (Chaptarr's failures) stays off
+		if sup, ok := hook["supportsO"+strings.TrimPrefix(k, "o")].(bool); ok && !sup {
+			continue
+		}
+		hook[k] = true
 	}
 	if _, ok := hook["includeHealthWarnings"]; ok {
 		hook["includeHealthWarnings"] = false // warnings flap with every WAN blip
 	}
 	fields, _ := hook["fields"].([]any)
+	headers := false
+	for _, f := range fields {
+		if m, ok := f.(map[string]any); ok && m["name"] == "headers" {
+			headers = true
+		}
+	}
 	for _, f := range fields {
 		m, ok := f.(map[string]any)
 		if !ok {
@@ -222,6 +254,14 @@ func (a arr) Subscribe(ctx context.Context, t Target, s Subscription) (string, e
 			m["value"] = 1 // POST
 		case "headers":
 			m["value"] = []map[string]string{{"key": s.HeaderName, "value": s.HeaderValue}}
+		case "username":
+			if !headers {
+				m["value"] = "pocket-core"
+			}
+		case "password":
+			if !headers {
+				m["value"] = s.HeaderValue // sent as Basic auth; Core reads the password
+			}
 		}
 	}
 	var made arrNotification
@@ -265,7 +305,8 @@ var arrEvents = map[string]string{
 	"MovieFileDelete": "file_deleted", "EpisodeFileDelete": "file_deleted",
 	"Health": "health_issue", "HealthRestored": "health_restored", "ApplicationUpdate": "updated",
 	"ManualInteractionRequired": "manual_interaction_required", "DownloadFailure": "download_failed", "ImportFailure": "import_failed",
-	"Retag": "retagged",
+	"Retag":       "retagged",
+	"AuthorAdded": "added", "AuthorDelete": "removed", "BookAdded": "book_added", "BookDelete": "book_removed", "BookFileDelete": "file_deleted",
 }
 
 // arrBody is the union of the payloads Core reads (camelCase JSON).
@@ -308,14 +349,29 @@ type arrBody struct {
 		Title       string `json:"title"`
 		ReleaseDate string `json:"releaseDate"`
 	} `json:"albums"`
-	Tracks  []json.RawMessage `json:"tracks"`
-	Release *struct {
-		ReleaseTitle string `json:"releaseTitle"`
-		Indexer      string `json:"indexer"`
-		Quality      string `json:"quality"`
-		ReleaseGroup string `json:"releaseGroup"`
-		Size         int64  `json:"size"`
+	Tracks []json.RawMessage `json:"tracks"`
+	// Chaptarr / Readarr
+	Author *struct {
+		ID          int64  `json:"id"`
+		Name        string `json:"name"`
+		GoodreadsID string `json:"goodreadsId"`
+	} `json:"author"`
+	Book      *arrBook   `json:"book"`
+	Books     []arrBook  `json:"books"`
+	BookFiles []*arrFile `json:"bookFiles"`
+	BookFile  *arrFile   `json:"bookFile"`
+	Release   *struct {
+		ReleaseTitle string   `json:"releaseTitle"`
+		Indexer      string   `json:"indexer"`
+		Quality      string   `json:"quality"`
+		ReleaseGroup string   `json:"releaseGroup"`
+		Size         int64    `json:"size"`
+		Categories   []string `json:"categories"` // Prowlarr
 	} `json:"release"`
+	// Prowlarr grabs: which app asked, and how
+	Source      string   `json:"source"`
+	Host        string   `json:"host"`
+	Trigger     any      `json:"trigger"`
 	MovieFile   *arrFile `json:"movieFile"`
 	EpisodeFile *arrFile `json:"episodeFile"`
 	IsUpgrade   bool     `json:"isUpgrade"`
@@ -341,7 +397,15 @@ type arrBody struct {
 	} `json:"downloadStatusMessages"`
 }
 
+type arrBook struct {
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	GoodreadsID string `json:"goodreadsId"`
+	ReleaseDate string `json:"releaseDate"`
+}
+
 type arrFile struct {
+	Path         string `json:"path"` // Chaptarr / Readarr: no relative path
 	RelativePath string `json:"relativePath"`
 	Quality      string `json:"quality"`
 	ReleaseGroup string `json:"releaseGroup"`
@@ -353,10 +417,10 @@ func (a arr) webURL(t Target, b arrBody, path string) string {
 	if base == "" {
 		base = strings.TrimRight(b.AppURL, "/")
 	}
-	if base == "" || path == "" {
+	if base == "" {
 		return ""
 	}
-	return base + path
+	return base + path // no path: the app itself
 }
 
 func (a arr) Decode(t Target, trigger string, body []byte) (Delivery, error) {
@@ -461,6 +525,44 @@ func (a arr) Decode(t Target, trigger string, body []byte) (Delivery, error) {
 		if len(b.Tracks) > 0 {
 			p["tracks"] = len(b.Tracks)
 		}
+	case b.Author != nil:
+		au := b.Author
+		p["author_id"], p["author"] = au.ID, au.Name
+		title = au.Name
+		setNonEmpty(p, "goodreads_id", au.GoodreadsID)
+		subject = fmt.Sprintf("author:%d", au.ID)
+		books := []arrBook{}
+		if b.Book != nil {
+			books = append(books, *b.Book)
+		}
+		books = append(books, b.Books...)
+		if len(books) > 0 {
+			titles := []string{}
+			for _, bk := range books {
+				titles = append(titles, bk.Title)
+			}
+			p["book"], p["book_id"] = books[0].Title, books[0].ID
+			setNonEmpty(p, "release_date", books[0].ReleaseDate)
+			if len(books) > 1 {
+				p["books"] = titles
+			}
+			title += " – " + strings.Join(titles, ", ")
+		}
+		if len(b.BookFiles) > 0 {
+			p["files"] = len(b.BookFiles)
+		}
+	case b.Release != nil && b.Source != "":
+		// Prowlarr: a grab for another app
+		p["source"] = b.Source
+		setNonEmpty(p, "host", b.Host)
+		if b.Trigger != nil {
+			p["trigger"] = strings.ToLower(fmt.Sprint(b.Trigger))
+		}
+		if len(b.Release.Categories) > 0 {
+			p["categories"] = b.Release.Categories
+		}
+		title = b.Release.ReleaseTitle
+		link = "/history"
 	}
 	if r := b.Release; r != nil {
 		setNonEmpty(p, "release_title", r.ReleaseTitle)
@@ -471,8 +573,15 @@ func (a arr) Decode(t Target, trigger string, body []byte) (Delivery, error) {
 			p["size"] = r.Size
 		}
 	}
-	for _, f := range []*arrFile{b.MovieFile, b.EpisodeFile} {
+	files := []*arrFile{b.MovieFile, b.EpisodeFile, b.BookFile}
+	if len(b.BookFiles) > 0 {
+		files = append(files, b.BookFiles[0])
+	}
+	for _, f := range files {
 		if f != nil {
+			if f.RelativePath == "" && f.Path != "" {
+				f.RelativePath = f.Path[strings.LastIndexAny(f.Path, `/\`)+1:] // the file name, not the server's layout
+			}
 			setNonEmpty(p, "file", f.RelativePath)
 			setNonEmpty(p, "quality", f.Quality)
 			setNonEmpty(p, "release_group", f.ReleaseGroup)

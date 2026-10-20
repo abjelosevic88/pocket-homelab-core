@@ -461,13 +461,17 @@ func (s *Server) setEventsError(ctx context.Context, serviceID int64, err error)
 // ---- the receiver ----
 
 // hookSecret is the delivery's secret: the push header, else a bearer token
-// (apps that can only set Authorization, like Forgejo).
+// (apps that can only set Authorization, like Forgejo), else a Basic auth
+// password (apps with only a username and password, like Prowlarr).
 func hookSecret(r *http.Request) string {
 	if v := r.Header.Get(connectors.PushHeader); v != "" {
 		return v
 	}
 	if v, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return strings.TrimSpace(v)
+	}
+	if _, pw, ok := r.BasicAuth(); ok {
+		return pw
 	}
 	return ""
 }
