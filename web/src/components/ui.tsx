@@ -50,15 +50,22 @@ export function Empty({ title, children }: { title: string; children?: React.Rea
 }
 
 export function Modal({ title, onClose, children, size = '', className = '' }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; size?: '' | 'lg'; className?: string }) {
+  // Play the closing animation first; with reduced motion there is none to wait for.
+  const [closing, setClosing] = useState(false)
+  const close = useCallback(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) onClose()
+    else setClosing(true)
+  }, [onClose])
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [onClose])
+  }, [close])
   return (
-    <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onMouseDown={e => { if (e.target === e.currentTarget) close() }}
+      onAnimationEnd={e => { if (closing && e.target === e.currentTarget) onClose() }}>
       <div className={`modal ${size} ${className}`} role="dialog" aria-modal="true">
-        <div className="modal-head"><h2>{title}</h2><button className="btn ghost icon" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="modal-head"><h2>{title}</h2><button className="btn ghost icon" onClick={close} aria-label="Close">✕</button></div>
         <div className="modal-body">{children}</div>
       </div>
     </div>
