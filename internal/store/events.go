@@ -144,6 +144,31 @@ func (s *Store) Topics(ctx context.Context) ([]struct {
 	return out, rows.Err()
 }
 
+// SourceCount is how many stored events one source published, and when last.
+type SourceCount struct {
+	Source string `json:"source"`
+	Count  int    `json:"count"`
+	Last   string `json:"last"`
+}
+
+// EventSources counts the stored events per source.
+func (s *Store) EventSources(ctx context.Context) ([]SourceCount, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT source, COUNT(1), MAX(created_at) FROM events GROUP BY source ORDER BY source`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SourceCount{}
+	for rows.Next() {
+		var c SourceCount
+		if err := rows.Scan(&c.Source, &c.Count, &c.Last); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // PurgeEvents drops events older than the retention window (and their deliveries).
 func (s *Store) PurgeEvents(ctx context.Context, olderThan time.Duration) (int64, error) {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM events WHERE created_at < ?`, Stamp(time.Now().Add(-olderThan)))

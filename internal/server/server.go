@@ -241,6 +241,7 @@ func (s *Server) Router() http.Handler {
 				r.Post("/events", s.handlePublish)
 				r.Get("/events", s.handleListEvents)
 				r.Get("/events/topics", s.handleTopics)
+				r.Get("/events/sources", s.handleEventSources)
 				r.Get("/events/stream", s.handleStream)
 				r.Get("/events/{id}", s.handleGetEvent)
 				r.Get("/webhooks", s.handleListWebhooks)

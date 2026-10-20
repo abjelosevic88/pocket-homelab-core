@@ -16,7 +16,7 @@ export function useEventCtx(): EventCtx {
 }
 
 export type SourceKind = 'app' | 'connector' | 'core' | 'other'
-export interface SourceInfo { kind: SourceKind; label: string; app?: App; service?: Service }
+export interface SourceInfo { kind: SourceKind; label: string; app?: App; service?: Service; type?: string /* catalog type, for an icon without a service */ }
 
 export function sourceInfo(src: string, ctx: EventCtx): SourceInfo {
   if (src === 'core') return { kind: 'core', label: 'Core' }
@@ -35,7 +35,8 @@ export function SourceIcon({ info, small = true }: { info: SourceInfo; small?: b
   const cls = small ? 'feed-ico' : 'mini-ico'
   if (info.kind === 'core') return <span className={cls}><img src="/favicon.svg" alt="" /></span>
   const sv = info.service
-  const candidates = sv ? iconCandidates({ type: sv.type, url: sv.url, public_url: sv.public_url, pocket: sv.catalog?.pocket || !!sv.app_id }) : []
+  const candidates = sv ? iconCandidates({ type: sv.type, url: sv.url, public_url: sv.public_url, pocket: sv.catalog?.pocket || !!sv.app_id })
+    : info.type ? iconCandidates({ type: info.type, url: '', public_url: '', pocket: info.kind === 'app' }) : []
   if (i < candidates.length) return <span className={`${cls} plain`}><img src={candidates[i]} alt="" onError={() => setI(n => n + 1)} /></span>
   return <span className={cls}>{info.label[0]}</span>
 }

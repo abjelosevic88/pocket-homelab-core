@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
-import type { Delivery, Event, Topic, Webhook } from '../lib/types'
-import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceKind } from '../components/EventView'
+import type { CatalogEntry, Delivery, Event, Topic, Webhook } from '../lib/types'
+import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceInfo, type SourceKind } from '../components/EventView'
 import { Select } from '../components/Select'
 import { useApp } from '../lib/app-context'
 import { Card, Collapse, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
@@ -43,9 +43,18 @@ function Log() {
   const [fresh, setFresh] = useState<Set<number>>(new Set())
   const [open, setOpen] = useState<number | null>(null)
   const { data: topics } = useAsync(() => api.get<Topic[]>(`${V1}/events/topics`), [items.length])
+  // every source there could be, with how many events each has stored (not just the ones loaded)
+  const { data: counts } = useAsync(() => api.get<{ source: string; count: number }[]>(`${V1}/events/sources`).catch(() => []), [items.length])
+  const { data: catalog } = useAsync(() => api.get<CatalogEntry[]>(`${V1}/catalog`).catch(() => [] as CatalogEntry[]), [])
+  const { data: conns } = useAsync(() => api.get<{ type: string; name: string }[]>(`${V1}/connectors`).catch(() => []), [])
   const ctx = useEventCtx()
   const es = useRef<EventSource | null>(null)
-  useEffect(() => { api.get<Event[]>(`${V1}/events?limit=200${topic ? `&topic=${encodeURIComponent(topic)}` : ''}`).then(setItems) }, [topic])
+  // one source: ask the server, so older events than the newest 200 show up too
+  const one = source && !source.startsWith('kind:') ? source : ''
+  useEffect(() => {
+    const q = [`limit=200`, topic && `topic=${encodeURIComponent(topic)}`, one && `source=${encodeURIComponent(one)}`].filter(Boolean).join('&')
+    api.get<Event[]>(`${V1}/events?${q}`).then(setItems)
+  }, [topic, one])
   useEffect(() => {
     es.current?.close()
     if (!live) return
@@ -59,7 +68,16 @@ function Log() {
     es.current = s
     return () => s.close()
   }, [live, topic])
-  const sources = [...new Set(items.map(e => e.source))].map(src => ({ src, info: sourceInfo(src, ctx), n: items.filter(e => e.source === src).length }))
+  const stored = new Map((counts || []).map(c => [c.source, c.count]))
+  const known = new Map<string, SourceInfo>()
+  const add = (src: string, info: SourceInfo) => { if (!known.has(src)) known.set(src, info) }
+  add('core', sourceInfo('core', ctx))
+  for (const a of ctx.apps) add(a.slug, sourceInfo(a.slug, ctx))
+  for (const c of catalog || []) if (c.pocket && c.type !== 'core') add(c.type, { kind: 'app', label: c.name.replace(/^Pocket /, ''), type: c.type })
+  for (const c of conns || []) { const i = sourceInfo(`connector:${c.type}`, ctx); add(`connector:${c.type}`, i.service ? i : { ...i, label: c.name, type: c.type }) }
+  for (const c of counts || []) add(c.source, sourceInfo(c.source, ctx))
+  for (const e of items) add(e.source, sourceInfo(e.source, ctx))
+  const sources = [...known].map(([src, info]) => ({ src, info, n: stored.get(src) ?? items.filter(e => e.source === src).length }))
   const groups: [SourceKind, string][] = [['app', 'Pocket apps'], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
   const shown = items.filter(e => !source || (source.startsWith('kind:') ? sourceInfo(e.source, ctx).kind === source.slice(5) : e.source === source))
   const days: [string, Event[]][] = []
@@ -74,7 +92,7 @@ function Log() {
           options={groups.flatMap(([k, title]) => {
             const list = sources.filter(x => x.info.kind === k).sort((x, y) => x.info.label.localeCompare(y.info.label))
             if (list.length === 0) return []
-            const all = list.length > 1 ? [{ value: `kind:${k}`, label: `All ${title.toLowerCase()}`, hint: String(list.reduce((n, x) => n + x.n, 0)), group: title, icon: <span className="sel-all-ico">▦</span> }] : []
+            const all = list.length > 1 && k !== 'core' ? [{ value: `kind:${k}`, label: `All ${title.toLowerCase()}`, hint: String(list.reduce((n, x) => n + x.n, 0)), group: title, icon: <span className="sel-all-ico">▦</span> }] : []
             return [...all, ...list.map(x => ({ value: x.src, label: x.info.label, hint: String(x.n), group: title, icon: <SourceIcon info={x.info} /> }))]
           })} /></div>
         <span className="spacer" />

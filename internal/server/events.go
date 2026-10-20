@@ -87,6 +87,17 @@ func (s *Server) handleTopics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// handleEventSources counts the stored events per source (core, an app's
+// slug, connector:<type>), for the event log's source filter.
+func (s *Server) handleEventSources(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.EventSources(r.Context())
+	if err != nil {
+		s.fail(w, err, "event sources")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 // handleStream is Server-Sent Events: ?topics=kitchen.*,habits.marked and an
 // optional Last-Event-ID header (or ?after=) to replay what was missed.
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {

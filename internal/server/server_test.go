@@ -143,6 +143,23 @@ func TestEndToEnd(t *testing.T) {
 	if len(list) != 1 || list[0].Source != "habits" {
 		t.Fatalf("events %+v", list)
 	}
+	var srcs []store.SourceCount
+	e.do("GET", "/api/v1/events/sources", "", nil, &srcs)
+	habits := 0
+	for _, c := range srcs {
+		if c.Source == "habits" {
+			habits = c.Count
+		}
+	}
+	if habits != 1 {
+		t.Fatalf("event sources %+v", srcs)
+	}
+	e.do("GET", "/api/v1/events?source=core", "", nil, &list)
+	for _, x := range list {
+		if x.Source != "core" {
+			t.Fatalf("source filter let %q through", x.Source)
+		}
+	}
 
 	// A third-party service with a secret is masked on read.
 	var sv map[string]any
