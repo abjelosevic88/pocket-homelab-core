@@ -15,8 +15,10 @@ import (
 // (`services`), Core keeps them as links whose target is "service:<type>"
 // with the single scope "account" (same switches, views and counters as app
 // links), and hands out the service's address plus the person's OWN
-// credential. The box-wide key only ever goes to apps acting for an admin:
-// it is usually the owner's account, or an admin key that sees everyone.
+// credential, admins included. The box-wide key never leaves Core: it is
+// usually the owner's account or an admin key that sees everyone, and stays
+// for Core's connectors. `pocket-core credentials claim-box` copies it into
+// a person's own credentials once, for the account it really belongs to.
 
 const (
 	servicePrefix = "service:"
@@ -82,9 +84,8 @@ func (s *Server) serviceOf(ctx context.Context, typ string, u *store.User) *stor
 	return nil
 }
 
-// serviceCredential is the person's way into the service: their own fields
-// (set by hand or by a connector) win; the box-wide ones are for admins only.
-// Connector-only fields (admin keys Core's connector uses) never leave Core.
+// serviceCredential is the person's way into the service: their own fields,
+// set by hand or by a connector. Connector-only fields never leave Core.
 func (s *Server) serviceCredential(ctx context.Context, sv *store.Service, u *store.User) (fields map[string]string, source string, ok bool) {
 	e, _ := catalog.Get(sv.Type)
 	keep := func(in map[string]string) map[string]string {
@@ -106,10 +107,80 @@ func (s *Server) serviceCredential(ctx context.Context, sv *store.Service, u *st
 			}
 		}
 	}
-	if u.IsAdmin() {
-		return keep(sv.Fields), "box", true
+	// Keyless services (Maloja's read API): an entry with just the address counts.
+	if keyless(e, sv) {
+		if ovs, err := s.store.ListOverrides(ctx, u.ID); err == nil {
+			if ov, has := ovs[sv.ID]; has && ov.URL != "" {
+				return map[string]string{}, "personal", true
+			}
+		}
 	}
 	return nil, "", false
+}
+
+// boxFields are the service's box-wide credential fields that could be shared
+// (never the connector-only admin keys).
+func boxFields(e catalog.Entry, sv *store.Service) map[string]string {
+	out := map[string]string{}
+	for _, f := range e.Fields {
+		if !f.ConnectorOnly && strings.TrimSpace(sv.Fields[f.Key]) != "" {
+			out[f.Key] = sv.Fields[f.Key]
+		}
+	}
+	return out
+}
+
+// keyless: the service is used without a key on this box (none is filled in).
+func keyless(e catalog.Entry, sv *store.Service) bool { return len(boxFields(e, sv)) == 0 }
+
+// ownCredential: the person already has their own way in.
+func ownCredential(e catalog.Entry, sv *store.Service, ov store.Override) bool {
+	for _, f := range e.Fields {
+		if !f.ConnectorOnly && strings.TrimSpace(ov.Fields[f.Key]) != "" {
+			return true
+		}
+	}
+	return keyless(e, sv) && ov.URL != ""
+}
+
+// ClaimBoxCredentials copies each service's box-wide credential into the
+// person's own, where they have none yet, so apps reaching services through
+// Core keep working for the account the box key belongs to. Connector-only
+// fields and Pocket apps are skipped; an existing personal entry is never
+// overwritten. Returns what it copied (or would, with dry).
+func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, dry bool) ([]string, error) {
+	list, err := st.ListServices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ovs, err := st.ListOverrides(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	done := []string{}
+	for i := range list {
+		sv := &list[i]
+		e, ok := catalog.Get(sv.Type)
+		if !ok || e.Pocket || !sv.Enabled {
+			continue
+		}
+		fields := boxFields(e, sv)
+		ov, has := ovs[sv.ID]
+		if has && ownCredential(e, sv, ov) {
+			continue
+		}
+		o := &store.Override{ServiceID: sv.ID, UserID: u.ID, Fields: fields, URL: ov.URL}
+		if len(fields) == 0 && o.URL == "" {
+			o.URL = sv.EffectivePublicURL() // keyless: the address is the way in
+		}
+		done = append(done, sv.Type)
+		if !dry {
+			if err := st.SaveOverride(ctx, o, e.IsSecret); err != nil {
+				return done, err
+			}
+		}
+	}
+	return done, nil
 }
 
 // serviceLinkState is linkState for a service target.
@@ -157,7 +228,7 @@ func (s *Server) serviceLinkView(ctx context.Context, v map[string]any, typ stri
 	}
 	v["target_name"], v["target_kind"], v["target_type"], v["offered"] = name, "service", typ, true
 	v["scope_name"] = "Use your " + name
-	v["scope_description"] = "The app gets " + name + "'s address and your own key there (the box's key only when it acts for an admin)."
+	v["scope_description"] = "The app gets " + name + "'s address and your own key there ; the box's key never leaves Core."
 }
 
 // handleServiceCredential gives the calling app the service's address and the

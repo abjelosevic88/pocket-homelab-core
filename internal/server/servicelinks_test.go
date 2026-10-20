@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/abjelosevic88/pocket-homelab-core/sdk"
@@ -47,9 +48,20 @@ func TestServiceLinks(t *testing.T) {
 		t.Fatalf("kid credential: %d", c)
 	}
 
-	// The owner (admin) gets the box key; the kid their own; the guest nothing.
+	// Nobody gets the box key, the owner (admin) included…
+	if _, err := core.ServiceFor(ctx, "owner@b.c", "immich"); !errors.As(err, &le) || le.Reason != linkNoAccount {
+		t.Fatalf("the box key must not go out, even for an admin: %v", err)
+	}
+	// …until it is claimed as the owner's own (pocket-core credentials claim-box).
+	owner, _ := e.st.GetUserByEmail(ctx, "owner@b.c")
+	if done, err := ClaimBoxCredentials(ctx, e.st, owner, false); err != nil || strings.Join(done, ",") != "immich,maloja" {
+		t.Fatalf("claim: %v %v", done, err)
+	}
+	if again, _ := ClaimBoxCredentials(ctx, e.st, owner, false); len(again) != 0 {
+		t.Fatalf("claim twice: %v", again)
+	}
 	got, err := core.ServiceFor(ctx, "owner@b.c", "immich")
-	if err != nil || got.Key != "owner-key" || got.Source != "box" || got.URL != "http://immich:2283" || got.PublicURL != "https://photos.example" {
+	if err != nil || got.Key != "owner-key" || got.Source != "personal" || got.URL != "http://immich:2283" || got.PublicURL != "https://photos.example" {
 		t.Fatalf("owner immich: %+v %v", got, err)
 	}
 	if got, err := core.ServiceFor(ctx, "kid@b.c", "immich"); err != nil || got.Key != "kid-key" || got.Source != "personal" {

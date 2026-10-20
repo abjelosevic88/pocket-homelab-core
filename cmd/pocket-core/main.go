@@ -50,12 +50,19 @@ func main() {
 		case "connector":
 			runConnector(os.Args[2:])
 			return
+		case "credentials":
+			runCredentials(os.Args[2:])
+			return
 		case "help", "--help", "-h":
 			fmt.Println(`pocket-core — the hub of a Pocket Box: app registry, event bus, OIDC provider, device pairing
 
 Usage:
   pocket-core                        start the server (default)
   pocket-core backup [-o FILE]       write a consistent SQLite backup
+  pocket-core credentials claim-box [-email USER] [-dry-run]
+                                     copy each service's box-wide key into the person's own
+                                     credentials (default: first user), so apps reaching
+                                     services through Core use it as theirs
   pocket-core reset-password [-email USER] [-password NEW]
                                      set a user's password (default: first user, random password printed)
   pocket-core registration-key       print the key apps use to register themselves
