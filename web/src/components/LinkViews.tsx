@@ -30,16 +30,6 @@ export function Mark({ s, title }: { s: MarkState; title?: string }) {
   return <span className={`lv-mark ${s}`} title={t} aria-label={t}>{s === 'no' ? '✕' : '✓'}</span>
 }
 
-// One word per pair: "changes" when the app may change anything there (it can
-// see it too), else "sees"; the mark covers all its scopes. With every write
-// switched off but a read still on, it only sees.
-function verbs(links: AppLink[]) {
-  const writesOn = links.some(l => !isRead(l.scope) && l.enabled)
-  const hasWrites = links.some(l => !isRead(l.scope))
-  const word = writesOn || (hasWrites && markOf(links) === 'no') ? 'changes' : 'sees'
-  return <span className={`lv-verb ${markOf(links)}`}><Mark s={markOf(links)} /> {word}</span>
-}
-
 /** One line on top of every view: how many links, and how they stand. */
 export function LinkSummary({ groups }: { groups: LinkGroup[] }) {
   const links = groups.flatMap(g => g.links)
@@ -62,45 +52,65 @@ export function LinkSummary({ groups }: { groups: LinkGroup[] }) {
   )
 }
 
+// Line icons for the two verbs: an eye for "sees", a pencil for "changes".
+const EyeIco = () => <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+const PenIco = () => <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+
 /** Grid: apps that act down the side, apps they act in across the top. */
 export function MatrixView({ groups, apps, sel, onSelect }: { groups: LinkGroup[]; apps: App[]; sel: CanvasSel; onSelect: (s: CanvasSel) => void }) {
+  const [hover, setHover] = useState<{ row: string; col: string } | null>(null)
   const count = (slug: string, side: 'app' | 'target') => groups.filter(g => g[side] === slug).length
   const actors = [...new Map(groups.map(g => [g.app, g.appName])).entries()].sort((a, b) => count(b[0], 'app') - count(a[0], 'app') || a[1].localeCompare(b[1]))
   const targets = [...new Map(groups.map(g => [g.target, g.targetName])).entries()].sort((a, b) => count(b[0], 'target') - count(a[0], 'target') || a[1].localeCompare(b[1]))
+  // The picked pair or app stays lit like a hovered one, so the eye can find it again.
+  const lit = hover || (sel?.kind === 'pair' ? (g => g && { row: g.app, col: g.target })(groups.find(x => x.key === sel.key)) : null)
+  const appSel = sel?.kind === 'app' ? sel.slug : ''
   return (
-    <div className="lv-grid-wrap">
+    <div className="lv-grid-wrap" onMouseLeave={() => setHover(null)}>
+      <div className="lv-legend">
+        <span className="lv-key changes"><PenIco /> changes</span>
+        <span className="lv-key sees"><EyeIco /> sees</span>
+        <span className="lv-key partial"><i /> partly off</span>
+        <span className="lv-key off"><i /> off</span>
+        <span className="lv-key direct">↗ on Direct</span>
+      </div>
       <table className="lv-grid">
         <thead>
           <tr>
-            <th className="lv-corner"><span className="muted small">acts in →</span></th>
+            <th className="lv-corner"><span>acts in →</span></th>
             {targets.map(([slug, name]) => (
-              <th key={slug} className="lv-col">
-                <button type="button" className="lv-head" onClick={() => onSelect({ kind: 'app', slug })} title={name}>
-                  <Ico slug={slug} name={name} apps={apps} /><span>{short(name)}</span>
+              <th key={slug} className={`lv-col${lit?.col === slug ? ' lit' : ''}${appSel === slug ? ' picked' : ''}`}>
+                <button type="button" className="lv-head" onClick={() => onSelect(appSel === slug ? null : { kind: 'app', slug })} title={`${name}: used by ${count(slug, 'target')}`}>
+                  <Ico slug={slug} name={name} apps={apps} /><span className="lv-name">{short(name)}</span>
                 </button>
               </th>))}
           </tr>
         </thead>
         <tbody>
           {actors.map(([slug, name]) => (
-            <tr key={slug}>
-              <th className="lv-row">
-                <button type="button" className="lv-head row" onClick={() => onSelect({ kind: 'app', slug })}>
-                  <Ico slug={slug} name={name} apps={apps} /><span>{short(name)}</span>
+            <tr key={slug} className={lit?.row === slug ? 'lit' : ''}>
+              <th className={`lv-row${appSel === slug ? ' picked' : ''}`}>
+                <button type="button" className="lv-head row" onClick={() => onSelect(appSel === slug ? null : { kind: 'app', slug })} title={`${name}: acts in ${count(slug, 'app')}`}>
+                  <Ico slug={slug} name={name} apps={apps} /><span className="lv-name">{short(name)}</span><span className="lv-count">{count(slug, 'app')}</span>
                 </button>
               </th>
               {targets.map(([t]) => {
                 const g = groups.find(x => x.app === slug && x.target === t)
-                if (!g) return <td key={t} className="lv-empty">·</td>
+                const lc = lit?.col === t ? ' lit' : ''
+                if (!g) return <td key={t} className={`lv-empty${lc}`} onMouseEnter={() => setHover({ row: slug, col: t })}><span /></td>
                 const st = pairState(g)
                 const picked = sel?.kind === 'pair' && sel.key === g.key
+                const writes = g.links.some(l => !isRead(l.scope))
+                // "changes" while any write is on (or everything is off), else "sees".
+                const word = writes && (g.links.some(l => !isRead(l.scope) && l.enabled) || st === 'off') ? 'changes' : 'sees'
+                const direct = directCount(g)
                 return (
-                  <td key={t}>
-                    <button type="button" className={`lv-cell ${st}${picked ? ' picked' : ''}`} onClick={() => onSelect(picked ? null : { kind: 'pair', key: g.key })}
-                      title={`${g.appName} → ${g.targetName}\n${g.links.map(l => `${scopeLabel(l)}${l.enabled ? '' : ' (off)'}`).join('\n')}`}>
-                      {verbs(g.links)}
+                  <td key={t} className={lc.trim()} onMouseEnter={() => setHover({ row: slug, col: t })}>
+                    <button type="button" className={`lv-cell ${word} ${st}${picked ? ' picked' : ''}`} onClick={() => onSelect(picked ? null : { kind: 'pair', key: g.key })}
+                      title={`${g.appName} → ${g.targetName}${st !== 'on' ? ` (${stateWord[st]})` : ''}\n${g.links.map(l => `${l.enabled ? '✓' : '✕'} ${scopeLabel(l)}`).join('\n')}${direct ? `\n↗ Direct for ${direct}: Core can't switch this` : ''}`}>
+                      <span className="lv-cell-main">{word === 'changes' ? <PenIco /> : <EyeIco />}<span>{word}</span></span>
                       {st !== 'on' && <span className="lv-cell-state">{stateWord[st]}</span>}
-                      {directCount(g) > 0 && <span className="lv-direct" title="Pasted URL and key in the app: Core can't switch this">↗ Direct {directCount(g)}</span>}
+                      {direct > 0 && <span className="lv-direct-tag">↗{direct}</span>}
                     </button>
                   </td>)
               })}
