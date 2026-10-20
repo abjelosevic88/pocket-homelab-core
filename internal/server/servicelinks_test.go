@@ -54,10 +54,10 @@ func TestServiceLinks(t *testing.T) {
 	}
 	// …until it is claimed as the owner's own (pocket-core credentials claim-box).
 	owner, _ := e.st.GetUserByEmail(ctx, "owner@b.c")
-	if done, err := ClaimBoxCredentials(ctx, e.st, owner, false); err != nil || strings.Join(done, ",") != "immich,maloja" {
+	if done, err := ClaimBoxCredentials(ctx, e.st, owner, nil, false); err != nil || strings.Join(done, ",") != "immich,maloja" {
 		t.Fatalf("claim: %v %v", done, err)
 	}
-	if again, _ := ClaimBoxCredentials(ctx, e.st, owner, false); len(again) != 0 {
+	if again, _ := ClaimBoxCredentials(ctx, e.st, owner, nil, false); len(again) != 0 {
 		t.Fatalf("claim twice: %v", again)
 	}
 	got, err := core.ServiceFor(ctx, "owner@b.c", "immich")

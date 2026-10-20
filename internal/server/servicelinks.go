@@ -147,8 +147,27 @@ func ownCredential(e catalog.Entry, sv *store.Service, ov store.Override) bool {
 // person's own, where they have none yet, so apps reaching services through
 // Core keep working for the account the box key belongs to. Connector-only
 // fields and Pocket apps are skipped; an existing personal entry is never
-// overwritten. Returns what it copied (or would, with dry).
-func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, dry bool) ([]string, error) {
+// overwritten. Only the types in `only` when given, else every service some
+// app reaches through Core (its service links). Returns what it copied (or
+// would, with dry).
+func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, only []string, dry bool) ([]string, error) {
+	want := map[string]bool{}
+	for _, t := range only {
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			want[t] = true
+		}
+	}
+	if len(want) == 0 {
+		links, err := st.ListLinks(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range links {
+			if typ, ok := serviceType(l.TargetSlug); ok {
+				want[typ] = true
+			}
+		}
+	}
 	list, err := st.ListServices(ctx)
 	if err != nil {
 		return nil, err
@@ -161,7 +180,7 @@ func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, dr
 	for i := range list {
 		sv := &list[i]
 		e, ok := catalog.Get(sv.Type)
-		if !ok || e.Pocket || !sv.Enabled {
+		if !ok || e.Pocket || !sv.Enabled || !want[sv.Type] {
 			continue
 		}
 		fields := boxFields(e, sv)

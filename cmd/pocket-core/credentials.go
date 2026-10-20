@@ -18,12 +18,13 @@ import (
 // credentials once, so nothing stops working. Stop Core first.
 func runCredentials(args []string) {
 	if len(args) == 0 || args[0] != "claim-box" {
-		fmt.Fprintln(os.Stderr, "usage: pocket-core credentials claim-box [-email USER] [-dry-run]")
+		fmt.Fprintln(os.Stderr, "usage: pocket-core credentials claim-box [-email USER] [-only immich,maloja] [-dry-run]")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("claim-box", flag.ExitOnError)
 	email := fs.String("email", "", "whose credentials (default: the first user)")
 	dry := fs.Bool("dry-run", false, "only list what would be copied")
+	only := fs.String("only", "", "comma-separated service types (default: those some app reaches through Core)")
 	_ = fs.Parse(args[1:])
 	_, log, st := mustLoad()
 	defer st.Close()
@@ -33,7 +34,7 @@ func runCredentials(args []string) {
 		log.Error("claim-box: user lookup failed", "err", err)
 		os.Exit(1)
 	}
-	done, err := server.ClaimBoxCredentials(ctx, st, u, *dry)
+	done, err := server.ClaimBoxCredentials(ctx, st, u, strings.Split(*only, ","), *dry)
 	if err != nil {
 		log.Error("claim-box", "err", err)
 		os.Exit(1)
@@ -43,7 +44,7 @@ func runCredentials(args []string) {
 		verb = "Would copy"
 	}
 	if len(done) == 0 {
-		fmt.Printf("Nothing to copy: %s already has their own credentials for every service with a box-wide key.\n", u.Email)
+		fmt.Printf("Nothing to copy for %s (they have their own credentials, or no app reaches those services through Core yet; see -only).\n", u.Email)
 		return
 	}
 	fmt.Printf("%s the box-wide credentials into %s's own for: %s\n", verb, u.Email, strings.Join(done, ", "))

@@ -59,7 +59,7 @@ func main() {
 Usage:
   pocket-core                        start the server (default)
   pocket-core backup [-o FILE]       write a consistent SQLite backup
-  pocket-core credentials claim-box [-email USER] [-dry-run]
+  pocket-core credentials claim-box [-email USER] [-only TYPES] [-dry-run]
                                      copy each service's box-wide key into the person's own
                                      credentials (default: first user), so apps reaching
                                      services through Core use it as theirs
