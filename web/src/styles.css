@@ -827,3 +827,4 @@ html, body { overflow-x: hidden; }
 .lc-chip img, .lc-chip i { width: 20px; height: 20px; border-radius: 6px; object-fit: cover; }
 .lc-chip i { display: grid; place-items: center; font-style: normal; font-size: 10px; font-weight: 700; background: var(--accent-soft); color: var(--accent-hover); }
 .lc-chip-n { font-size: 11px; color: var(--muted); }
+.lc-node.lifted .lc-card { stroke: var(--accent); stroke-width: 2.5; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .28)); }

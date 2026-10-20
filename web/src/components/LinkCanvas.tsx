@@ -8,8 +8,8 @@ type Pos = { x: number; y: number }
 type View = { x: number; y: number; k: number }
 type Node = { slug: string; name: string; app?: App; linked: boolean; out: number; inn: number; offers: number }
 
-const W = 184, H = 58, COL = 380, ROW = 88
-const LAYOUT_KEY = 'core.links.layout'
+const W = 184, H = 58, COL = 380, COL_NARROW = 290, ROW = 88, MIN_K = 0.12, MAX_K = 2.5
+const LAYOUT_KEY = 'core.links.layout.v2'
 
 /** on = every scope issues tokens; partial = some switched off; off = none; bad = a scope can't work. */
 export function pairState(g: LinkGroup): 'on' | 'partial' | 'off' | 'bad' {
@@ -43,22 +43,36 @@ export const scopeLabel = (l: AppLink) => {
   const [what, verb] = l.scope.split(':')
   return verb ? `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${what.replace(/[_-]/g, ' ')}` : l.scope
 }
+const finite = (p: unknown): p is Pos => !!p && Number.isFinite((p as Pos).x) && Number.isFinite((p as Pos).y)
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
-// Columns by depth (apps nobody calls on the left, what they call to the right),
-// each column ordered by where its callers sit.
-function autoLayout(nodes: Node[], groups: LinkGroup[]): Record<string, Pos> {
+// Columns by depth: apps that act on the left, what they act in to the right,
+// apps that only receive links in the last column. Loops (Money ↔ Travel) are
+// broken by dropping the edge that closes them, found with a depth-first walk.
+function autoLayout(nodes: Node[], groups: LinkGroup[], col: number): Record<string, Pos> {
   const linked = nodes.filter(n => n.linked)
+  const out = (slug: string) => groups.filter(g => g.app === slug && g.target !== slug).map(g => g.target)
+  const back = new Set<string>()
+  const state: Record<string, 1 | 2> = {}
+  const walk = (slug: string) => {
+    state[slug] = 1
+    for (const t of out(slug)) {
+      if (state[t] === 1) back.add(`${slug}→${t}`)
+      else if (!state[t]) walk(t)
+    }
+    state[slug] = 2
+  }
+  const starts = [...linked].sort((a, b) => (b.out - b.inn) - (a.out - a.inn) || a.name.localeCompare(b.name))
+  for (const n of starts) if (!state[n.slug]) walk(n.slug)
+  const dag = groups.filter(g => g.app !== g.target && !back.has(`${g.app}→${g.target}`))
   const level: Record<string, number> = Object.fromEntries(linked.map(n => [n.slug, 0]))
   for (let i = 0; i < linked.length; i++) {
     let changed = false
-    for (const g of groups) {
-      if (g.app === g.target) continue
-      const v = level[g.app] + 1
-      if (level[g.target] < v && v < linked.length) { level[g.target] = v; changed = true }
-    }
+    for (const g of dag) if (level[g.target] < level[g.app] + 1) { level[g.target] = level[g.app] + 1; changed = true }
     if (!changed) break
   }
+  const last = Math.max(0, ...Object.values(level))
+  for (const n of linked) if (n.out === 0 && n.inn > 0) level[n.slug] = last
   const cols: Node[][] = []
   for (const n of linked) (cols[level[n.slug]] ||= []).push(n)
   const tallest = Math.max(1, ...cols.map(c => c?.length || 0))
@@ -70,7 +84,7 @@ function autoLayout(nodes: Node[], groups: LinkGroup[]): Record<string, Pos> {
       return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 0
     }
     c.sort((a, b) => (ci ? rank(a) - rank(b) : 0) || a.name.localeCompare(b.name))
-    c.forEach((n, ri) => { pos[n.slug] = { x: ci * COL, y: (ri - (c.length - 1) / 2) * ROW + (tallest - 1) * ROW / 2 } })
+    c.forEach((n, ri) => { pos[n.slug] = { x: ci * col, y: (ri - (c.length - 1) / 2) * ROW + (tallest - 1) * ROW / 2 } })
   })
   return pos
 }
@@ -96,8 +110,19 @@ function edgePath(a: Pos, b: Pos, bend: number) {
 }
 
 export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: LinkGroup[]; apps: App[]; sel: CanvasSel; onSelect: (s: CanvasSel) => void; detail?: React.ReactNode }) {
-  const [saved, setSaved] = useState<Record<string, Pos>>(() => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') } catch { return {} } })
-  const [view, setView] = useState<View>({ x: 20, y: 20, k: 1 })
+  // Saved card positions; anything that isn't a pair of real numbers is dropped.
+  const [saved, setSaved] = useState<Record<string, Pos>>(() => {
+    try { return Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}')).filter(([, v]) => finite(v))) as Record<string, Pos> } catch { return {} }
+  })
+  const [view, setViewRaw] = useState<View>({ x: 20, y: 20, k: 1 })
+  const viewRef = useRef(view)
+  viewRef.current = view
+  // A view that isn't real numbers is never applied (it would freeze the canvas).
+  const setView = (u: View | ((v: View) => View)) => setViewRaw(v => {
+    const n = typeof u === 'function' ? u(v) : u
+    return Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.k) && n.k > 0 ? n : v
+  })
+  const [narrow, setNarrow] = useState(false)
   const [hover, setHover] = useState<string>('')
   const [badIcons, setBadIcons] = useState<Set<string>>(new Set())
   const [full, setFull] = useState(false)
@@ -126,10 +151,10 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
   const drawn = useMemo(() => nodes.filter(n => n.linked), [nodes])
   const idle = useMemo(() => nodes.filter(n => !n.linked && n.app).sort((a, b) => a.name.localeCompare(b.name)), [nodes])
 
-  const auto = useMemo(() => autoLayout(drawn, groups), [drawn, groups])
+  const auto = useMemo(() => autoLayout(drawn, groups, narrow ? COL_NARROW : COL), [drawn, groups, narrow])
   const pos = useMemo(() => {
     const p = { ...auto }
-    for (const n of drawn) if (saved[n.slug]) p[n.slug] = saved[n.slug]
+    for (const n of drawn) if (finite(saved[n.slug])) p[n.slug] = saved[n.slug]
     return p
   }, [auto, saved, drawn])
 
@@ -139,12 +164,14 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     const xs = drawn.map(n => pos[n.slug].x), ys = drawn.map(n => pos[n.slug].y)
     const minX = Math.min(...xs) - 30, maxX = Math.max(...xs) + W + 30
     const minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + H + 30
-    const k = Math.max(0.3, Math.min(1.15, el.clientWidth / (maxX - minX), el.clientHeight / (maxY - minY)))
+    const k = Math.max(MIN_K, Math.min(1.15, el.clientWidth / (maxX - minX), el.clientHeight / (maxY - minY)))
     setView({ k, x: (el.clientWidth - (maxX - minX) * k) / 2 - minX * k, y: (el.clientHeight - (maxY - minY) * k) / 2 - minY * k })
   }
   // Fit when what is drawn changes (not when a card is dragged).
   const shape = drawn.map(n => n.slug).join(',') + '|' + groups.map(g => g.key).join(',')
-  useLayoutEffect(fit, [shape]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A counter asks for a fit after the next render, so it sees the new positions.
+  const [fitTick, setFitTick] = useState(0)
+  useLayoutEffect(fit, [shape, fitTick, narrow]) // eslint-disable-line react-hooks/exhaustive-deps
   // …and when the canvas gets wider or narrower (a phone turned), not on height
   // changes (a phone's address bar sliding away).
   const fitRef = useRef(fit)
@@ -153,7 +180,8 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     const el = box.current
     if (!el) return
     let w = el.clientWidth
-    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; fitRef.current() } })
+    setNarrow(w < 640)
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; setNarrow(w < 640); fitRef.current() } })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -175,10 +203,11 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     document.body.style.overflow = 'hidden'
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('fullscreenchange', onFs); document.body.style.overflow = overflow }
   }, [full])
-  useEffect(() => { const id = requestAnimationFrame(() => fitRef.current()); return () => cancelAnimationFrame(id) }, [full])
+  useEffect(() => { const id = requestAnimationFrame(() => setFitTick(t => t + 1)); return () => cancelAnimationFrame(id) }, [full])
 
   const zoomAt = (px: number, py: number, f: number) => setView(v => {
-    const k = Math.max(0.25, Math.min(2.5, v.k * f))
+    if (!Number.isFinite(f) || f <= 0) return v
+    const k = Math.max(MIN_K, Math.min(MAX_K, v.k * f))
     return { k, x: px - (px - v.x) * k / v.k, y: py - (py - v.y) * k / v.k }
   })
   // Wheel zoom needs a non-passive listener to keep the page from scrolling.
@@ -190,31 +219,72 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
       const r = el.getBoundingClientRect()
       zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)))
     }
+    // iOS: keep the page itself from scrolling or zooming under a finger on the canvas.
+    const stop = (e: Event) => e.preventDefault()
     el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
+    el.addEventListener('touchstart', stop, { passive: false })
+    el.addEventListener('touchmove', stop, { passive: false })
+    el.addEventListener('gesturestart', stop)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', stop)
+      el.removeEventListener('touchmove', stop)
+      el.removeEventListener('gesturestart', stop)
+    }
   }, [])
 
   // One pointer pans the canvas or drags a card; two pinch-zoom. A press that
-  // barely moves is a tap: it selects the card or arrow under it.
+  // barely moves is a tap: it selects the card or arrow under it. With a finger,
+  // a card moves only after a half-second hold, so dragging otherwise pans.
+  // Fingers are forgotten when they lift anywhere (iOS doesn't always tell the
+  // canvas), and a fresh first touch starts from a clean slate.
+  type Gesture = { kind: 'pan' | 'node' | 'pinch' | 'hold'; slug?: string; start: Pos; orig: Pos; moved: boolean; hit: CanvasSel; d0?: number; k0?: number; mid0?: Pos; v0?: View; timer?: number }
   const ptrs = useRef(new Map<number, Pos>())
-  const gesture = useRef<{ kind: 'pan' | 'node' | 'pinch'; slug?: string; start: Pos; orig: Pos; moved: boolean; hit: CanvasSel; d0?: number; k0?: number } | null>(null)
-  const local = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+  const gesture = useRef<Gesture | null>(null)
+  const [lifted, setLifted] = useState('')
+  const local = (e: { clientX: number; clientY: number }) => { const r = svg.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+  const endGesture = () => { if (gesture.current?.timer) clearTimeout(gesture.current.timer); gesture.current = null; setLifted('') }
+  useEffect(() => {
+    const gone = (e: PointerEvent) => {
+      ptrs.current.delete(e.pointerId)
+      if (ptrs.current.size === 0 && gesture.current?.kind === 'pinch') endGesture()
+    }
+    window.addEventListener('pointerup', gone)
+    window.addEventListener('pointercancel', gone)
+    return () => { window.removeEventListener('pointerup', gone); window.removeEventListener('pointercancel', gone) }
+  }, [])
+  const startPinch = () => {
+    const [a, b] = [...ptrs.current.values()]
+    const d0 = Math.hypot(a.x - b.x, a.y - b.y)
+    if (gesture.current?.timer) clearTimeout(gesture.current.timer)
+    setLifted('')
+    gesture.current = d0 < 8 ? null : { kind: 'pinch', start: a, orig: a, moved: true, hit: null, d0, k0: viewRef.current.k, mid0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, v0: viewRef.current }
+  }
   const down = (e: React.PointerEvent) => {
-    if (e.button !== 0) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (e.isPrimary) { ptrs.current.clear(); endGesture() }
     try { svg.current!.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
     const p = local(e)
     ptrs.current.set(e.pointerId, p)
-    if (ptrs.current.size === 2) {
-      const [a, b] = [...ptrs.current.values()]
-      gesture.current = { kind: 'pinch', start: p, orig: p, moved: true, hit: null, d0: Math.hypot(a.x - b.x, a.y - b.y), k0: view.k }
-      return
-    }
+    if (ptrs.current.size >= 2) { startPinch(); return }
     const t = e.target as Element
     const nodeEl = t.closest('[data-node]'), pairEl = t.closest('[data-pair]')
     const hit: CanvasSel = nodeEl ? { kind: 'app', slug: nodeEl.getAttribute('data-node')! } : pairEl ? { kind: 'pair', key: pairEl.getAttribute('data-pair')! } : null
-    gesture.current = hit?.kind === 'app'
-      ? { kind: 'node', slug: hit.slug, start: p, orig: pos[hit.slug], moved: false, hit }
-      : { kind: 'pan', start: p, orig: { x: view.x, y: view.y }, moved: false, hit }
+    const v = viewRef.current
+    if (hit?.kind === 'app' && e.pointerType === 'mouse') {
+      gesture.current = { kind: 'node', slug: hit.slug, start: p, orig: pos[hit.slug], moved: false, hit }
+    } else if (hit?.kind === 'app') {
+      const g: Gesture = { kind: 'hold', slug: hit.slug, start: p, orig: { x: v.x, y: v.y }, moved: false, hit }
+      g.timer = window.setTimeout(() => {
+        if (gesture.current !== g || g.moved) return
+        gesture.current = { kind: 'node', slug: hit.slug, start: g.start, orig: pos[hit.slug], moved: true, hit }
+        setLifted(hit.slug)
+        navigator.vibrate?.(10)
+      }, 450)
+      gesture.current = g
+    } else {
+      gesture.current = { kind: 'pan', start: p, orig: { x: v.x, y: v.y }, moved: false, hit }
+    }
   }
   const move = (e: React.PointerEvent) => {
     const g = gesture.current
@@ -224,22 +294,29 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     if (g.kind === 'pinch') {
       const [a, b] = [...ptrs.current.values()]
       if (!b) return
-      const k = Math.max(0.25, Math.min(2.5, g.k0! * Math.hypot(a.x - b.x, a.y - b.y) / g.d0!))
-      zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, k / view.k)
+      const k = Math.max(MIN_K, Math.min(MAX_K, g.k0! * Math.hypot(a.x - b.x, a.y - b.y) / g.d0!))
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, v0 = g.v0!
+      // the point under the fingers' midpoint at the start stays under it
+      setView({ k, x: mid.x - (g.mid0!.x - v0.x) * k / v0.k, y: mid.y - (g.mid0!.y - v0.y) * k / v0.k })
       return
     }
     const dx = p.x - g.start.x, dy = p.y - g.start.y
-    if (!g.moved && Math.hypot(dx, dy) < 5) return
+    if (!g.moved && Math.hypot(dx, dy) < 6) return
     g.moved = true
-    if (g.kind === 'pan') setView(v => ({ ...v, x: g.orig.x + dx, y: g.orig.y + dy }))
-    else setSaved(s => ({ ...s, [g.slug!]: { x: Math.round(g.orig.x + dx / view.k), y: Math.round(g.orig.y + dy / view.k) } }))
+    if (g.kind === 'pan' || g.kind === 'hold') setView(v => ({ ...v, x: g.orig.x + dx, y: g.orig.y + dy }))
+    else {
+      const k = viewRef.current.k
+      const np = { x: Math.round(g.orig.x + dx / k), y: Math.round(g.orig.y + dy / k) }
+      if (finite(np)) setSaved(s => ({ ...s, [g.slug!]: np }))
+    }
   }
   const up = (e: React.PointerEvent) => {
     ptrs.current.delete(e.pointerId)
     const g = gesture.current
     if (!g) return
-    if (g.kind === 'pinch') { if (ptrs.current.size === 0) gesture.current = null; return }
-    gesture.current = null
+    if (g.kind === 'pinch') { if (ptrs.current.size === 0) endGesture(); return }
+    endGesture()
+    if (e.type === 'pointercancel') return
     if (!g.moved) {
       const same = g.hit && sel && g.hit.kind === sel.kind && (g.hit.kind === 'app' ? g.hit.slug === (sel as { slug: string }).slug : g.hit.key === (sel as { key: string }).key)
       onSelect(same ? null : g.hit)
@@ -253,7 +330,9 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     const back = g.app !== g.target && groups.some(h => h.app === g.target && h.target === g.app)
     return { g, st: pairState(g), ...edgePath(pos[g.app], pos[g.target], back ? (g.app < g.target ? -9 : 9) : 0) }
   })
-  const resetLayout = () => { localStorage.removeItem(LAYOUT_KEY); setSaved({}); requestAnimationFrame(fit) }
+  const resetLayout = () => { localStorage.removeItem(LAYOUT_KEY); setSaved({}); setFitTick(t => t + 1) }
+  // Zoomed out, arrows carry their scope names only for the tapped app or arrow.
+  const showLabel = (g: LinkGroup) => (sel?.kind === 'pair' && sel.key === g.key) || (!!focus && touches(g)) || (!focus && sel?.kind !== 'pair' && view.k >= 0.6)
 
   return (
     <div className={`lc${full ? ' full' : ''}`} ref={root}>
@@ -268,7 +347,7 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
           <button type="button" className="btn sm ghost" onClick={() => { const el = box.current!; zoomAt(el.clientWidth / 2, el.clientHeight / 2, 1 / 1.25) }} aria-label="Zoom out">−</button>
           <button type="button" className="btn sm ghost" onClick={() => { const el = box.current!; zoomAt(el.clientWidth / 2, el.clientHeight / 2, 1.25) }} aria-label="Zoom in">+</button>
           <button type="button" className="btn sm ghost" onClick={fit}>Fit</button>
-          {Object.keys(saved).length > 0 && <button type="button" className="btn sm ghost" onClick={resetLayout} title="Forget where you dragged the cards">Reset layout</button>}
+          <button type="button" className="btn sm ghost" onClick={resetLayout} disabled={Object.keys(saved).length === 0} title="Put moved cards back where the diagram places them">Reset</button>
           <button type="button" className="btn sm ghost lc-full-btn" onClick={toggleFull} title={full ? 'Leave full screen (Esc)' : 'Full screen'} aria-label={full ? 'Leave full screen' : 'Full screen'}>
             <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">{full
               ? <path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
@@ -298,7 +377,7 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
                   {st === 'on' && <path d={d} className="lc-flow" />}
                 </g>)
             })}
-            {edges.map(({ g, st, mid }) => {
+            {edges.filter(({ g }) => showLabel(g)).map(({ g, st, mid }) => {
               const lines = g.links.map(scopeLabel)
               const w = Math.ceil(Math.max(...lines.map(textWidth))) + 20, h = lines.length * 16 + 9
               const on = sel?.kind === 'pair' && sel.key === g.key
@@ -319,7 +398,7 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
               const sub = n.linked ? [n.out && `uses ${plural(n.out, 'app')}`, n.inn && `used by ${n.inn}`].filter(Boolean).join(' · ') : n.offers ? `offers ${plural(n.offers, 'scope')}` : 'no links'
               return (
                 <g key={n.slug} data-node={n.slug} transform={`translate(${p.x},${p.y})`}
-                  className={`lc-node${n.app ? '' : ' ghost'}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}
+                  className={`lc-node${n.app ? '' : ' ghost'}${lifted === n.slug ? ' lifted' : ''}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}
                   onPointerEnter={e => e.pointerType === 'mouse' && setHover(n.slug)} onPointerLeave={() => setHover('')}>
                   <rect width={W} height={H} rx={12} className="lc-card" />
                   <clipPath id={`lc-clip-${n.slug}`}><rect x={12} y={13} width={32} height={32} rx={8} /></clipPath>

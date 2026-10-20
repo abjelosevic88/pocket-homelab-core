@@ -102,7 +102,7 @@ export default function Links() {
         <Card>
           {detail || <p className="muted small lc-hint">{groups.length === 0
             ? <>No links yet. An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</>
-            : <>Tap an arrow to see and switch its permissions, or an app to see everything it uses and offers. Drag cards to rearrange; drag the background to move around, scroll or pinch to zoom.</>}</p>}
+            : <>Tap an arrow to see and switch its permissions, or an app to see everything it uses and offers. Drag a card to move it (on a phone, hold it first); drag anywhere else to move around, scroll or pinch to zoom.</>}</p>}
         </Card>
       </> : groups.length === 0 ? <Card><Empty title="No links yet">An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</Empty></Card> :
         <Card>{groups.map(g => (
