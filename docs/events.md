@@ -4,6 +4,8 @@ The bus is a persisted log with live fan-out. Apps publish, Core stores, streams
 
 ## Publish
 
+Supply `Idempotency-Key` for retryable publication. Core saves the event and delivery jobs atomically, returns the original ID on an identical retry, and rejects conflicting reuse with HTTP 409. See [delivery boundaries](platform-contract.md#delivery-and-operation-retries).
+
 ```
 POST /api/v1/events
 {"topic": "kitchen.cooked", "subject": "recipe:12", "payload": {"recipe": "Pancakes", "servings": 4}}
@@ -259,6 +261,8 @@ Polled every check interval; the first check only records a baseline. `user_emai
 
 ## Read
 
+Event reads require publisher ownership or an approved per-person `events:read` link. Core and connector events remain admin-only for cross-app access. See [the platform contract](platform-contract.md#authorization).
+
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/v1/events?topic=&source=&subject=&after=&since=&limit=` | newest first; `topic` may end in `*`; `after=<id>` returns oldest first for replay |
@@ -266,7 +270,7 @@ Polled every check interval; the first check only records a baseline. `user_emai
 | GET | `/api/v1/events/topics` | distinct topics with counts |
 | GET | `/api/v1/events/stream?topics=kitchen.*,habits.marked&after=&typed=` | Server-Sent Events |
 
-The stream sends `id: <event id>` with every message; reconnect with `Last-Event-ID` (or `?after=`) and Core replays what was missed. With `typed=1` the SSE `event:` field is the topic (for `addEventListener('kitchen.cooked', …)`); without it every message is a plain `message`. A `: ping` comment arrives every 25 s.
+The stream sends `id: <event id>` with every message; reconnect with `Last-Event-ID` (or `?after=`) and Core drains all retained replay pages in one ordered sequence across all matching patterns. Notifications wake a persisted-log reader; a slow connection does not silently skip buffered events. With `typed=1` the SSE `event:` field is the topic (for `addEventListener('kitchen.cooked', …)`); without it every message is a plain `message`. A `: ping` comment arrives every 25 s.
 
 ## Webhooks
 

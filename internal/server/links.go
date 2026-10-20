@@ -110,6 +110,9 @@ func cleanUses(self string, in []Use) []store.LinkWant {
 
 // linkState decides whether a link works for a person right now.
 func (s *Server) linkState(ctx context.Context, l *store.AppLink, u *store.User) string {
+	if !l.Declared {
+		return linkNotDeclared
+	}
 	if _, ok := serviceType(l.TargetSlug); ok {
 		return s.serviceLinkState(ctx, l, u)
 	}
@@ -295,8 +298,8 @@ func (s *Server) introspectLinkToken(w http.ResponseWriter, r *http.Request, cal
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active": true, "kind": "delegated", "scope": t.Scope, "audience": t.TargetSlug, "expires_at": t.ExpiresAt,
-		"user": map[string]any{"id": u.ID, "email": u.Email, "name": u.Name, "role": u.Role},
+		"active": true, "iss": s.oidc.Issuer, "kind": "delegated", "scope": t.Scope, "audience": t.TargetSlug, "expires_at": t.ExpiresAt,
+		"user": map[string]any{"id": u.ID, "sub": u.Subject, "auth_revision": u.AuthRevision, "email": u.Email, "name": u.Name, "role": u.Role},
 		"app":  map[string]any{"id": actor.ID, "slug": actor.Slug, "name": actor.Name},
 	})
 }

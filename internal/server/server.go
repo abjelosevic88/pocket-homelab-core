@@ -129,6 +129,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	}
 	_ = s.store.PurgeExpired(ctx)
 	s.ctx = ctx
+	s.hub.Allow = s.appCanReadEvent
 	go s.hub.Run(ctx)
 	go s.janitor(ctx)
 	go s.connectorScheduler(ctx)
@@ -212,6 +213,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/auth/me", s.handleMe)
 			r.Put("/auth/me", s.handleUpdateMe)
 			r.Post("/auth/introspect", s.handleIntrospect)
+			r.Post("/auth/subject", s.handleSubject)
 			r.Post("/links/token", s.handleLinkToken)
 			r.Get("/links/status", s.handleLinkStatus)
 			r.Post("/services/credential", s.handleServiceCredential)

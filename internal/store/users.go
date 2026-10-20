@@ -11,6 +11,8 @@ import (
 // User is an account on the box.
 type User struct {
 	ID           int64  `json:"id"`
+	Subject      string `json:"subject"`
+	AuthRevision int64  `json:"auth_revision"`
 	Email        string `json:"email"`
 	Name         string `json:"name"`
 	PasswordHash string `json:"-"`
@@ -23,12 +25,12 @@ type User struct {
 // IsAdmin reports whether the user may manage the box.
 func (u *User) IsAdmin() bool { return u != nil && u.Role == "admin" }
 
-const userCols = `id, email, name, password_hash, role, disabled, created_at, updated_at`
+const userCols = `subject, auth_revision, id, email, name, password_hash, role, disabled, created_at, updated_at`
 
 func scanUser(sc interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var dis int
-	if err := sc.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Role, &dis, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	if err := sc.Scan(&u.Subject, &u.AuthRevision, &u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Role, &dis, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		return nil, notFound(err)
 	}
 	u.Disabled = dis == 1
@@ -75,7 +77,8 @@ func (s *Store) CreateUser(ctx context.Context, u *User) error {
 	if u.Role == "" {
 		u.Role = "member"
 	}
-	res, err := s.DB.ExecContext(ctx, `INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)`, u.Email, u.Name, u.PasswordHash, u.Role)
+	u.Subject = crypto.Token("person_", 24)
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO users (email, name, password_hash, role, subject) VALUES (?, ?, ?, ?, ?)`, u.Email, u.Name, u.PasswordHash, u.Role, u.Subject)
 	if err != nil {
 		return conflict(err)
 	}
@@ -89,8 +92,8 @@ func (s *Store) CreateUser(ctx context.Context, u *User) error {
 
 // UpdateUser saves name, password, role and disabled.
 func (s *Store) UpdateUser(ctx context.Context, u *User) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE users SET email = ?, name = ?, password_hash = ?, role = ?, disabled = ?, updated_at = ? WHERE id = ?`,
-		u.Email, u.Name, u.PasswordHash, u.Role, boolInt(u.Disabled), Now(), u.ID)
+	_, err := s.DB.ExecContext(ctx, `UPDATE users SET auth_revision = auth_revision + CASE WHEN disabled <> ? OR password_hash <> ? OR role <> ? THEN 1 ELSE 0 END, email = ?, name = ?, password_hash = ?, role = ?, disabled = ?, updated_at = ? WHERE id = ?`,
+		boolInt(u.Disabled), u.PasswordHash, u.Role, u.Email, u.Name, u.PasswordHash, u.Role, boolInt(u.Disabled), Now(), u.ID)
 	return conflict(err)
 }
 
@@ -217,4 +220,8 @@ func (s *Store) GetUserByAPIToken(ctx context.Context, token string) (*User, err
 		return nil, ErrNotFound
 	}
 	return u, nil
+}
+
+func (s *Store) GetUserBySubject(ctx context.Context, subject string) (*User, error) {
+	return scanUser(s.DB.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE subject = ?`, subject))
 }

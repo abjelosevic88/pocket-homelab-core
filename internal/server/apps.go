@@ -168,9 +168,10 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// App links from the manifest's "uses": new ones start switched on.
-	if err := s.store.SyncAppLinks(ctx, app.ID, wants); err != nil {
-		s.log.Warn("manifest links", "app", app.Slug, "err", err)
+	// Initial enrollment approves the installed manifest; later permission additions require an admin switch.
+	if err := s.store.SyncAppLinks(ctx, app.ID, wants, existing == nil); err != nil {
+		s.fail(w, err, "sync manifest links")
+		return
 	}
 
 	// OIDC client from the manifest; the secret is returned only when minted.

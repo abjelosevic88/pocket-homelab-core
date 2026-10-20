@@ -31,6 +31,7 @@ type Hub struct {
 	mu        sync.Mutex
 	subs      map[*Subscriber]struct{}
 	wake      chan struct{}
+	Allow     func(context.Context, int64, store.Event) bool
 	userAgent string
 }
 
@@ -77,40 +78,42 @@ func (h *Hub) Publish(ctx context.Context, e *store.Event) error {
 	if e.Topic == "" {
 		return fmt.Errorf("topic required")
 	}
+	if len(e.Payload) == 0 {
+		e.Payload = json.RawMessage(`{}`)
+	}
 	if !json.Valid(e.Payload) {
 		return fmt.Errorf("payload must be valid JSON")
 	}
-	if err := h.st.InsertEvent(ctx, e); err != nil {
+	hooks, err := h.st.ListWebhooks(ctx, 0)
+	if err != nil {
 		return err
 	}
+	ids := []int64{}
+	for _, w := range hooks {
+		if w.Enabled && w.Matches(e.Topic) && (w.AppID == 0 || h.Allow != nil && h.Allow(ctx, w.AppID, *e)) {
+			ids = append(ids, w.ID)
+		}
+	}
+	if err := h.st.InsertEventDeliveries(ctx, e, ids); err != nil {
+		return err
+	}
+	// Channels are wakeups only. Consumers read from the durable log using
+	// their cursor, so coalescing wakeups cannot discard an event.
 	h.mu.Lock()
 	for s := range h.subs {
 		if store.TopicMatches(s.Topics, e.Topic) {
 			select {
 			case s.C <- *e:
-			default: // slow consumer: drop; it can replay with Last-Event-ID
+			default:
 			}
 		}
 	}
 	h.mu.Unlock()
-	hooks, err := h.st.ListWebhooks(ctx, 0)
-	if err != nil {
-		return err
+	select {
+	case h.wake <- struct{}{}:
+	default:
 	}
-	queued := 0
-	for _, w := range hooks {
-		if w.Enabled && w.Matches(e.Topic) {
-			if err := h.st.EnqueueDelivery(ctx, w.ID, e.ID); err == nil {
-				queued++
-			}
-		}
-	}
-	if queued > 0 {
-		select {
-		case h.wake <- struct{}{}:
-		default:
-		}
-	}
+
 	return nil
 }
 
@@ -135,9 +138,14 @@ func (h *Hub) drain(ctx context.Context) {
 		if err != nil || len(due) == 0 {
 			return
 		}
+		var workers sync.WaitGroup
+		sem := make(chan struct{}, 4)
 		for _, d := range due {
-			h.attempt(ctx, d)
+			sem <- struct{}{}
+			workers.Add(1)
+			go func(d store.Delivery) { defer workers.Done(); defer func() { <-sem }(); h.attempt(ctx, d) }(d)
 		}
+		workers.Wait()
 		if len(due) < 20 {
 			return
 		}
@@ -153,6 +161,10 @@ func (h *Hub) attempt(ctx context.Context, d store.Delivery) {
 	e, err := h.st.GetEvent(ctx, d.EventID)
 	if err != nil {
 		_ = h.st.MarkDelivery(ctx, d.ID, "failed", 0, "event gone", time.Now())
+		return
+	}
+	if !w.Enabled || (w.AppID != 0 && (h.Allow == nil || !h.Allow(ctx, w.AppID, *e))) {
+		_ = h.st.MarkDelivery(ctx, d.ID, "failed", 0, "subscription disabled or permission revoked", time.Now())
 		return
 	}
 	code, derr := h.deliver(ctx, w, e)

@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +27,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -136,17 +136,22 @@ type Resolved struct {
 
 // Introspection is Core's verdict on a token.
 type Introspection struct {
-	Active bool   `json:"active"`
-	Kind   string `json:"kind"` // user | device | app | delegated
-	Scope  string `json:"scope"`
+	Issuer    string `json:"iss"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+	Exp       int64  `json:"exp,omitempty"`
+	Active    bool   `json:"active"`
+	Kind      string `json:"kind"` // user | device | app | delegated
+	Scope     string `json:"scope"`
 	// Audience is the app a delegated (pcx_) token is for; App is the app acting.
 	Audience string `json:"audience,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 	User     *struct {
-		ID    int64  `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
-		Role  string `json:"role"`
+		ID           int64  `json:"id"`
+		Subject      string `json:"sub"`
+		AuthRevision int64  `json:"auth_revision"`
+		Email        string `json:"email"`
+		Name         string `json:"name"`
+		Role         string `json:"role"`
 	} `json:"user,omitempty"`
 	Device *struct {
 		ID       int64  `json:"id"`
@@ -162,6 +167,9 @@ type Introspection struct {
 
 // Options tune the client.
 type Options struct {
+	// DB is the application database for durable platform state. Call Start before serving.
+	DB *sql.DB
+
 	// Token is the app's pca_ token when already known.
 	Token string
 	// TokenFile persists the token Core mints on first registration.
@@ -170,7 +178,7 @@ type Options struct {
 	HTTP *http.Client
 	// UserAgent is sent with every request.
 	UserAgent string
-	// IntrospectCache is how long a verdict is reused (default 60 s).
+	// IntrospectCache opts into a bounded revocation delay; default zero revalidates every request.
 	IntrospectCache time.Duration
 	// ServiceCache is how long ServiceFor reuses a person's service credential
 	// (default 60 s; negative = ask Core every time). A refusal from Core always
@@ -193,14 +201,19 @@ type OIDCClient struct {
 
 // Client talks to one Pocket Core.
 type Client struct {
-	base  string
-	opts  Options
-	http  *http.Client
-	mu    sync.RWMutex
-	token string
-	oidc  OIDCClient
-	cache map[string]cached
-	svc   map[string]svcCached
+	base       string
+	opts       Options
+	http       *http.Client
+	mu         sync.RWMutex
+	token      string
+	oidc       OIDCClient
+	cache      map[string]cached
+	svc        map[string]svcCached
+	identityMu sync.Mutex
+	startOnce  sync.Once
+	initOnce   sync.Once
+	startErr   error
+	outboxWake chan struct{}
 }
 
 type svcCached struct {
@@ -215,15 +228,12 @@ type cached struct {
 
 // New creates a client. An empty base URL yields a client whose calls return ErrNotConfigured.
 func New(baseURL string, opts Options) *Client {
-	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}, svc: map[string]svcCached{}}
+	c := &Client{base: strings.TrimRight(baseURL, "/"), opts: opts, http: opts.HTTP, token: opts.Token, cache: map[string]cached{}, svc: map[string]svcCached{}, outboxWake: make(chan struct{}, 1)}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: 15 * time.Second}
 	}
 	if c.opts.UserAgent == "" {
 		c.opts.UserAgent = "PocketSDK/1.0"
-	}
-	if c.opts.IntrospectCache == 0 {
-		c.opts.IntrospectCache = time.Minute
 	}
 	if c.opts.ServiceCache == 0 {
 		c.opts.ServiceCache = time.Minute
@@ -244,6 +254,7 @@ func New(baseURL string, opts Options) *Client {
 			_ = json.Unmarshal(b, &c.oidc)
 		}
 	}
+	_ = c.Init(context.Background()) // Start reports initialization failures.
 	return c
 }
 
@@ -270,6 +281,10 @@ func (c *Client) Token() string {
 func (c *Client) BaseURL() string { return c.base }
 
 func (c *Client) do(ctx context.Context, method, path string, auth string, body any, out any) (int, error) {
+	return c.doKey(ctx, method, path, auth, body, out, "")
+}
+
+func (c *Client) doKey(ctx context.Context, method, path, auth string, body, out any, key string) (int, error) {
 	if !c.Configured() {
 		return 0, ErrNotConfigured
 	}
@@ -287,6 +302,9 @@ func (c *Client) do(ctx context.Context, method, path string, auth string, body 
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.opts.UserAgent)
+	if key != "" {
+		req.Header.Set("Idempotency-Key", key)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -322,6 +340,18 @@ func (c *Client) do(ctx context.Context, method, path string, auth string, body 
 // and stores the minted app token (in memory and TokenFile); afterwards the
 // app token alone is enough and the key may be empty.
 func (c *Client) Register(ctx context.Context, registrationKey string, m Manifest) (*Registration, error) {
+	if len(m.Publishes) > 0 {
+		offered := false
+		for _, o := range m.Offers {
+			if o.Scope == "events:read" {
+				offered = true
+			}
+		}
+		if !offered {
+			m.Offers = append(m.Offers, Offer{Scope: "events:read", Name: "Read activity events", Description: "Read this person's attributed events through approved app links"})
+		}
+	}
+
 	auth := c.Token()
 	if auth == "" {
 		auth = registrationKey
@@ -330,11 +360,9 @@ func (c *Client) Register(ctx context.Context, registrationKey string, m Manifes
 		return nil, errors.New("pocket core: no app token and no registration key")
 	}
 	var reg Registration
-	code, err := c.do(ctx, http.MethodPost, "/api/v1/apps/register", auth, m, &reg)
-	if (code == http.StatusUnauthorized || code == http.StatusForbidden) && c.Token() != "" && registrationKey != "" {
-		// Our stored token was revoked; fall back to the key once.
-		_, err = c.do(ctx, http.MethodPost, "/api/v1/apps/register", registrationKey, m, &reg)
-	}
+	_, err := c.do(ctx, http.MethodPost, "/api/v1/apps/register", auth, m, &reg)
+	// A revoked token requires explicit operator recovery. Never reenroll
+	// automatically with a broadly privileged registration key.
 	if err != nil {
 		return nil, err
 	}
@@ -343,8 +371,9 @@ func (c *Client) Register(ctx context.Context, registrationKey string, m Manifes
 		c.token = reg.Token
 		c.mu.Unlock()
 		if c.opts.TokenFile != "" {
-			_ = os.MkdirAll(filepath.Dir(c.opts.TokenFile), 0o755)
-			_ = os.WriteFile(c.opts.TokenFile, []byte(reg.Token+"\n"), 0o600)
+			if err := savePrivate(c.opts.TokenFile, []byte(reg.Token+"\n")); err != nil {
+				return &reg, err
+			}
 		}
 	}
 	if reg.OIDC != nil && reg.OIDC.ClientID != "" {
@@ -356,9 +385,12 @@ func (c *Client) Register(ctx context.Context, registrationKey string, m Manifes
 		snapshot := c.oidc
 		c.mu.Unlock()
 		if c.opts.OIDCFile != "" {
-			_ = os.MkdirAll(filepath.Dir(c.opts.OIDCFile), 0o755)
-			if b, err := json.MarshalIndent(snapshot, "", "  "); err == nil {
-				_ = os.WriteFile(c.opts.OIDCFile, b, 0o600)
+			b, err := json.MarshalIndent(snapshot, "", "  ")
+			if err != nil {
+				return &reg, err
+			}
+			if err = savePrivate(c.opts.OIDCFile, b); err != nil {
+				return &reg, err
 			}
 		}
 	}
@@ -367,6 +399,19 @@ func (c *Client) Register(ctx context.Context, registrationKey string, m Manifes
 
 // Publish sends one event under the app's slug.
 func (c *Client) Publish(ctx context.Context, topic, subject string, payload any) error {
+	if !c.Configured() {
+		return ErrNotConfigured
+	}
+	if c.opts.DB != nil {
+		err := QueueEvent(ctx, c.opts.DB, topic, subject, payload)
+		if err == nil {
+			select {
+			case c.outboxWake <- struct{}{}:
+			default:
+			}
+		}
+		return err
+	}
 	body := map[string]any{"topic": topic, "subject": subject, "payload": payload}
 	if payload == nil {
 		body["payload"] = map[string]any{}
@@ -485,12 +530,42 @@ func (c *Client) Introspect(ctx context.Context, token string) (*Introspection, 
 	if _, err := c.do(ctx, http.MethodPost, "/api/v1/auth/introspect", c.Token(), map[string]string{"token": token}, &out); err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	if len(c.cache) > 1000 {
-		c.cache = map[string]cached{}
+	now := time.Now()
+	expiry := now.Add(c.opts.IntrospectCache)
+	bounded := false
+	if out.ExpiresAt != "" {
+		ts, err := time.Parse(time.RFC3339Nano, out.ExpiresAt)
+		if err != nil {
+			out.Active = false
+		} else {
+			bounded = true
+			if !now.Before(ts) {
+				out.Active = false
+			}
+			if ts.Before(expiry) {
+				expiry = ts
+			}
+		}
 	}
-	c.cache[token] = cached{v: out, exp: time.Now().Add(c.opts.IntrospectCache)}
-	c.mu.Unlock()
+	if out.Exp > 0 {
+		ts := time.Unix(out.Exp, 0)
+		bounded = true
+		if !now.Before(ts) {
+			out.Active = false
+		}
+		if ts.Before(expiry) {
+			expiry = ts
+		}
+	}
+	// Unknown expiry is never safe to cache as an active verdict.
+	if c.opts.IntrospectCache > 0 && out.Active && bounded {
+		c.mu.Lock()
+		if len(c.cache) > 1000 {
+			c.cache = map[string]cached{}
+		}
+		c.cache[token] = cached{v: out, exp: expiry}
+		c.mu.Unlock()
+	}
 	return &out, nil
 }
 

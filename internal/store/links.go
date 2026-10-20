@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/crypto"
@@ -17,6 +18,7 @@ type AppLink struct {
 	TargetSlug string `json:"target_slug"`
 	Scope      string `json:"scope"`
 	Reason     string `json:"reason"`
+	Declared   bool   `json:"declared"`
 	Enabled    bool   `json:"enabled"`
 	Uses       int64  `json:"uses"`
 	LastUsedAt string `json:"last_used_at,omitempty"`
@@ -24,14 +26,14 @@ type AppLink struct {
 	OptOuts    int    `json:"opt_outs"`
 }
 
-const linkCols = `l.id, l.app_id, a.slug, a.name, l.target_slug, l.scope, l.reason, l.enabled, l.uses, l.last_used_at, l.created_at,
+const linkCols = `l.id, l.app_id, a.slug, a.name, l.target_slug, l.scope, l.reason, l.declared, l.enabled, l.uses, l.last_used_at, l.created_at,
 	(SELECT COUNT(*) FROM app_link_optouts o WHERE o.link_id = l.id)`
 
 func scanLink(sc interface{ Scan(...any) error }) (*AppLink, error) {
 	var l AppLink
 	var en int
 	var used sql.NullString
-	if err := sc.Scan(&l.ID, &l.AppID, &l.AppSlug, &l.AppName, &l.TargetSlug, &l.Scope, &l.Reason, &en, &l.Uses, &used, &l.CreatedAt, &l.OptOuts); err != nil {
+	if err := sc.Scan(&l.ID, &l.AppID, &l.AppSlug, &l.AppName, &l.TargetSlug, &l.Scope, &l.Reason, &l.Declared, &en, &l.Uses, &used, &l.CreatedAt, &l.OptOuts); err != nil {
 		return nil, notFound(err)
 	}
 	l.Enabled, l.LastUsedAt = en == 1, nullStr(used)
@@ -39,6 +41,11 @@ func scanLink(sc interface{ Scan(...any) error }) (*AppLink, error) {
 }
 
 func (s *Store) queryLinks(ctx context.Context, where string, args ...any) ([]AppLink, error) {
+	if strings.TrimSpace(where) == "" {
+		where = "WHERE l.declared = 1"
+	} else {
+		where += " AND l.declared = 1"
+	}
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+linkCols+` FROM app_links l JOIN apps a ON a.id = l.app_id `+where+` ORDER BY a.name, l.target_slug, l.scope`, args...)
 	if err != nil {
 		return nil, err
@@ -79,29 +86,24 @@ type LinkWant struct {
 }
 
 // SyncAppLinks makes the app's links match its manifest: new ones are
-// created switched on, existing ones keep the admin's switch and the
-// people's opt-outs, ones the manifest dropped are deleted.
-func (s *Store) SyncAppLinks(ctx context.Context, appID int64, wants []LinkWant) error {
-	keep := map[[2]string]bool{}
-	for _, w := range wants {
-		keep[[2]string{w.Target, w.Scope}] = true
-		if _, err := s.DB.ExecContext(ctx, `INSERT INTO app_links (app_id, target_slug, scope, reason) VALUES (?, ?, ?, ?)
-			ON CONFLICT(app_id, target_slug, scope) DO UPDATE SET reason = excluded.reason`, appID, w.Target, w.Scope, w.Reason); err != nil {
-			return err
-		}
-	}
-	existing, err := s.ListAppLinks(ctx, appID)
+// approved only at enrollment; updates require an admin grant. Existing
+// approvals and opt-outs survive removal and re-addition of a declaration.
+func (s *Store) SyncAppLinks(ctx context.Context, appID int64, wants []LinkWant, approveNew ...bool) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	for _, l := range existing {
-		if !keep[[2]string{l.TargetSlug, l.Scope}] {
-			if _, err := s.DB.ExecContext(ctx, `DELETE FROM app_links WHERE id = ?`, l.ID); err != nil {
-				return err
-			}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE app_links SET declared=0 WHERE app_id=?`, appID); err != nil {
+		return err
+	}
+	for _, w := range wants {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO app_links(app_id,target_slug,scope,reason,enabled,declared) VALUES(?,?,?,?,?,1)
+   ON CONFLICT(app_id,target_slug,scope) DO UPDATE SET reason=excluded.reason,declared=1`, appID, w.Target, w.Scope, w.Reason, boolInt(len(approveNew) > 0 && approveNew[0])); err != nil {
+			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 // SetLinkEnabled flips the admin's box-wide switch.

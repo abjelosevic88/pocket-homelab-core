@@ -49,9 +49,13 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusRequestEntityTooLarge, "payload over 256 KiB")
 		return
 	}
-	e := &store.Event{Topic: in.Topic, Source: p.Label(), Subject: strings.TrimSpace(in.Subject), Payload: in.Payload}
+	if len(r.Header.Get("Idempotency-Key")) > 200 {
+		writeErr(w, 400, "idempotency key too long")
+		return
+	}
+	e := &store.Event{PublishKey: r.Header.Get("Idempotency-Key"), Topic: in.Topic, Source: p.Label(), Subject: strings.TrimSpace(in.Subject), Payload: in.Payload}
 	if err := s.hub.Publish(r.Context(), e); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		s.fail(w, err, "publish event")
 		return
 	}
 	writeJSON(w, http.StatusCreated, e)
@@ -61,7 +65,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	after, _ := strconv.ParseInt(q.Get("after"), 10, 64)
 	f := store.EventFilter{Topic: strings.ToLower(q.Get("topic")), Source: q.Get("source"), Subject: q.Get("subject"), AfterID: after, Since: q.Get("since"), Limit: queryInt(r, "limit")}
-	list, err := s.store.ListEvents(r.Context(), f)
+	list, err := s.visibleEvents(r.Context(), principalFrom(r.Context()), f)
 	if err != nil {
 		s.fail(w, err, "list events")
 		return
@@ -75,10 +79,18 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "get event")
 		return
 	}
+	if !s.canReadEvent(r.Context(), principalFrom(r.Context()), *e) {
+		writeErr(w, 404, "not found")
+		return
+	}
 	writeJSON(w, http.StatusOK, e)
 }
 
 func (s *Server) handleTopics(w http.ResponseWriter, r *http.Request) {
+	if !principalFrom(r.Context()).IsAdmin() {
+		writeErr(w, 403, "admin only")
+		return
+	}
 	t, err := s.store.Topics(r.Context())
 	if err != nil {
 		s.fail(w, err, "topics")
@@ -90,6 +102,10 @@ func (s *Server) handleTopics(w http.ResponseWriter, r *http.Request) {
 // handleEventSources counts the stored events per source (core, an app's
 // slug, connector:<type>), for the event log's source filter.
 func (s *Server) handleEventSources(w http.ResponseWriter, r *http.Request) {
+	if !principalFrom(r.Context()).IsAdmin() {
+		writeErr(w, 403, "admin only")
+		return
+	}
 	list, err := s.store.EventSources(r.Context())
 	if err != nil {
 		s.fail(w, err, "event sources")
@@ -141,36 +157,65 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if after == 0 {
 		after, _ = strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	}
-	if after > 0 {
-		for _, pat := range strings.Split(topics, ",") {
-			missed, _ := s.store.ListEvents(r.Context(), store.EventFilter{Topic: strings.TrimSpace(pat), AfterID: after, Limit: 500})
-			for _, e := range missed {
-				if !send(e) {
-					return
+	if after < 0 {
+		after = 0
+	}
+	if r.Header.Get("Last-Event-ID") == "" && r.URL.Query().Get("after") == "" {
+		var err error
+		after, err = s.store.LatestEventID(r.Context())
+		if err != nil {
+			return
+		}
+	}
+	// One cursor over all topics: order and deduplication are independent
+	// of overlapping patterns. Drain every page before going live.
+	drain := func() bool {
+		for {
+			p, err := s.resolve(r) // recheck revocation on long-lived connections
+			if err != nil || p == nil {
+				return false
+			}
+			batch, err := s.store.ListEvents(r.Context(), store.EventFilter{AfterID: after, Ascending: true, Limit: 500})
+			if err != nil {
+				return false
+			}
+			for _, e := range batch {
+				if store.TopicMatches(topics, e.Topic) && s.canReadEvent(r.Context(), p, e) && !send(e) {
+					return false
 				}
+				after = e.ID
+			}
+			if len(batch) < 500 {
+				return true
 			}
 		}
 	}
+	if !drain() {
+		return
+	}
 	fmt.Fprintf(w, ": connected topics=%s\n\n", topics)
 	fl.Flush()
-
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case e := <-sub.C:
-			if !send(e) {
+		case <-sub.C:
+			if !drain() {
 				return
 			}
 		case <-ping.C:
+			if !drain() {
+				return
+			}
 			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
 				return
 			}
 			fl.Flush()
 		}
 	}
+
 }
 
 // ---- webhooks ----

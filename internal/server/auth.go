@@ -460,9 +460,14 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"active": false, "reason": "not_in_audience"})
 		return
 	}
-	out := map[string]any{"active": true, "kind": p.Kind, "scope": p.Scope}
+	out := map[string]any{"active": true, "kind": p.Kind, "scope": p.Scope, "iss": s.oidc.Issuer}
+	if strings.HasPrefix(in.Token, "pco_") {
+		if tok, err := s.store.GetOIDCToken(r.Context(), in.Token); err == nil {
+			out["expires_at"] = tok.ExpiresAt
+		}
+	}
 	if p.User != nil {
-		out["user"] = map[string]any{"id": p.User.ID, "email": p.User.Email, "name": p.User.Name, "role": p.User.Role}
+		out["user"] = map[string]any{"id": p.User.ID, "sub": p.User.Subject, "auth_revision": p.User.AuthRevision, "email": p.User.Email, "name": p.User.Name, "role": p.User.Role}
 	}
 	if p.Device != nil {
 		out["device"] = map[string]any{"id": p.Device.ID, "name": p.Device.Name, "platform": p.Device.Platform}
@@ -691,4 +696,25 @@ func (s *Server) handleRotateRegistrationKey(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// handleSubject checks an existing app session against current membership.
+// Apps receive only subjects admitted to their own audience.
+func (s *Server) handleSubject(w http.ResponseWriter, r *http.Request) {
+	p := principalFrom(r.Context())
+	if p.App == nil {
+		writeErr(w, 403, "app only")
+		return
+	}
+	var in struct {
+		Subject  string `json:"sub"`
+		Revision int64  `json:"auth_revision"`
+	}
+	if decode(r, &in) != nil || in.Subject == "" {
+		writeErr(w, 400, "subject required")
+		return
+	}
+	u, err := s.store.GetUserBySubject(r.Context(), in.Subject)
+	active := err == nil && !u.Disabled && u.AuthRevision == in.Revision && s.appAdmits(r.Context(), p.App.ID, u)
+	writeJSON(w, 200, map[string]any{"active": active, "iss": s.oidc.Issuer})
 }

@@ -106,7 +106,7 @@ func Claims(u *store.User) map[string]any {
 		username = username[:i]
 	}
 	return map[string]any{
-		"sub": fmt.Sprint(u.ID), "email": u.Email, "email_verified": true,
+		"sub": u.Subject, "auth_revision": u.AuthRevision, "email": u.Email, "email_verified": true,
 		"name": name, "preferred_username": username, "groups": groups,
 	}
 }

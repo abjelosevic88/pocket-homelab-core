@@ -25,7 +25,7 @@ The acting app lists what it needs under `uses`; the target lists what it allows
            { "scope": "transactions:write", "name": "Book transactions", "description": "…" }]
 ```
 
-Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, target, scope). A link is created switched **on**: the apps on a box are installed by its admin, and both sides had to ask for it. Registering again without a use deletes its links.
+Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, target, scope). Initial enrollment approves its declared links. Newly requested scopes on later manifest updates start **off** until an admin approves them. Removing a declaration hides the link but preserves approvals and opt-outs for a later re-addition.
 
 ## The Links page
 
@@ -74,7 +74,7 @@ A link token starts with `pcx_`. `sdk.IsCoreToken` deliberately does **not** mat
 3. **Enforces the scope.** It allows only the routes the scope covers and keeps everything else closed, ideally limiting changes to rows the acting app created (Money: `source = <acting slug>`).
 4. Records the acting app in its audit trail.
 
-Core checks the links again at every introspection, and `ActAs` asks Core for a fresh token every time, so switching a link off stops the next action at once. A token already handed out keeps working only for as long as the target caches its introspection verdict (60 s in the SDK). A `pcx_` token is useless against Core's own API.
+Core checks the links again at every introspection, and `ActAs` asks Core for a fresh token every time, so switching a link off stops the next action at once. A token already handed out keeps working only for as long as the target caches its introspection verdict (disabled by default in the SDK; explicit caches are bounded by token expiry). A `pcx_` token is useless against Core's own API.
 
 ## API
 
@@ -92,7 +92,7 @@ Changing the box-wide switch publishes `core.link.changed`.
 The same switches cover a Pocket app reaching a **third-party service** (Immich, Maloja, Dawarich, Jellyfin…) for a person, instead of a URL and key pasted into the app.
 
 - The app lists the services in its manifest: `"services": [{"type": "immich", "reason": "Photos of the day"}]` (catalog types).
-- Core makes a link per service, target `service:<type>`, scope `account`, on by default; it shows on the Links page ("Use your Immich") with the admin's switch and each person's.
+- Core makes a link per service, target `service:<type>`, scope `account`, approved at initial enrollment and off pending approval when added by an update; it shows on the Links page ("Use your Immich") with the admin's switch and each person's.
 - `POST /api/v1/services/credential {"user": "a@b.c", "type": "immich"}` with the app's `pca_` token returns `{url, public_url, key, fields, source}`. SDK: `core.ServiceFor(ctx, email, "immich")`. Ask every time; don't keep the key.
 - **Whose key:** always the person's own credential, set in Core by hand or written by a connector (`source: "personal"`) — admins included. The service's box-wide key never leaves Core (it's usually the owner's account or an admin key that sees everyone; Core's connectors use it). Without their own credential a person gets `no_account`. `pocket-core credentials claim-box [-email USER] [-only TYPES] [-dry-run]` (Core stopped) copies the box-wide keys of the services apps reach through Core (or just `-only`'s) into one person's own credentials once — for the person those accounts really belong to — and never overwrites one they already have. Connector-only fields never leave Core.
 - Keyless services (a box entry with no key filled in, like Maloja's read API): the person's own entry with just the address counts; `claim-box` writes that entry.
@@ -109,4 +109,4 @@ Every app also lets a person connect **Direct** (a URL and key pasted into the a
 
 ## Credential cache
 
-`ServiceFor` reuses a person's credential for a minute (`Options.ServiceCache`), so a page of 300 photos asks Core once; a refusal from Core drops it at once, and while Core can't be reached the last answer is used for up to 15 minutes (`Options.ServiceStale`) so a Core restart doesn't stop the apps. A switch-off therefore takes effect within a minute for third-party services (app links via `ActAs` still apply on the next request). `ServiceForFresh` skips the cache (connection tests).
+`ServiceFor` reuses a person's credential for a minute (`Options.ServiceCache`), so a page of 300 photos asks Core once; a refusal from Core drops it at once, and while Core can't be reached the last answer is used for up to 15 minutes (`Options.ServiceStale`) so a Core restart doesn't stop the apps. A link switch stops future retrieval when the client next contacts Core. Previously returned upstream credentials remain usable until rotated or removed in that service; the cache lifetime does not revoke copied credentials. App links via `ActAs` apply on the next request. `ServiceForFresh` skips the cache (connection tests).

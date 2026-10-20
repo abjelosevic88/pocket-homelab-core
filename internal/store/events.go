@@ -10,36 +10,30 @@ import (
 
 // Event is one published message.
 type Event struct {
-	ID        int64           `json:"id"`
-	Topic     string          `json:"topic"`
-	Source    string          `json:"source"`
-	Subject   string          `json:"subject"`
-	Payload   json.RawMessage `json:"payload"`
-	CreatedAt string          `json:"created_at"`
+	PublishKey string          `json:"-"`
+	ID         int64           `json:"id"`
+	Topic      string          `json:"topic"`
+	Source     string          `json:"source"`
+	Subject    string          `json:"subject"`
+	Payload    json.RawMessage `json:"payload"`
+	CreatedAt  string          `json:"created_at"`
 }
 
 // EventFilter narrows ListEvents.
 type EventFilter struct {
-	Topic   string // exact, or prefix with trailing "*"
-	Source  string
-	Subject string
-	AfterID int64
-	Since   string
-	Limit   int
+	Topic     string // exact, or prefix with trailing "*"
+	Source    string
+	Subject   string
+	Ascending bool // stable cursor scan, including after zero
+	BeforeID  int64
+	AfterID   int64
+	Since     string
+	Limit     int
 }
 
 // InsertEvent persists an event and returns it with id and timestamp.
 func (s *Store) InsertEvent(ctx context.Context, e *Event) error {
-	if len(e.Payload) == 0 {
-		e.Payload = json.RawMessage("{}")
-	}
-	e.CreatedAt = Now()
-	res, err := s.DB.ExecContext(ctx, `INSERT INTO events (topic, source, subject, payload, created_at) VALUES (?, ?, ?, ?, ?)`, e.Topic, e.Source, e.Subject, string(e.Payload), e.CreatedAt)
-	if err != nil {
-		return err
-	}
-	e.ID, _ = res.LastInsertId()
-	return nil
+	return s.InsertEventDeliveries(ctx, e, nil)
 }
 
 // ListEvents returns events newest first unless AfterID is set (then oldest first, for replay).
@@ -67,6 +61,10 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 		where = append(where, `id > ?`)
 		args = append(args, f.AfterID)
 	}
+	if f.BeforeID > 0 {
+		where = append(where, `id < ?`)
+		args = append(args, f.BeforeID)
+	}
 	if f.Since != "" {
 		where = append(where, `created_at >= ?`)
 		args = append(args, f.Since)
@@ -75,7 +73,7 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, ` AND `)
 	}
-	if f.AfterID > 0 {
+	if f.AfterID > 0 || f.Ascending {
 		q += ` ORDER BY id ASC`
 	} else {
 		q += ` ORDER BY id DESC`
@@ -171,7 +169,7 @@ func (s *Store) EventSources(ctx context.Context) ([]SourceCount, error) {
 
 // PurgeEvents drops events older than the retention window (and their deliveries).
 func (s *Store) PurgeEvents(ctx context.Context, olderThan time.Duration) (int64, error) {
-	res, err := s.DB.ExecContext(ctx, `DELETE FROM events WHERE created_at < ?`, Stamp(time.Now().Add(-olderThan)))
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM events WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.event_id=events.id AND d.status='pending')`, Stamp(time.Now().Add(-olderThan)))
 	if err != nil {
 		return 0, err
 	}

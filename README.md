@@ -47,10 +47,12 @@ or `docker compose up -d` with the included `docker-compose.yml`, or the single 
 ## For app authors
 
 ```go
-core := sdk.New(os.Getenv("CORE_URL"), sdk.Options{TokenFile: dataDir + "/core.token"})
+core := sdk.New(os.Getenv("CORE_URL"), sdk.Options{DB: db, TokenFile: dataDir + "/core.token"})
+if err := core.Start(ctx); err != nil { return err } // ctx is cancelled at shutdown
 reg, _ := core.Register(ctx, os.Getenv("CORE_REGISTRATION_KEY"), sdk.Manifest{
     Slug: "kitchen", Name: "Pocket Kitchen", URL: "http://pocket-kitchen:8080", PublicURL: baseURL, Version: version,
     Publishes:  []string{"kitchen.cooked", "kitchen.checkout"},
+    Uses: []sdk.Use{{App: "inventory", Scopes: []string{"events:read"}}},
     Subscribes: []sdk.Subscription{{Topics: "inventory.*", URL: "/api/v1/core/events", Secret: hookSecret}},
     OIDC:       &sdk.OIDCRequest{RedirectURIs: []string{baseURL + "/auth/oidc/callback"}},
 })
@@ -79,6 +81,7 @@ Report anything you find privately before opening an issue.
 |---|---|
 | [docs/configuration.md](docs/configuration.md) | every environment variable, auth modes, token prefixes, CLI, what to back up |
 | [docs/manifest.md](docs/manifest.md) | how an app registers; the Go SDK |
+| [docs/platform-contract.md](docs/platform-contract.md) | upgrade order, permissions, identity, retries, validation and remaining delivery boundaries |
 | [docs/events.md](docs/events.md) | publishing, SSE, webhooks and signatures |
 | [docs/pairing.md](docs/pairing.md) | the QR flow and the profile format |
 | [docs/oidc.md](docs/oidc.md) | endpoints, claims, relying-party recipes |
