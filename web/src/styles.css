@@ -836,7 +836,8 @@ html, body { overflow-x: hidden; }
 .lv-stat.off::before { background: var(--muted); } .lv-stat.bad::before { background: var(--danger); }
 .lv-verbs { display: inline-flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .lv-verb { font-size: 12px; font-weight: 600; white-space: nowrap; }
-.lv-verb.read { color: var(--accent-hover); } .lv-verb.write { color: var(--warning); }
+.lv-verb { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+.lv-verb.no { color: var(--muted); }
 .lv-dot { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 12px; flex-shrink: 0; background: var(--accent-soft); }
 .lv-dot.write { background: var(--warning-soft); }
 
@@ -903,13 +904,17 @@ html, body { overflow-x: hidden; }
 .lv-holder.picked { background: var(--accent-soft); }
 @media (max-width: 640px) {
   .lv-grid th, .lv-grid td { padding: 4px; }
-  .lv-word { display: none; }
-  .lv-verbs { flex-direction: row; gap: 6px; }
-  .lv-cell { min-width: 48px; min-height: 40px; padding: 4px; }
-  .lv-cell .lv-verbs { flex-direction: row; }
-  .lv-verb { font-size: 15px; }
+  .lv-cell { min-width: 64px; min-height: 40px; padding: 4px; }
+  .lv-verb { font-size: 11px; gap: 3px; }
+  .lv-verb .lv-mark { width: 14px; height: 14px; font-size: 9px; }
   .lv-cell-state { font-size: 10px; }
   .lv-head { font-size: 10.5px; }
   .lv-head.row { flex-direction: column; gap: 3px; font-size: 10.5px; }
   .lv-corner span { display: none; }
 }
+
+/* allowed / not allowed marks */
+.lv-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; font-size: 11px; font-weight: 800; line-height: 1; color: #fff; background: var(--green); }
+.lv-mark.no { background: var(--red); }
+.lv-mark.some { background: var(--warning); }
+.lv-scope .lv-mark, .lv-right-what .lv-mark { width: 20px; height: 20px; font-size: 12px; }

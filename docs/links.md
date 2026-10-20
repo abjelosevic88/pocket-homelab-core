@@ -33,8 +33,8 @@ Admins see every link two ways: a **diagram** (each Pocket app a card, one arrow
 
 Four more views read the same links differently, all with the same switches:
 
-- **Grid**: apps that act down the side, apps they act in across the top; each cell says what the pair adds up to (👁 sees, ✎ changes) and its state. Best for "who does what" at a glance.
-- **Focus**: one app in the middle, the apps that act in it on one side and the apps it acts in on the other, in plain sentences with a switch per scope; tap an app to move the focus to it.
+- **Grid**: apps that act down the side, apps they act in across the top; each cell says what the pair adds up to (sees, changes), each with a green ✓ when allowed or a red ✕ when switched off. Best for "who does what" at a glance.
+- **Focus**: one app in the middle, the apps that act in it on one side and the apps it acts in on the other, in plain sentences with a ✓ or ✕ and a switch per scope; tap an app to move the focus to it.
 - **Access**: by data instead of by app: "Your Money: *See your transactions* — Day, Travel; *Book transactions* — Garage", including scopes an app offers that nobody uses yet. Best for "who can see or change my stuff".
 - **List**: every pair with its switches.
 

@@ -115,8 +115,8 @@ export default function Links() {
         <Card flush={mode === 'grid'}>{mode === 'grid' ? <MatrixView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} /> : <AccessView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} />}</Card>
         <div ref={detailRef}><Card>
           {detail || <p className="muted small lc-hint">{mode === 'grid'
-            ? <>Each cell is what the app on the left may do in the app on top: <b>👁 sees</b> your data there, <b>✎ changes</b> it. Tap a cell for its switches, or an app for everything it uses and offers.</>
-            : <>Your data in each app, and which apps may see (👁) or change (✎) it for you. Tap an app to see and switch that link.</>}</p>}
+            ? <>Each cell is what the app on the left may do in the app on top: <b>sees</b> your data there or <b>changes</b> it; <span className="lv-mark yes">✓</span> allowed, <span className="lv-mark no">✕</span> switched off. Tap a cell for its switches, or an app for everything it uses and offers.</>
+            : <>Your data in each app, and which apps may see or change it for you: <span className="lv-mark yes">✓</span> someone holds it, <span className="lv-mark no">✕</span> nobody does. Tap an app to see and switch that link.</>}</p>}
         </Card></div>
       </> : groups.length > 0 && mode === 'focus' ? <Card><FocusView groups={groups} apps={apps || []} flip={flip} /></Card>
       : mode === 'diagram' ? <>

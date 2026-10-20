@@ -16,13 +16,24 @@ function Ico({ slug, name, apps }: { slug: string; name: string; apps: App[] }) 
   return a ? <AppIcon a={a} small /> : <span className="feed-ico">{short(name)[0]}</span>
 }
 
-// "sees", "changes" or "sees + changes": what a pair's scopes add up to.
+// A green check when allowed, a red cross when switched off, amber when only some are on.
+type MarkState = 'yes' | 'no' | 'some'
+const markOf = (links: AppLink[]): MarkState => {
+  const on = links.filter(l => l.enabled && ['on', 'off_person'].includes(l.state)).length
+  return on === 0 ? 'no' : on === links.length ? 'yes' : 'some'
+}
+export function Mark({ s, title }: { s: MarkState; title?: string }) {
+  const t = title || (s === 'yes' ? 'Allowed' : s === 'no' ? 'Not allowed' : 'Partly allowed')
+  return <span className={`lv-mark ${s}`} title={t} aria-label={t}>{s === 'no' ? '✕' : '✓'}</span>
+}
+
+// "sees", "changes" or both: what a pair's scopes add up to, each with its mark.
 function verbs(links: AppLink[]) {
-  const r = links.some(l => isRead(l.scope)), w = links.some(l => !isRead(l.scope))
+  const reads = links.filter(l => isRead(l.scope)), writes = links.filter(l => !isRead(l.scope))
   return (
     <span className="lv-verbs">
-      {r && <span className="lv-verb read" title="sees">👁<span className="lv-word"> sees</span></span>}
-      {w && <span className="lv-verb write" title="changes">✎<span className="lv-word"> changes</span></span>}
+      {reads.length > 0 && <span className={`lv-verb ${markOf(reads)}`}><Mark s={markOf(reads)} /> sees</span>}
+      {writes.length > 0 && <span className={`lv-verb ${markOf(writes)}`}><Mark s={markOf(writes)} /> changes</span>}
     </span>
   )
 }
@@ -100,7 +111,7 @@ function CompactScopes({ links, flip }: { links: AppLink[]; flip: (l: AppLink, o
     <div className="lv-scopes">
       {links.map(l => (
         <div key={l.id} className={`lv-scope${l.enabled ? '' : ' off'}`}>
-          <span className={`lv-dot ${isRead(l.scope) ? 'read' : 'write'}`}>{isRead(l.scope) ? '👁' : '✎'}</span>
+          <Mark s={markOf([l])} />
           <span className="grow" title={l.scope_description || l.scope}>{scopeLabel(l)}</span>
           <Switch on={l.enabled} onChange={on => flip(l, on)} title={l.enabled ? 'On for the box' : 'Off for everyone'} />
         </div>))}
@@ -147,7 +158,7 @@ export function FocusView({ groups, apps, flip }: { groups: LinkGroup[]; apps: A
           {usedBy.length ? side(usedBy, 'in') : <p className="muted small">No app acts in {short(cur.name)}.</p>}
           {unused.length > 0 && <div className="lv-unused">
             <p className="muted small">Offered, nobody uses yet:</p>
-            {unused.map(o => <div key={o.scope} className="lv-scope off"><span className={`lv-dot ${isRead(o.scope) ? 'read' : 'write'}`}>{isRead(o.scope) ? '👁' : '✎'}</span><span className="grow">{o.name || o.scope}</span></div>)}
+            {unused.map(o => <div key={o.scope} className="lv-scope off"><Mark s="no" title="Nobody uses this yet" /><span className="grow">{o.name || o.scope}</span></div>)}
           </div>}
         </section>
         <div className="lv-center">
@@ -195,7 +206,7 @@ export function AccessView({ groups, apps, sel, onSelect }: { groups: LinkGroup[
               return (
                 <div key={scope} className="lv-right">
                   <div className="lv-right-what">
-                    <span className={`lv-dot ${isRead(scope) ? 'read' : 'write'}`}>{isRead(scope) ? '👁' : '✎'}</span>
+                    <Mark s={holders.some(g => markOf(g.links.filter(l => l.scope === scope)) === 'yes') ? 'yes' : 'no'} title={holders.length ? undefined : 'No app holds this'} />
                     <span title={info.desc || scope}>{info.name}</span>
                   </div>
                   <div className="lv-holders">
