@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { App, AppLink } from '../lib/types'
+import { layoutGraph } from './linkLayout'
 
 // One arrow per (acting app → target app); its scopes ride on the arrow.
 export interface LinkGroup { key: string; app: string; appName: string; target: string; targetName: string; reason: string; links: AppLink[] }
@@ -8,8 +9,8 @@ type Pos = { x: number; y: number }
 type View = { x: number; y: number; k: number }
 type Node = { slug: string; name: string; app?: App; linked: boolean; out: number; inn: number; offers: number }
 
-const W = 184, H = 58, COL = 380, COL_NARROW = 290, ROW = 88, MIN_K = 0.12, MAX_K = 2.5
-const LAYOUT_KEY = 'core.links.layout.v2'
+const W = 184, H = 58, MIN_K = 0.1, MAX_K = 2.5
+const LAYOUT_KEY = 'core.links.layout.v3'
 
 /** on = every scope issues tokens; partial = some switched off; off = none; bad = a scope can't work. */
 export function pairState(g: LinkGroup): 'on' | 'partial' | 'off' | 'bad' {
@@ -45,49 +46,6 @@ export const scopeLabel = (l: AppLink) => {
 }
 const finite = (p: unknown): p is Pos => !!p && Number.isFinite((p as Pos).x) && Number.isFinite((p as Pos).y)
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-
-// Columns by depth: apps that act on the left, what they act in to the right,
-// apps that only receive links in the last column. Loops (Money ↔ Travel) are
-// broken by dropping the edge that closes them, found with a depth-first walk.
-function autoLayout(nodes: Node[], groups: LinkGroup[], col: number): Record<string, Pos> {
-  const linked = nodes.filter(n => n.linked)
-  const out = (slug: string) => groups.filter(g => g.app === slug && g.target !== slug).map(g => g.target)
-  const back = new Set<string>()
-  const state: Record<string, 1 | 2> = {}
-  const walk = (slug: string) => {
-    state[slug] = 1
-    for (const t of out(slug)) {
-      if (state[t] === 1) back.add(`${slug}→${t}`)
-      else if (!state[t]) walk(t)
-    }
-    state[slug] = 2
-  }
-  const starts = [...linked].sort((a, b) => (b.out - b.inn) - (a.out - a.inn) || a.name.localeCompare(b.name))
-  for (const n of starts) if (!state[n.slug]) walk(n.slug)
-  const dag = groups.filter(g => g.app !== g.target && !back.has(`${g.app}→${g.target}`))
-  const level: Record<string, number> = Object.fromEntries(linked.map(n => [n.slug, 0]))
-  for (let i = 0; i < linked.length; i++) {
-    let changed = false
-    for (const g of dag) if (level[g.target] < level[g.app] + 1) { level[g.target] = level[g.app] + 1; changed = true }
-    if (!changed) break
-  }
-  const last = Math.max(0, ...Object.values(level))
-  for (const n of linked) if (n.out === 0 && n.inn > 0) level[n.slug] = last
-  const cols: Node[][] = []
-  for (const n of linked) (cols[level[n.slug]] ||= []).push(n)
-  const tallest = Math.max(1, ...cols.map(c => c?.length || 0))
-  const pos: Record<string, Pos> = {}
-  cols.forEach((c, ci) => {
-    if (!c) return
-    const rank = (n: Node) => {
-      const ys = groups.filter(g => g.target === n.slug && pos[g.app]).map(g => pos[g.app].y)
-      return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 0
-    }
-    c.sort((a, b) => (ci ? rank(a) - rank(b) : 0) || a.name.localeCompare(b.name))
-    c.forEach((n, ri) => { pos[n.slug] = { x: ci * col, y: (ri - (c.length - 1) / 2) * ROW + (tallest - 1) * ROW / 2 } })
-  })
-  return pos
-}
 
 // A curve from the side of one card to the facing side of the other.
 function edgePath(a: Pos, b: Pos, bend: number) {
@@ -151,7 +109,11 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
   const drawn = useMemo(() => nodes.filter(n => n.linked), [nodes])
   const idle = useMemo(() => nodes.filter(n => !n.linked && n.app).sort((a, b) => a.name.localeCompare(b.name)), [nodes])
 
-  const auto = useMemo(() => autoLayout(drawn, groups, narrow ? COL_NARROW : COL), [drawn, groups, narrow])
+  // A label box fits its scope names; the layout reserves exactly that much room.
+  const labelSize = (g: LinkGroup) => ({ w: Math.ceil(Math.max(...g.links.map(l => textWidth(scopeLabel(l))))) + 20, h: g.links.length * 16 + 9 })
+  const lay = useMemo(() => layoutGraph(drawn.map(n => n.slug), groups.map(g => ({ key: g.key, from: g.app, to: g.target })), { w: W, h: H },
+    key => labelSize(groups.find(g => g.key === key)!)), [drawn, groups]) // eslint-disable-line react-hooks/exhaustive-deps
+  const auto = lay.pos
   const pos = useMemo(() => {
     const p = { ...auto }
     for (const n of drawn) if (finite(saved[n.slug])) p[n.slug] = saved[n.slug]
@@ -162,8 +124,8 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     const el = box.current
     if (!el || drawn.length === 0) return
     const xs = drawn.map(n => pos[n.slug].x), ys = drawn.map(n => pos[n.slug].y)
-    const minX = Math.min(...xs) - 30, maxX = Math.max(...xs) + W + 30
-    const minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + H + 30
+    const minX = Math.min(lay.bounds.minX, ...xs) - 30, maxX = Math.max(lay.bounds.maxX, ...xs.map(x => x + W)) + 30
+    const minY = Math.min(lay.bounds.minY, ...ys) - 30, maxY = Math.max(lay.bounds.maxY, ...ys.map(y => y + H)) + 30
     const k = Math.max(MIN_K, Math.min(1.15, el.clientWidth / (maxX - minX), el.clientHeight / (maxY - minY)))
     setView({ k, x: (el.clientWidth - (maxX - minX) * k) / 2 - minX * k, y: (el.clientHeight - (maxY - minY) * k) / 2 - minY * k })
   }
@@ -326,13 +288,18 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
   const focus = sel?.kind === 'app' && pos[sel.slug] ? sel.slug : hover
   const touches = (g: LinkGroup) => g.app === focus || g.target === focus
   const near = new Set(focus ? groups.filter(touches).flatMap(g => [g.app, g.target]) : [])
+  // Arrows follow the laid-out lanes; one touching a card you moved goes straight instead.
   const edges = groups.filter(g => pos[g.app] && pos[g.target]).map(g => {
+    const r = lay.routes[g.key]
+    const size = labelSize(g)
+    if (r && !finite(saved[g.app]) && !finite(saved[g.target])) return { g, st: pairState(g), d: r.d, reversed: r.reversed, label: r.label }
     const back = g.app !== g.target && groups.some(h => h.app === g.target && h.target === g.app)
-    return { g, st: pairState(g), ...edgePath(pos[g.app], pos[g.target], back ? (g.app < g.target ? -9 : 9) : 0) }
+    const e = edgePath(pos[g.app], pos[g.target], back ? (g.app < g.target ? -9 : 9) : 0)
+    return { g, st: pairState(g), d: e.d, reversed: false, label: { x: e.mid.x - size.w / 2, y: e.mid.y - size.h / 2, ...size } }
   })
   const resetLayout = () => { localStorage.removeItem(LAYOUT_KEY); setSaved({}); setFitTick(t => t + 1) }
   // Zoomed out, arrows carry their scope names only for the tapped app or arrow.
-  const showLabel = (g: LinkGroup) => (sel?.kind === 'pair' && sel.key === g.key) || (!!focus && touches(g)) || (!focus && sel?.kind !== 'pair' && view.k >= 0.6)
+  const showLabel = (g: LinkGroup) => (sel?.kind === 'pair' && sel.key === g.key) || (!!focus && touches(g)) || (!focus && sel?.kind !== 'pair' && view.k >= 0.5)
 
   return (
     <div className={`lc${full ? ' full' : ''}`} ref={root}>
@@ -367,24 +334,23 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
           </defs>
           <rect width="100%" height="100%" fill="url(#lc-grid)" />
           <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-            {edges.map(({ g, st, d }) => {
+            {edges.map(({ g, st, d, reversed }) => {
               const on = sel?.kind === 'pair' && sel.key === g.key
               const dim = (focus && !touches(g)) || (sel?.kind === 'pair' && !on)
               return (
                 <g key={g.key} data-pair={g.key} className={`lc-edge ${st}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}>
                   <path d={d} className="lc-hit" />
-                  <path d={d} className="lc-line" markerEnd={`url(#lc-arrow-${st})`} />
+                  <path d={d} className="lc-line" markerEnd={reversed ? undefined : `url(#lc-arrow-${st})`} markerStart={reversed ? `url(#lc-arrow-${st})` : undefined} />
                   {st === 'on' && <path d={d} className="lc-flow" />}
                 </g>)
             })}
-            {edges.filter(({ g }) => showLabel(g)).map(({ g, st, mid }) => {
-              const lines = g.links.map(scopeLabel)
-              const w = Math.ceil(Math.max(...lines.map(textWidth))) + 20, h = lines.length * 16 + 9
+            {edges.filter(({ g }) => showLabel(g)).map(({ g, st, label }) => {
+              const { w, h } = label
               const on = sel?.kind === 'pair' && sel.key === g.key
               const dim = (focus && !touches(g)) || (sel?.kind === 'pair' && !on)
               const uses = g.links.reduce((a, l) => a + l.uses, 0)
               return (
-                <g key={g.key} data-pair={g.key} className={`lc-label ${st}${on ? ' picked' : ''}${dim ? ' dim' : ''}`} transform={`translate(${mid.x - w / 2},${mid.y - h / 2})`}>
+                <g key={g.key} data-pair={g.key} className={`lc-label ${st}${on ? ' picked' : ''}${dim ? ' dim' : ''}`} transform={`translate(${label.x},${label.y})`}>
                   <title>{`${g.appName} → ${g.targetName}\n${g.links.map(l => `${scopeLabel(l)} (${l.scope})${l.enabled ? '' : ', off'}`).join('\n')}\n${plural(uses, 'token')} issued`}</title>
                   <rect width={w} height={h} rx={7} />
                   {g.links.map((l, i) => <text key={l.id} x={10} y={17 + i * 16} className={l.enabled ? '' : 'off'}>{scopeLabel(l)}</text>)}
