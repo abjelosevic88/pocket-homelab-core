@@ -46,8 +46,8 @@ export const scopeLabel = (l: AppLink) => {
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 // Columns by depth (apps nobody calls on the left, what they call to the right),
-// each column ordered by where its callers sit; apps without links in a grid below.
-function autoLayout(nodes: Node[], groups: LinkGroup[]): { pos: Record<string, Pos>; restTop: number } {
+// each column ordered by where its callers sit.
+function autoLayout(nodes: Node[], groups: LinkGroup[]): Record<string, Pos> {
   const linked = nodes.filter(n => n.linked)
   const level: Record<string, number> = Object.fromEntries(linked.map(n => [n.slug, 0]))
   for (let i = 0; i < linked.length; i++) {
@@ -72,11 +72,7 @@ function autoLayout(nodes: Node[], groups: LinkGroup[]): { pos: Record<string, P
     c.sort((a, b) => (ci ? rank(a) - rank(b) : 0) || a.name.localeCompare(b.name))
     c.forEach((n, ri) => { pos[n.slug] = { x: ci * COL, y: (ri - (c.length - 1) / 2) * ROW + (tallest - 1) * ROW / 2 } })
   })
-  const rest = nodes.filter(n => !n.linked).sort((a, b) => a.name.localeCompare(b.name))
-  const perRow = Math.max(3, cols.length)
-  const restTop = linked.length ? tallest * ROW + 64 : 0
-  rest.forEach((n, i) => { pos[n.slug] = { x: (i % perRow) * COL, y: restTop + Math.floor(i / perRow) * ROW } })
-  return { pos, restTop }
+  return pos
 }
 
 // A curve from the side of one card to the facing side of the other.
@@ -100,7 +96,6 @@ function edgePath(a: Pos, b: Pos, bend: number) {
 }
 
 export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: LinkGroup[]; apps: App[]; sel: CanvasSel; onSelect: (s: CanvasSel) => void; detail?: React.ReactNode }) {
-  const [onlyLinked, setOnlyLinked] = useState(() => localStorage.getItem('core.links.only') === '1')
   const [saved, setSaved] = useState<Record<string, Pos>>(() => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') } catch { return {} } })
   const [view, setView] = useState<View>({ x: 20, y: 20, k: 1 })
   const [hover, setHover] = useState<string>('')
@@ -125,31 +120,30 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
       n.inn = groups.filter(g => g.target === n.slug).length
       n.linked = n.out + n.inn > 0
     }
-    return onlyLinked ? ns.filter(n => n.linked) : ns
-  }, [apps, groups, onlyLinked])
+    return ns
+  }, [apps, groups])
+  // Only apps with a link are drawn; the rest wait in the tray under the canvas.
+  const drawn = useMemo(() => nodes.filter(n => n.linked), [nodes])
+  const idle = useMemo(() => nodes.filter(n => !n.linked && n.app).sort((a, b) => a.name.localeCompare(b.name)), [nodes])
 
-  const auto = useMemo(() => autoLayout(nodes, groups), [nodes, groups])
+  const auto = useMemo(() => autoLayout(drawn, groups), [drawn, groups])
   const pos = useMemo(() => {
-    const p = { ...auto.pos }
-    for (const n of nodes) if (saved[n.slug]) p[n.slug] = saved[n.slug]
+    const p = { ...auto }
+    for (const n of drawn) if (saved[n.slug]) p[n.slug] = saved[n.slug]
     return p
-  }, [auto, saved, nodes])
+  }, [auto, saved, drawn])
 
-  // On a phone, frame the linked apps; the ones without links are a pan away.
   const fit = () => {
     const el = box.current
-    if (!el || nodes.length === 0) return
-    const linked = nodes.filter(n => n.linked)
-    const framed = el.clientWidth < 640 && linked.length ? linked : nodes
-    const xs = framed.map(n => pos[n.slug].x), ys = framed.map(n => pos[n.slug].y)
+    if (!el || drawn.length === 0) return
+    const xs = drawn.map(n => pos[n.slug].x), ys = drawn.map(n => pos[n.slug].y)
     const minX = Math.min(...xs) - 30, maxX = Math.max(...xs) + W + 30
     const minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + H + 30
     const k = Math.max(0.3, Math.min(1.15, el.clientWidth / (maxX - minX), el.clientHeight / (maxY - minY)))
-    const top = framed === nodes ? (el.clientHeight - (maxY - minY) * k) / 2 : Math.min(24, (el.clientHeight - (maxY - minY) * k) / 2)
-    setView({ k, x: (el.clientWidth - (maxX - minX) * k) / 2 - minX * k, y: top - minY * k })
+    setView({ k, x: (el.clientWidth - (maxX - minX) * k) / 2 - minX * k, y: (el.clientHeight - (maxY - minY) * k) / 2 - minY * k })
   }
   // Fit when what is drawn changes (not when a card is dragged).
-  const shape = nodes.map(n => n.slug).join(',') + '|' + groups.map(g => g.key).join(',')
+  const shape = drawn.map(n => n.slug).join(',') + '|' + groups.map(g => g.key).join(',')
   useLayoutEffect(fit, [shape]) // eslint-disable-line react-hooks/exhaustive-deps
   // …and when the canvas gets wider or narrower (a phone turned), not on height
   // changes (a phone's address bar sliding away).
@@ -252,14 +246,13 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
     } else if (g.kind === 'node') setSaved(s => { localStorage.setItem(LAYOUT_KEY, JSON.stringify(s)); return s })
   }
 
-  const focus = sel?.kind === 'app' ? sel.slug : hover
+  const focus = sel?.kind === 'app' && pos[sel.slug] ? sel.slug : hover
   const touches = (g: LinkGroup) => g.app === focus || g.target === focus
   const near = new Set(focus ? groups.filter(touches).flatMap(g => [g.app, g.target]) : [])
   const edges = groups.filter(g => pos[g.app] && pos[g.target]).map(g => {
     const back = g.app !== g.target && groups.some(h => h.app === g.target && h.target === g.app)
     return { g, st: pairState(g), ...edgePath(pos[g.app], pos[g.target], back ? (g.app < g.target ? -9 : 9) : 0) }
   })
-  const unlinkedCount = nodes.filter(n => !n.linked).length
   const resetLayout = () => { localStorage.removeItem(LAYOUT_KEY); setSaved({}); requestAnimationFrame(fit) }
 
   return (
@@ -272,7 +265,6 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
           <span><i className="lc-key bad" />Can't work</span>
         </div>
         <div className="lc-tools">
-          <button type="button" className={`btn sm ${onlyLinked ? '' : 'ghost'}`} onClick={() => { localStorage.setItem('core.links.only', onlyLinked ? '0' : '1'); setOnlyLinked(!onlyLinked) }} title="Hide apps that have no links yet">Linked only</button>
           <button type="button" className="btn sm ghost" onClick={() => { const el = box.current!; zoomAt(el.clientWidth / 2, el.clientHeight / 2, 1 / 1.25) }} aria-label="Zoom out">−</button>
           <button type="button" className="btn sm ghost" onClick={() => { const el = box.current!; zoomAt(el.clientWidth / 2, el.clientHeight / 2, 1.25) }} aria-label="Zoom in">+</button>
           <button type="button" className="btn sm ghost" onClick={fit}>Fit</button>
@@ -296,12 +288,11 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
           </defs>
           <rect width="100%" height="100%" fill="url(#lc-grid)" />
           <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-            {!onlyLinked && unlinkedCount > 0 && groups.length > 0 && <text x={0} y={auto.restTop - 18} className="lc-section">Not linked yet</text>}
             {edges.map(({ g, st, d }) => {
               const on = sel?.kind === 'pair' && sel.key === g.key
               const dim = (focus && !touches(g)) || (sel?.kind === 'pair' && !on)
               return (
-                <g key={g.key} data-pair={g.key} className={`lc-edge ${st}${on ? ' sel' : ''}${dim ? ' dim' : ''}`}>
+                <g key={g.key} data-pair={g.key} className={`lc-edge ${st}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}>
                   <path d={d} className="lc-hit" />
                   <path d={d} className="lc-line" markerEnd={`url(#lc-arrow-${st})`} />
                   {st === 'on' && <path d={d} className="lc-flow" />}
@@ -314,13 +305,13 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
               const dim = (focus && !touches(g)) || (sel?.kind === 'pair' && !on)
               const uses = g.links.reduce((a, l) => a + l.uses, 0)
               return (
-                <g key={g.key} data-pair={g.key} className={`lc-label ${st}${on ? ' sel' : ''}${dim ? ' dim' : ''}`} transform={`translate(${mid.x - w / 2},${mid.y - h / 2})`}>
+                <g key={g.key} data-pair={g.key} className={`lc-label ${st}${on ? ' picked' : ''}${dim ? ' dim' : ''}`} transform={`translate(${mid.x - w / 2},${mid.y - h / 2})`}>
                   <title>{`${g.appName} → ${g.targetName}\n${g.links.map(l => `${scopeLabel(l)} (${l.scope})${l.enabled ? '' : ', off'}`).join('\n')}\n${plural(uses, 'token')} issued`}</title>
                   <rect width={w} height={h} rx={7} />
                   {g.links.map((l, i) => <text key={l.id} x={10} y={17 + i * 16} className={l.enabled ? '' : 'off'}>{scopeLabel(l)}</text>)}
                 </g>)
             })}
-            {nodes.map(n => {
+            {drawn.map(n => {
               const p = pos[n.slug]
               const src = n.app ? iconSrc(n.app) : ''
               const on = sel?.kind === 'app' && sel.slug === n.slug
@@ -328,7 +319,7 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
               const sub = n.linked ? [n.out && `uses ${plural(n.out, 'app')}`, n.inn && `used by ${n.inn}`].filter(Boolean).join(' · ') : n.offers ? `offers ${plural(n.offers, 'scope')}` : 'no links'
               return (
                 <g key={n.slug} data-node={n.slug} transform={`translate(${p.x},${p.y})`}
-                  className={`lc-node${n.linked ? '' : ' idle'}${n.app ? '' : ' ghost'}${on ? ' sel' : ''}${dim ? ' dim' : ''}`}
+                  className={`lc-node${n.app ? '' : ' ghost'}${on ? ' picked' : ''}${dim ? ' dim' : ''}`}
                   onPointerEnter={e => e.pointerType === 'mouse' && setHover(n.slug)} onPointerLeave={() => setHover('')}>
                   <rect width={W} height={H} rx={12} className="lc-card" />
                   <clipPath id={`lc-clip-${n.slug}`}><rect x={12} y={13} width={32} height={32} rx={8} /></clipPath>
@@ -342,13 +333,27 @@ export function LinkCanvas({ groups, apps, sel, onSelect, detail }: { groups: Li
             })}
           </g>
         </svg>
-        {nodes.length === 0 && <div className="lc-empty muted">No apps registered yet.</div>}
+        {drawn.length === 0 && <div className="lc-empty muted">{nodes.length ? 'No app uses another yet.' : 'No apps registered yet.'}</div>}
         {full && sel && detail && (
           <div className="lc-float">
             <button type="button" className="btn sm ghost lc-float-close" onClick={() => onSelect(null)} aria-label="Close">✕</button>
             {detail}
           </div>)}
       </div>
+      {idle.length > 0 && (
+        <div className="lc-tray">
+          <span className="lc-tray-label">Not linked</span>
+          {idle.map(n => {
+            const src = iconSrc(n.app!)
+            const on = sel?.kind === 'app' && sel.slug === n.slug
+            return (
+              <button type="button" key={n.slug} className={`lc-chip${on ? ' picked' : ''}`} onClick={() => onSelect(on ? null : { kind: 'app', slug: n.slug })}
+                title={n.offers ? `${n.name} offers ${plural(n.offers, 'scope')} no app uses yet` : `${n.name} neither uses nor offers anything`}>
+                {src && !badIcons.has(n.slug) ? <img src={src} alt="" onError={() => setBadIcons(s => new Set(s).add(n.slug))} /> : <i>{short(n.name)[0]}</i>}
+                {short(n.name)}{n.offers > 0 && <span className="lc-chip-n">{n.offers}</span>}
+              </button>)
+          })}
+        </div>)}
     </div>
   )
 }

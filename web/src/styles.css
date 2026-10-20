@@ -761,14 +761,11 @@ html, body { overflow-x: hidden; }
 .lc-svg:active { cursor: grabbing; }
 .lc-grid-dot { fill: var(--border); }
 .lc-empty { position: absolute; inset: 0; display: grid; place-items: center; }
-.lc-section { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
 
 .lc-node { cursor: pointer; transition: opacity .15s; }
 .lc-card { fill: var(--surface); stroke: var(--border); stroke-width: 1; filter: drop-shadow(0 1px 2px rgba(16, 24, 40, .08)); }
 .lc-node:hover .lc-card { stroke: var(--accent); }
-.lc-node.sel .lc-card { stroke: var(--accent); stroke-width: 2; }
-.lc-node.idle .lc-card { fill: var(--surface-2); }
-.lc-node.idle { opacity: .75; }
+.lc-node.picked .lc-card { stroke: var(--accent); stroke-width: 2; }
 .lc-node.ghost .lc-card { stroke: var(--danger); stroke-dasharray: 5 4; }
 .lc-node.dim, .lc-edge.dim, .lc-label.dim { opacity: .22; }
 .lc-letter-bg { fill: var(--accent-soft); }
@@ -784,7 +781,7 @@ html, body { overflow-x: hidden; }
 .lc-edge.partial .lc-line { stroke: var(--warning); }
 .lc-edge.off .lc-line { stroke: var(--muted); stroke-dasharray: 6 5; }
 .lc-edge.bad .lc-line { stroke: var(--danger); stroke-dasharray: 6 5; }
-.lc-edge:hover .lc-line, .lc-edge.sel .lc-line { stroke-width: 3; }
+.lc-edge:hover .lc-line, .lc-edge.picked .lc-line { stroke-width: 3; }
 .lc-flow { fill: none; stroke: var(--accent-hover); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 2 14; animation: lc-flow 1.2s linear infinite; pointer-events: none; opacity: .8; }
 @keyframes lc-flow { to { stroke-dashoffset: -16; } }
 @media (prefers-reduced-motion: reduce) { .lc-flow { animation: none; display: none; } }
@@ -793,7 +790,7 @@ html, body { overflow-x: hidden; }
 .lc-label { cursor: pointer; transition: opacity .15s; }
 .lc-label rect { fill: var(--surface); stroke: var(--accent); stroke-width: 1; }
 .lc-label.partial rect { stroke: var(--warning); } .lc-label.off rect { stroke: var(--muted); stroke-dasharray: 4 3; } .lc-label.bad rect { stroke: var(--danger); }
-.lc-label.sel rect { stroke-width: 2; }
+.lc-label.picked rect { stroke-width: 2; }
 .lc-label text { font-size: 11.5px; font-weight: 550; fill: var(--text); }
 .lc-label text.off { fill: var(--muted); text-decoration: line-through; }
 
@@ -819,3 +816,14 @@ html, body { overflow-x: hidden; }
   .lc-full-btn span { display: none; }
   .lc-float { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 48%; }
 }
+
+/* Links diagram: apps without links wait in a tray under the canvas */
+.lc-tray { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--border); }
+@media (max-width: 640px) { .lc-tray { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } }
+.lc-tray-label { font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); white-space: nowrap; margin-right: 4px; }
+.lc-chip { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font: inherit; font-size: 12.5px; padding: 4px 9px 4px 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
+.lc-chip:hover { border-color: var(--accent); }
+.lc-chip.picked { border-color: var(--accent); background: var(--accent-soft); }
+.lc-chip img, .lc-chip i { width: 20px; height: 20px; border-radius: 6px; object-fit: cover; }
+.lc-chip i { display: grid; place-items: center; font-style: normal; font-size: 10px; font-weight: 700; background: var(--accent-soft); color: var(--accent-hover); }
+.lc-chip-n { font-size: 11px; color: var(--muted); }

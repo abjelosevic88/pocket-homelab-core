@@ -29,7 +29,7 @@ Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, t
 
 ## The Links page
 
-Admins see every link two ways: a **diagram** (each Pocket app a card, one arrow per acting app → target app labelled with its scopes' names, IDs on hover, coloured on / partly off / off / can't work, apps without links in a grid below) and a **list**. Tap an arrow for its switches, or a card for everything that app uses, lets others use, and offers that nobody uses yet. Cards can be dragged; the layout is kept in the browser. **Full screen** gives the diagram the whole window (real full screen where the browser allows, a page-covering view on iPhone), with the tapped arrow or app in a floating panel; Esc leaves.
+Admins see every link two ways: a **diagram** (each Pocket app a card, one arrow per acting app → target app labelled with its scopes' names, IDs on hover, coloured on / partly off / off / can't work; apps without links sit as chips in a **Not linked** strip under it, and move onto the diagram once they get a link) and a **list**. Tap an arrow for its switches, or a card for everything that app uses, lets others use, and offers that nobody uses yet. Cards can be dragged; the layout is kept in the browser. **Full screen** gives the diagram the whole window (real full screen where the browser allows, a page-covering view on iPhone), with the tapped arrow or app in a floating panel; Esc leaves.
 
 ## When a link works
 
