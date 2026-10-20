@@ -378,6 +378,9 @@ func (s *Server) pollConnector(ctx context.Context, sv *store.Service, c connect
 		if ev.UserEmail == "" && ev.RemoteUserID != "" {
 			ev.UserEmail = s.personForRemote(ctx, sv, ev.RemoteUserID)
 		}
+		if ev.Personal && ev.UserEmail == "" {
+			continue // someone's own activity, and Core knows no one for that account
+		}
 		if err := s.publishConnectorEvent(ctx, c, ev); err != nil {
 			s.log.Warn("connector event not published", "type", c.Type(), "event", ev.Name, "err", err)
 			continue

@@ -110,7 +110,11 @@ type Event struct {
 	// RemoteUserID: the app account the event belongs to, for apps without
 	// emails; Core finds the person through the accounts it linked.
 	RemoteUserID string
-	Payload      map[string]any // event body
+	// Personal: only ever the person's (what they read, watch, push). Core
+	// drops it when RemoteUserID is linked to nobody, instead of publishing
+	// it for the household.
+	Personal bool
+	Payload  map[string]any // event body
 }
 
 // RemoteAccount is an account in the app, offered for linking by hand.
@@ -161,7 +165,8 @@ type KeyRotator interface {
 
 // ---- push: the app calls Core for each thing that happens ----
 
-// PushHeader carries a push subscription's secret on every delivery.
+// PushHeader carries a push subscription's secret on every delivery. Apps
+// that can only set Authorization send "Bearer <secret>" there instead.
 const PushHeader = "X-Pocket-Hook"
 
 // PushTrigger is one kind of delivery Core subscribes to.

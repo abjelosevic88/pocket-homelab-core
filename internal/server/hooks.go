@@ -460,15 +460,28 @@ func (s *Server) setEventsError(ctx context.Context, serviceID int64, err error)
 
 // ---- the receiver ----
 
+// hookSecret is the delivery's secret: the push header, else a bearer token
+// (apps that can only set Authorization, like Forgejo).
+func hookSecret(r *http.Request) string {
+	if v := r.Header.Get(connectors.PushHeader); v != "" {
+		return v
+	}
+	if v, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
 // handleConnectorHook takes one delivery from an app. Public: the hook id
 // and its secret header are the only authentication. Unknown hook or wrong
 // secret: 404, nothing recorded.
 func (s *Server) handleConnectorHook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "hookID")
-	got := crypto.Hash(r.Header.Get(connectors.PushHeader))
+	secret := hookSecret(r)
+	got := crypto.Hash(secret)
 	h, err := s.store.GetConnectorHook(ctx, id)
-	if err != nil || r.Header.Get(connectors.PushHeader) == "" || subtle.ConstantTimeCompare([]byte(got), []byte(h.SecretHash)) != 1 {
+	if err != nil || secret == "" || subtle.ConstantTimeCompare([]byte(got), []byte(h.SecretHash)) != 1 {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
