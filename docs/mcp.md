@@ -5,6 +5,59 @@ SDK and Streamable HTTP. This first slice exposes Core health and registered
 Pocket app health. Notes is the worked example. It does not yet expose third-party
 connectors, activity/history, logs, domain content, or device administration.
 
+## Account sign-in
+
+Enable `MCP_OAUTH_ENABLED=true`, `AUTH_MODE=local`, and an HTTPS origin in
+`BASE_URL` (HTTP loopback is allowed for local development). Use secure cookies
+on HTTPS. Existing password or upstream SSO login is reused. This mode can run
+alongside either operator credential mode below; no token file is required.
+
+```sh
+codex mcp add pocket_account --url https://core.example.com/mcp
+codex mcp login pocket_account
+```
+
+In the browser, sign in to Core and approve **Allow status access**. For Claude's
+custom remote connector, supply the same URL and choose sign-in. A person needs
+only their Core account and URL. Their assistant receives the `status:read`
+scope, covering Core availability and the registered Pocket apps whose enabled
+service audience includes that person. Apps without a mirrored service are
+excluded. The app list is recomputed on every HTTP request. Operator app
+allowlists do not constrain account connections; Core's service sharing does.
+
+**Core → AI connections** (`/ai-connections`) shows connections and a disconnect
+button. Every user can manage only their own connections. Access tokens last
+15 minutes; rotating refresh tokens cannot extend the 30-day connection lifetime.
+Reusing a consumed code or refresh token revokes its connection. Revocation and
+account disable/authentication-revision changes take effect on the next request;
+already authorized requests may finish. Logging out of the browser alone does
+not disconnect an assistant. Revoked or expired clients must sign in again.
+
+Core publishes protected resource metadata at
+`/.well-known/oauth-protected-resource/mcp`, and authorization-server metadata at
+`/.well-known/oauth-authorization-server/mcp/oauth`. The issuer is
+`BASE_URL/mcp/oauth`. Endpoints under it are `/register`, `/authorize`, `/token`
+and `/revoke`. Registration supports public clients and client-secret basic/post
+authentication, exact HTTPS or literal-loopback HTTP callbacks, authorization
+code flow with mandatory S256 PKCE, and refresh rotation. Requests must target
+the exact `BASE_URL/mcp` resource; only `status:read` is supported. Dynamic client
+registration is supported; Client ID Metadata Documents are not implemented.
+
+OAuth clients, grants and hashed credentials are stored separately from Core's
+first-party OIDC clients and API tokens. Registration does not grant access until
+a signed-in person approves. Client names are supplied by the connecting app;
+the consent page also shows the callback address. Registration is limited to a
+burst of 10 and one request per 10 seconds, with at most 1,000 registrations per
+Core database. OAuth requests have a 16 KiB body limit and aggregate limit of
+five per second, burst 30. Discovery does not require authentication.
+
+Publish the existing Core web origin, including login, SSO callbacks, OAuth,
+discovery and `/mcp` routes. Avoid a separate proxy authentication redirect on
+machine-facing endpoints. The dedicated `/mcp`-only proxy example below applies
+to operator-issued credentials, **not** account sign-in. Core does not provision
+DNS, certificates or tunnels. Existing reverse proxies serving all Core routes
+usually need no routing changes.
+
 ## Try Notes without changing the running Core
 
 From this checkout, with Go and Python 3 installed and Notes running:
@@ -63,12 +116,13 @@ Core's trusted registry. Fresh checks send no credentials, follow no redirects,
 read at most 16 KiB of health JSON, and do not update the registry. Results omit
 private URLs, manifests, raw errors, upstream response bodies and credentials.
 Core logs the client ID, tool names, selected app, freshness and outcome. Client
-IDs identify configured integrations, not authenticated household members.
+IDs identify configured integrations; OAuth audit IDs also include the Core user ID.
 
 ## Enable in an existing Core deployment
 
 Build/deploy this source revision first; older released images may not contain
-this endpoint. The recommended setup uses named, expiring clients:
+this endpoint. For scripts or clients that use manually supplied bearer tokens,
+use named, expiring clients:
 
 ```sh
 make all
@@ -162,8 +216,8 @@ MCP_APPS=notes
 
 Restart Core to apply. `MCP_APPS=notes,tasks,garage` allows those apps;
 `MCP_APPS=*` deliberately allows all current and future registered Pocket apps.
-With neither `MCP_TOKEN_HASH` nor `MCP_CLIENTS_FILE`, `/mcp` returns HTTP 404. An enabled endpoint requires a
-valid hash and nonempty allowlist. Browser sessions, registration keys, app tokens
+With OAuth disabled and neither `MCP_TOKEN_HASH` nor `MCP_CLIENTS_FILE`, `/mcp`
+returns HTTP 404. Operator credentials require a valid hash and nonempty allowlist. Browser sessions, registration keys, app tokens
 and Core's `AUTH_MODE=none` never bypass MCP bearer authentication. The dedicated
 MCP token is not a Core API/admin credential. Rotate/revoke by replacing/removing
 the hash and restarting Core. The single environment credential has no automatic expiry; use the named-client file for expiring credentials.
@@ -196,7 +250,7 @@ client itself can join that network; a cloud-hosted client generally needs an
 externally reachable HTTPS endpoint or a supported private-network connector.
 Public reachability and anonymous access are separate decisions.
 
-Use a client supporting an explicit bearer header. Publish only
+For operator-issued credentials, use a client supporting an explicit bearer header. Publish only
 the exact `/mcp` path through a TLS proxy/tunnel, preserve the Authorization
 header, apply edge request/concurrency limits, and do not send MCP requests to an
 interactive browser login redirect. Do not forward other Core routes from a
@@ -233,12 +287,10 @@ Core enforces an aggregate rate of two MCP requests/second (120/minute), burst
 Live health responses are capped at 16 KiB and must be a single JSON object. Add
 edge limits too when exposing an internet endpoint.
 
-For a multi-user product, implement the MCP OAuth authorization profile, protected
-resource metadata, consent, audience validation, per-user/tool/app scopes and
-revocation. Core's existing OIDC login is a foundation, not automatically a
-complete MCP authorization server. This implementation's manually provisioned bearer credentials
-does not implement that OAuth discovery/login flow and is not a universal
-one-click connector for every hosted assistant.
+For account-based access, enable the OAuth mode above. Other MCP clients must
+support its discovery, registration and authorization-code flow; availability
+and configuration vary by client. Domain content and mutation tools still need
+separate, explicit authorization design before being added.
 
 ## Where this belongs in Core
 
@@ -275,14 +327,15 @@ to call the running Notes health endpoint; it does not change Notes or productio
 
 | Symptom | What to check |
 |---|---|
-| HTTP 404 | Build includes MCP, one credential mode is enabled, and proxy forwards exact `/mcp` |
+| HTTP 404 | Build includes MCP, OAuth or an operator credential mode is enabled, and proxy forwards `/mcp` |
 | HTTP 401 | `POCKET_MCP_TOKEN` is exported in the client process; token matches a current, unexpired entry |
 | HTTP 403 | Origin matches `BASE_URL`; loopback proxy rewrites upstream Host as shown above |
 | HTTP 429 | Honor Retry-After; reduce concurrent calls/polling frequency |
 | HTTP 503 | Named client file is readable, valid, within 64 KiB, and contains unique IDs/hashes and expiries |
-| Empty app list | Apps registered with this Core; correct slugs appear in the client's allowlist |
+| Empty app list | Account: enabled services share registered apps with that user. Operator: app slugs appear in the credential allowlist |
 | App unavailable | Slug is missing or not allowed; denied and nonexistent apps intentionally look the same |
 | `unknown` / `stale: true` | Cached check missing/old; request `fresh: true` |
 | `unreachable` | Core can reach the registered app URL from its own container/network |
 | `unknown` from a live probe | Health endpoint returns recognized JSON, not a login page or redirect |
-| Cannot use OAuth login | This endpoint uses a supplied bearer credential; interactive OAuth is not implemented |
+| Cannot use OAuth login | Enable `MCP_OAUTH_ENABLED`, use the canonical Core URL, forward discovery/OAuth routes, and remove manual bearer configuration from that client |
+| OAuth `invalid_grant` | Connection expired/revoked, account changed, or code/refresh token reused; reconnect through browser sign-in |

@@ -7,6 +7,7 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -56,9 +57,10 @@ type Config struct {
 	DemoData bool
 
 	// MCP is opt-in and has a separate status-only credential.
-	MCPTokenHash   string
-	MCPApps        []string
-	MCPClientsFile string
+	MCPTokenHash    string
+	MCPApps         []string
+	MCPClientsFile  string
+	MCPOAuthEnabled bool
 }
 
 func env(key, def string) string {
@@ -135,10 +137,11 @@ func Load() (*Config, error) {
 		SSOAutoCreate:   envBool("SSO_AUTO_CREATE", false),
 		PasswordLogin:   envBool("PASSWORD_LOGIN", true),
 
-		DemoData:       envBool("DEMO_DATA", false),
-		MCPTokenHash:   env("MCP_TOKEN_HASH", ""),
-		MCPClientsFile: env("MCP_CLIENTS_FILE", ""),
-		MCPApps:        strings.FieldsFunc(env("MCP_APPS", ""), func(r rune) bool { return r == ',' || r == ' ' }),
+		DemoData:        envBool("DEMO_DATA", false),
+		MCPTokenHash:    env("MCP_TOKEN_HASH", ""),
+		MCPOAuthEnabled: envBool("MCP_OAUTH_ENABLED", false),
+		MCPClientsFile:  env("MCP_CLIENTS_FILE", ""),
+		MCPApps:         strings.FieldsFunc(env("MCP_APPS", ""), func(r rune) bool { return r == ',' || r == ' ' }),
 	}
 	if c.MCPTokenHash != "" {
 		b, err := hex.DecodeString(c.MCPTokenHash)
@@ -159,6 +162,15 @@ func Load() (*Config, error) {
 	}
 	if c.BaseURL == "" {
 		c.BaseURL = fmt.Sprintf("http://localhost:%d", c.Port)
+	}
+	if c.MCPOAuthEnabled {
+		u, err := url.Parse(c.BaseURL)
+		if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"))) {
+			return nil, fmt.Errorf("MCP_OAUTH_ENABLED needs an HTTPS BASE_URL origin (HTTP loopback is allowed for development)")
+		}
+		if c.AuthMode != "local" {
+			return nil, fmt.Errorf("MCP_OAUTH_ENABLED requires AUTH_MODE=local (password or upstream SSO login)")
+		}
 	}
 	if c.OIDCIssuer == "" {
 		c.OIDCIssuer = c.BaseURL

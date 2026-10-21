@@ -27,6 +27,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `EVENT_RETENTION` | `720h` | Events older than this are purged hourly |
 | `WEBHOOK_ATTEMPTS` | `8` | Delivery attempts before a webhook delivery is marked failed (10 s, 20 s, 40 s… capped at 1 h) |
 | `DEMO_DATA` | `false` | Seed three fake apps, three services and a few events on an empty database |
+| `MCP_OAUTH_ENABLED` | `false` | Enable Core account sign-in for status-only MCP; requires `AUTH_MODE=local` and HTTPS `BASE_URL` origin (HTTP loopback for development) |
 | `MCP_TOKEN_HASH` | disabled | Hex SHA-256 digest of a dedicated status-only MCP bearer token; see [MCP setup](mcp.md) |
 | `MCP_APPS` | none | Required with `MCP_TOKEN_HASH`: comma-separated registered app slugs, or `*` for all |
 | `MCP_CLIENTS_FILE` | disabled | JSON file of named clients with token hashes, app grants and expiry; reloaded each request. Use instead of `MCP_TOKEN_HASH`/`MCP_APPS`. See [MCP setup](mcp.md). |
@@ -53,6 +54,8 @@ In PocketID: *OIDC Clients → Add*, callback `BASE_URL/api/v1/auth/sso/callback
 | `pcu_` | a person's script, Raycast, Homepage | Users → My API tokens |
 | `pco_` / `pcr_` | an OIDC relying party | `/oidc/token` |
 | `pcs_` | an OIDC client secret | Settings → Single sign-on |
+| `pcma_` / `pcmr_` | an approved MCP assistant | OAuth access/refresh tokens, isolated from ordinary API credentials |
+| `mcps_` | a confidential MCP OAuth client | Dynamic registration; not a user access token |
 | `pcm_` | an MCP status client | `pocket-core mcp setup`; dedicated status-only credential |
 
 Tokens go in `Authorization: Bearer …` (or `X-API-Key` for the ordinary API).

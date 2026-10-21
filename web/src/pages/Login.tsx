@@ -14,11 +14,11 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   const [busy, setBusy] = useState(false)
 
   const go = () => {
-    // An OIDC authorize round-trip must go through the server, not the router.
-    if (next && next.startsWith('/oidc/')) { window.location.href = next; return }
+    // An authorization round-trip must go through the server, not the router.
+    if (next && (next.startsWith('/oidc/') || next.startsWith('/mcp/oauth/authorize?'))) { window.location.href = next; return }
     navigate((loc.state as { from?: string })?.from || next || '/')
   }
-  if (status && user) { if (next && next.startsWith('/oidc/')) { window.location.href = next; return null } return <Navigate to={(loc.state as { from?: string })?.from || '/'} replace /> }
+  if (status && user) { if (next && (next.startsWith('/oidc/') || next.startsWith('/mcp/oauth/authorize?'))) { window.location.href = next; return null } return <Navigate to={(loc.state as { from?: string })?.from || '/'} replace /> }
   if (status && mode === 'setup' && !status.needs_setup) return <Navigate to="/login" replace />
   if (status && mode === 'login' && status.needs_setup) return <Navigate to="/setup" replace />
 

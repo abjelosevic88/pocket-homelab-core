@@ -25,7 +25,7 @@ Every Pocket app is a small Go server with its own SQLite file. They already tal
 - **Connectors.** Core can make each person's account in a third-party app and hand them their own key, switch on “Sign in with Pocket Core” there, and turn what happens in it into events. Audiobookshelf, Forgejo, Immich, Jellyfin, Jellyseerr, Kavita, Nextcloud and Paperless-ngx so far, plus events from Radarr, Sonarr, Lidarr, Prowlarr, Chaptarr, Komodo, Backrest, Beszel, Scrutiny, Speedtest Tracker, Changedetection.io, Uptime Kuma, Dawarich and Maloja; off until you switch them on.
 - **App links.** One app can act for a person in another with no tokens pasted between them. Garage books a fill-up as a Money transaction, for every person on the box. The app asks for it in its manifest (`uses`) and the target says what it allows (`offers`). Core issues a five-minute token scoped to that one app and person, with a switch for the admin and one for each person.
 - **Device tokens apps can trust.** A phone calls Pocket Habits with the token Core gave it; Habits asks Core “is this real?” (`/auth/introspect`) instead of keeping its own user list. The Go SDK does this in one middleware.
-- **MCP for AI assistants.** An optional `/mcp` endpoint lets an authorized assistant discover selected Pocket apps and check their health. Each client gets its own expiring credential and app allowlist. Credentials, personal content and administrative actions are excluded from these status tools.
+- **MCP for AI assistants.** An optional `/mcp` endpoint lets an authorized assistant discover selected Pocket apps and check their health. People can sign in with their Core account and authorize status checks for the apps shared with them. Operators can also issue named, expiring credentials. Credentials, personal content and administrative actions are excluded from these status tools.
 
 Core runs on your box, next to the apps. You choose which service endpoints, identity providers and webhooks it contacts, and whether to make its authenticated MCP endpoint reachable remotely.
 
@@ -54,7 +54,7 @@ an older release or an existing `latest` image may not include it.
 
 ```mermaid
 flowchart LR
-    A[AI assistant] -->|HTTPS + dedicated credential| C[Pocket Core /mcp]
+    A[AI assistant] -->|HTTPS + status access| C[Pocket Core /mcp]
     C --> N[Pocket Notes health endpoint]
     C --> T[Other allowed Pocket apps]
 ```
@@ -71,6 +71,53 @@ means the service's health endpoint responded successfully; it does not prove
 every feature is working. The initial tools cover registered Pocket apps.
 Third-party connector status, activity feeds, logs, domain content and actions
 such as restarts are not exposed yet.
+
+### Connect using your Core account (recommended)
+
+The Core administrator enables account connections once:
+
+```dotenv
+BASE_URL=https://core.example.com
+AUTH_MODE=local
+SECURE_COOKIES=true
+MCP_OAUTH_ENABLED=true
+```
+
+Rebuild and restart Core with these settings. Existing Core password login or
+upstream SSO works. Publish Core at that HTTPS URL, including its login,
+`/mcp/oauth/*` and `/.well-known/*` routes. A proxy login wall must not intercept
+MCP discovery, registration or token requests. With the repository Compose file,
+put these settings in `.env` and deploy an image built from this source.
+
+**The person connecting only needs the URL and a Core account.** No SSH access,
+server configuration, copied API key or custom sign-in programming is required.
+
+For Codex CLI, on the person's own computer:
+
+```sh
+codex mcp add pocket_account --url https://core.example.com/mcp
+codex mcp login pocket_account
+```
+
+Complete the browser login and choose **Allow status access**. Start a new Codex
+session and ask: “List my permitted Pocket apps and check Notes now.” Do not set
+`bearer_token_env_var` on this OAuth connection. Codex manages the access and
+refresh tokens. See the [official Codex MCP documentation](https://developers.openai.com/codex/mcp/).
+
+For Claude, add a custom remote connector with the same `/mcp` URL, choose sign-in,
+and approve using your Core account. The connector feature must be available in
+your client/workspace; see [Claude's remote connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+Other clients need Streamable HTTP and OAuth discovery with dynamic registration;
+a cloud client needs network access to the public HTTPS URL.
+
+Open **Core → AI connections** to copy the endpoint, see connections, or disconnect
+one. Connections last up to 30 days; access tokens last 15 minutes and refresh
+automatically in supporting clients. Reconnect when the connection expires.
+Disabling the account, changing its authentication revision, or disconnecting
+revokes access. App sharing and enabled state are checked on every request, so
+newly permitted apps appear automatically and removed permissions stop applying.
+Only registered Pocket apps with an enabled service shared with that person are
+included; the three tools above cover all of them without individual MCP servers.
 
 ### Quick example: Pocket Notes
 
@@ -89,7 +136,7 @@ follow the Codex instructions below. Ctrl-C stops the preview and deletes its
 temporary database and credential. Your existing Core and Notes deployments are
 not modified.
 
-### Enable MCP on your own Core
+### Alternative: operator-issued credentials
 
 Build the binary and generate a client credential. This command does not open or
 modify Core's database:
@@ -134,7 +181,7 @@ from a different Compose project, apply the same environment variable and mount
 there, preserving its existing data volume. App URLs in the registry must be
 reachable **from Core**; inside Docker, `127.0.0.1` points to the Core container.
 
-### Connect Codex and verify
+### Connect Codex with an operator credential and verify
 
 On the computer running the MCP client, securely place `client.env` and load it:
 
@@ -190,12 +237,13 @@ Example prompts:
 ### Remote access, rotation and limits
 
 An assistant can use this endpoint without SSH, Docker or filesystem access to
-the device. It needs the URL and its MCP credential. Expose `/mcp` through HTTPS
+the device. Account connections need the URL and a Core account; operator connections
+need the URL and their issued credential. Expose Core through HTTPS
 using your reverse proxy or an outbound tunnel when the device is behind NAT.
 Core and the device must remain online; a cloud-hosted client must be able to
 reach the endpoint. A private VPN works when the client can access that VPN.
 
-Use one credential per client. The client file is reloaded on every request:
+For operator-issued credentials, use one credential per client. The client file is reloaded on every request:
 remove an entry to revoke it, change `apps` to narrow access, or replace its hash
 and expiry to rotate it. Save changes with an atomic file replacement. Requests
 already authorized may finish; subsequent requests use the new grants. `[]`
@@ -203,17 +251,18 @@ revokes every named client. Missing or invalid files fail closed. See the
 [MCP guide](docs/mcp.md#manage-client-credentials) for adding and rotating clients.
 
 All authenticated clients can read Core's basic process/database status. App
-allowlists grant operational visibility independently of household user accounts;
+allowlists on operator-issued credentials grant visibility independently of household accounts;
 give these credentials only to clients that should have that visibility.
 The server limits aggregate MCP traffic to 120 requests/minute with a burst of
 20, four concurrent requests, and 64 KiB request bodies. Live probes have a
 six-second deadline. HTTP 429 includes `Retry-After`. Client IDs and tool outcomes
 appear in Core's logs; tokens and raw upstream responses do not.
 
-This authentication mode uses manually provisioned bearer credentials. It does
-not implement MCP OAuth discovery or interactive sign-in; clients requiring that
-flow need additional integration. The [full MCP guide](docs/mcp.md) includes
-reverse-proxy configuration, troubleshooting and the current scope.
+Account connections use a separate status-only OAuth authorization server with
+explicit consent, S256 PKCE, resource binding and rotating refresh tokens.
+These tokens cannot access Core's ordinary API or its first-party OIDC apps.
+The [full MCP guide](docs/mcp.md) covers both authentication modes, reverse-proxy
+configuration, troubleshooting and the current scope.
 
 ## For app authors
 

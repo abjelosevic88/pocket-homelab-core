@@ -9,8 +9,12 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 `POST /mcp` is a separate Streamable HTTP MCP endpoint, outside `/api/v1`, using
 dedicated bearer credentials. It exposes `pocket_core_status`, `pocket_list_apps`
 and `pocket_app_status`. Household sessions and ordinary API tokens do not grant
-MCP access. Configure named clients with `MCP_CLIENTS_FILE` or a single credential
-with `MCP_TOKEN_HASH` and `MCP_APPS`. With neither, it returns 404.
+MCP access directly. Enable `MCP_OAUTH_ENABLED=true` for account login, consent,
+and per-user service visibility. Alternatively configure named clients with `MCP_CLIENTS_FILE` or a single credential
+with `MCP_TOKEN_HASH` and `MCP_APPS`. With all modes disabled, it returns 404.
+`GET /api/v1/me/ai-connections` lists the signed-in person's grants;
+`DELETE /api/v1/me/ai-connections/{id}` disconnects one. These management endpoints
+require a browser session; deletion additionally requires Core's exact Origin.
 See [MCP setup, tools and examples](mcp.md).
 
 ## Auth & account

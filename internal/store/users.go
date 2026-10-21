@@ -144,6 +144,8 @@ func (s *Store) PurgeExpired(ctx context.Context) error {
 	now := Now()
 	for _, q := range []string{
 		`DELETE FROM sessions WHERE expires_at < ?`,
+		`DELETE FROM mcp_oauth_secrets WHERE expires_at < ?`,
+		`DELETE FROM mcp_oauth_grants WHERE expires_at < ?`,
 		`DELETE FROM oidc_codes WHERE expires_at < ?`,
 		`DELETE FROM oidc_tokens WHERE expires_at < ?`,
 		`DELETE FROM link_tokens WHERE expires_at < ?`,

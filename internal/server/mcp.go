@@ -56,7 +56,7 @@ func (s *Server) mcpCachedStatus(a store.App) mcpAppStatus {
 }
 
 func (s *Server) mcpHandler() http.Handler {
-	if s.cfg.MCPTokenHash == "" && s.cfg.MCPClientsFile == "" {
+	if s.cfg.MCPTokenHash == "" && s.cfg.MCPClientsFile == "" && !s.cfg.MCPOAuthEnabled {
 		return http.NotFoundHandler()
 	}
 	ms := mcp.NewServer(&mcp.Implementation{Name: "pocket-core", Version: Version}, nil)

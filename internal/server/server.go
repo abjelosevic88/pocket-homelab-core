@@ -177,6 +177,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/metrics", s.handleMetrics)
 	// Separate, narrowly scoped authentication; never inherits AUTH_MODE=none.
 	r.Handle("/mcp", s.mcpHandler())
+	s.mcpOAuthRoutes(r)
 
 	// OpenID Connect (browser + relying parties).
 	r.Get("/.well-known/openid-configuration", s.handleDiscovery)
@@ -226,6 +227,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/system", s.handleSystem)
 			r.Get("/overview", s.handleOverview)
 			r.Get("/me/services", s.handleMyServices)
+			r.Get("/me/ai-connections", s.handleMCPConnections)
+			r.Delete("/me/ai-connections/{id}", s.handleMCPDisconnect)
 
 			r.Get("/users/{id}/credentials", s.handleListCredentials)
 			r.Put("/users/{id}/credentials/{sid}", s.handlePutCredential)

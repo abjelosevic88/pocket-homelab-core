@@ -14,6 +14,7 @@ import Devices from './pages/Devices'
 import Users from './pages/Users'
 import Settings from './pages/Settings'
 import Links from './pages/Links'
+import AIConnections from './pages/AIConnections'
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { status, user } = useApp()
@@ -38,6 +39,7 @@ function App() {
         <Route path="/links" element={<Links />} />
         <Route path="/devices" element={<Devices />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/ai-connections" element={<AIConnections />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

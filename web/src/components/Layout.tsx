@@ -12,6 +12,7 @@ const nav = [
   { to: '/links', label: 'Links', ico: '⇄' },
   { to: '/devices', label: 'Devices', ico: '📱' },
   { to: '/users', label: 'Users', ico: '👤' },
+  { to: '/ai-connections', label: 'AI connections', ico: '✧' },
   { to: '/settings', label: 'Settings', ico: '⋯' },
 ]
 
@@ -22,7 +23,7 @@ export default function Layout() {
   const logout = async () => { await api.post(`${V1}/auth/logout`); setUser(null); navigate('/login') }
   const title = status?.title || 'Pocket Core'
   const admin = user?.role === 'admin'
-  const items = nav.filter(n => admin || ['/', '/devices', '/settings'].includes(n.to))
+  const items = nav.filter(n => admin || ['/', '/devices', '/ai-connections', '/settings'].includes(n.to))
   return (
     <div className="app">
       <aside className={`sidebar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>
