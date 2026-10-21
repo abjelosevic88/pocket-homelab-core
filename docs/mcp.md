@@ -1,9 +1,10 @@
-# MCP service status
+# MCP gateway
 
-Core provides an opt-in, read-only MCP endpoint at `/mcp`, using the official Go
-SDK and Streamable HTTP. This first slice exposes Core health and registered
-Pocket app health. Notes is the worked example. It does not yet expose third-party
-connectors, activity/history, logs, domain content, or device administration.
+Core provides an opt-in MCP endpoint at `/mcp`, using the official Go SDK and
+Streamable HTTP. Status tools cover Core and registered Pocket apps. Optional
+[application tools](mcp-apps.md) add account-scoped reading and creating/updating
+items across all current Pocket apps. Deletion, service administration and logs
+are not exposed. Operator credentials remain status-only.
 
 ## Account sign-in
 
@@ -40,7 +41,10 @@ Core publishes protected resource metadata at
 and `/revoke`. Registration supports public clients and client-secret basic/post
 authentication, exact HTTPS or literal-loopback HTTP callbacks, authorization
 code flow with mandatory S256 PKCE, and refresh rotation. Requests must target
-the exact `BASE_URL/mcp` resource; only `status:read` is supported. Dynamic client
+the exact `BASE_URL/mcp` resource. `status:read` is always supported; enabling
+`MCP_APP_TOOLS_ENABLED=true` additionally advertises `apps:read` and `apps:write`.
+Content scopes require `status:read`, and write also requires read. Scope changes
+require fresh consent; refresh cannot expand access. Dynamic client
 registration is supported; Client ID Metadata Documents are not implemented.
 
 OAuth clients, grants and hashed credentials are stored separately from Core's
@@ -289,20 +293,17 @@ edge limits too when exposing an internet endpoint.
 
 For account-based access, enable the OAuth mode above. Other MCP clients must
 support its discovery, registration and authorization-code flow; availability
-and configuration vary by client. Domain content and mutation tools still need
-separate, explicit authorization design before being added.
+and configuration vary by client. Application content and changes use the
+separate opt-in, consent scopes and curated adapters in [Application tools](mcp-apps.md).
 
 ## Where this belongs in Core
 
 Keep one endpoint and shared discovery/auth/audit in Core. Keep service-specific
-adapters small and let each app own its domain API. Extend in this order:
-
-1. Fleet status: registered app checks, then connector-specific health and queue
-   summaries for services such as Sonarr, Jellyfin and backup/monitoring tools.
-2. Activity: bounded, filtered events with per-person authorization and timestamps;
-   never forward the whole event bus or raw logs by default.
-3. Actions: separate scopes and tools, explicit approval for disruptive operations,
-   idempotency keys and audit receipts. Reuse delegated app APIs where possible.
+adapters small and let each app own its domain API. Core now provides fleet status
+and account-scoped application tools with explicit consent, request IDs and audit
+receipts. Future connector health or activity tools need their own bounded,
+per-person authorization policy; raw logs and device administration remain outside
+this catalog.
 
 Expose selected task-oriented operations, not automatic wrappers around every
 admin endpoint. Service-owned MCP implementations can be added when independent

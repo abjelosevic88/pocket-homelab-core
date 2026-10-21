@@ -28,6 +28,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `WEBHOOK_ATTEMPTS` | `8` | Delivery attempts before a webhook delivery is marked failed (10 s, 20 s, 40 s… capped at 1 h) |
 | `DEMO_DATA` | `false` | Seed three fake apps, three services and a few events on an empty database |
 | `MCP_OAUTH_ENABLED` | `false` | Enable Core account sign-in for status-only MCP; requires `AUTH_MODE=local` and HTTPS `BASE_URL` origin (HTTP loopback for development) |
+| `MCP_APP_TOOLS_ENABLED` | `false` | Enable curated per-account read/create/update tools. Requires `MCP_OAUTH_ENABLED`; each connection must approve content scopes. |
 | `MCP_TOKEN_HASH` | disabled | Hex SHA-256 digest of a dedicated status-only MCP bearer token; see [MCP setup](mcp.md) |
 | `MCP_APPS` | none | Required with `MCP_TOKEN_HASH`: comma-separated registered app slugs, or `*` for all |
 | `MCP_CLIENTS_FILE` | disabled | JSON file of named clients with token hashes, app grants and expiry; reloaded each request. Use instead of `MCP_TOKEN_HASH`/`MCP_APPS`. See [MCP setup](mcp.md). |

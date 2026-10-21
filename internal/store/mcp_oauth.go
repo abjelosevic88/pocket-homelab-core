@@ -49,6 +49,7 @@ type MCPGrant struct {
 	ID           string `json:"id"`
 	ClientID     string `json:"client_id"`
 	ClientName   string `json:"client_name"`
+	Scope        string `json:"scope"`
 	UserID       int64  `json:"-"`
 	AuthRevision int64  `json:"-"`
 	CreatedAt    string `json:"created_at"`
@@ -56,7 +57,7 @@ type MCPGrant struct {
 }
 
 func (s *Store) ListMCPGrants(ctx context.Context, userID int64) ([]MCPGrant, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT g.id,g.client_id,c.name,g.created_at,g.expires_at FROM mcp_oauth_grants g JOIN mcp_oauth_clients c ON c.client_id=g.client_id JOIN users u ON u.id=g.user_id WHERE g.user_id=? AND u.auth_revision=g.auth_revision AND u.disabled=0 ORDER BY g.created_at DESC`, userID)
+	rows, err := s.DB.QueryContext(ctx, `SELECT g.id,g.client_id,c.name,g.created_at,g.expires_at,g.scope FROM mcp_oauth_grants g JOIN mcp_oauth_clients c ON c.client_id=g.client_id JOIN users u ON u.id=g.user_id WHERE g.user_id=? AND u.auth_revision=g.auth_revision AND u.disabled=0 ORDER BY g.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +65,7 @@ func (s *Store) ListMCPGrants(ctx context.Context, userID int64) ([]MCPGrant, er
 	out := []MCPGrant{}
 	for rows.Next() {
 		var g MCPGrant
-		if err := rows.Scan(&g.ID, &g.ClientID, &g.ClientName, &g.CreatedAt, &g.ExpiresAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.ClientID, &g.ClientName, &g.CreatedAt, &g.ExpiresAt, &g.Scope); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -104,19 +105,23 @@ func (s *Store) ConsumeMCPConsent(ctx context.Context, plain string, userID int6
 	return &v, notFound(err)
 }
 
-func (s *Store) CreateMCPGrantCode(ctx context.Context, clientID string, user *User, data any) (string, error) {
+func (s *Store) CreateMCPGrantCode(ctx context.Context, clientID string, user *User, data any, scopes ...string) (string, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback()
+	scope := "status:read"
+	if len(scopes) > 0 {
+		scope = scopes[0]
+	}
 	grantID := crypto.Token("", 24)
 	code := crypto.Token("", 32)
 	encoded, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO mcp_oauth_grants(id,client_id,user_id,auth_revision,created_at,expires_at) VALUES (?,?,?,?,?,?)`, grantID, clientID, user.ID, user.AuthRevision, Now(), Stamp(time.Now().Add(30*24*time.Hour)))
+	_, err = tx.ExecContext(ctx, `INSERT INTO mcp_oauth_grants(id,client_id,user_id,auth_revision,created_at,expires_at,scope) VALUES (?,?,?,?,?,?,?)`, grantID, clientID, user.ID, user.AuthRevision, Now(), Stamp(time.Now().Add(30*24*time.Hour)), scope)
 	if err != nil {
 		return "", err
 	}

@@ -18,6 +18,7 @@ services:
       REGISTRATION_KEY: ${REGISTRATION_KEY:-}
       # Account-based MCP sign-in, using Core passwords or upstream SSO.
       MCP_OAUTH_ENABLED: ${MCP_OAUTH_ENABLED:-false}
+      MCP_APP_TOOLS_ENABLED: ${MCP_APP_TOOLS_ENABLED:-false}
       # Optional single status-only MCP credential; named clients use docker-compose.mcp.yml.
       MCP_TOKEN_HASH: ${MCP_TOKEN_HASH:-}
       MCP_APPS: ${MCP_APPS:-}

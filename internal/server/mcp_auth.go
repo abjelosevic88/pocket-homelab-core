@@ -17,6 +17,16 @@ import (
 )
 
 type mcpClientKey struct{}
+type mcpAccountKey struct{}
+type mcpAccount struct {
+	UserID         int64
+	GrantID, Scope string
+}
+
+func mcpUser(ctx context.Context) mcpAccount {
+	v, _ := ctx.Value(mcpAccountKey{}).(mcpAccount)
+	return v
+}
 
 func mcpClient(ctx context.Context) config.MCPClient {
 	c, _ := ctx.Value(mcpClientKey{}).(config.MCPClient)
@@ -48,6 +58,7 @@ func (s *Server) mcpAccess(next http.Handler) http.Handler {
 			return
 		}
 		var client config.MCPClient
+		var account mcpAccount
 		if s.cfg.MCPOAuthEnabled && strings.HasPrefix(parts[1], "pcma_") {
 			secret, err := s.store.GetMCPSecret(r.Context(), parts[1], "access", "")
 			var binding mcpAuthorization
@@ -59,6 +70,7 @@ func (s *Server) mcpAccess(next http.Handler) http.Handler {
 						writeErr(w, 503, "MCP permissions unavailable")
 						return
 					}
+					account = mcpAccount{UserID: user.ID, GrantID: secret.GrantID, Scope: binding.scopes()}
 					client = config.MCPClient{ID: fmt.Sprintf("oauth:%s:user:%d", secret.ClientID, user.ID), Apps: apps}
 				}
 			}
@@ -99,6 +111,7 @@ func (s *Server) mcpAccess(next http.Handler) http.Handler {
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(15 * time.Second))
 		defer http.NewResponseController(w).SetReadDeadline(time.Time{})
 		ctx := context.WithValue(r.Context(), mcpClientKey{}, client)
+		ctx = context.WithValue(ctx, mcpAccountKey{}, account)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

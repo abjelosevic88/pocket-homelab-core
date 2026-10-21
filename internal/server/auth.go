@@ -446,6 +446,10 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "token required")
 		return
 	}
+	if strings.HasPrefix(in.Token, "pcu_mcp_") {
+		s.introspectMCPAppToken(w, r, caller, in.Token)
+		return
+	}
 	if strings.HasPrefix(in.Token, "pcx_") {
 		s.introspectLinkToken(w, r, caller, in.Token)
 		return

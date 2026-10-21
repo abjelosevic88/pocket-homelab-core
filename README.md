@@ -25,7 +25,7 @@ Every Pocket app is a small Go server with its own SQLite file. They already tal
 - **Connectors.** Core can make each person's account in a third-party app and hand them their own key, switch on “Sign in with Pocket Core” there, and turn what happens in it into events. Audiobookshelf, Forgejo, Immich, Jellyfin, Jellyseerr, Kavita, Nextcloud and Paperless-ngx so far, plus events from Radarr, Sonarr, Lidarr, Prowlarr, Chaptarr, Komodo, Backrest, Beszel, Scrutiny, Speedtest Tracker, Changedetection.io, Uptime Kuma, Dawarich and Maloja; off until you switch them on.
 - **App links.** One app can act for a person in another with no tokens pasted between them. Garage books a fill-up as a Money transaction, for every person on the box. The app asks for it in its manifest (`uses`) and the target says what it allows (`offers`). Core issues a five-minute token scoped to that one app and person, with a switch for the admin and one for each person.
 - **Device tokens apps can trust.** A phone calls Pocket Habits with the token Core gave it; Habits asks Core “is this real?” (`/auth/introspect`) instead of keeping its own user list. The Go SDK does this in one middleware.
-- **MCP for AI assistants.** An optional `/mcp` endpoint lets an authorized assistant discover selected Pocket apps and check their health. People can sign in with their Core account and authorize status checks for the apps shared with them. Operators can also issue named, expiring credentials. Credentials, personal content and administrative actions are excluded from these status tools.
+- **MCP for AI assistants.** An optional `/mcp` endpoint lets an authorized assistant discover Pocket apps, check health, and use curated application tools. People sign in with their Core account and approve status checks, reading content, or creating/updating items in their permitted apps. Operators can also issue named, expiring credentials. Credentials, personal content and administrative actions are excluded from these status tools.
 
 Core runs on your box, next to the apps. You choose which service endpoints, identity providers and webhooks it contacts, and whether to make its authenticated MCP endpoint reachable remotely.
 
@@ -47,15 +47,15 @@ or `docker compose up -d` with the included `docker-compose.yml`, or the single 
 
 ## Connect an AI assistant with MCP
 
-Core includes a **read-only service-status MCP server** using Streamable HTTP.
+Core includes an **account-based MCP gateway** using Streamable HTTP, with status checks and application-specific read/create/update tools.
 One connection gives an assistant access to the registered Pocket apps you allow.
 The endpoint is disabled until configured. Build this checkout to use the feature;
 an older release or an existing `latest` image may not include it.
 
 ```mermaid
 flowchart LR
-    A[AI assistant] -->|HTTPS + status access| C[Pocket Core /mcp]
-    C --> N[Pocket Notes health endpoint]
+    A[AI assistant] -->|HTTPS + approved scopes| C[Pocket Core /mcp]
+    C --> N[Pocket Notes API]
     C --> T[Other allowed Pocket apps]
 ```
 
@@ -69,8 +69,8 @@ Every app result includes observation/check timestamps and a freshness flag.
 Old or missing cached checks are reported as `unknown`. A successful health check
 means the service's health endpoint responded successfully; it does not prove
 every feature is working. The initial tools cover registered Pocket apps.
-Third-party connector status, activity feeds, logs, domain content and actions
-such as restarts are not exposed yet.
+Third-party connector administration, logs, deletion and service restarts are not exposed.
+Application content tools require the separate opt-in and consent described below.
 
 ### Connect using your Core account (recommended)
 
@@ -81,6 +81,8 @@ BASE_URL=https://core.example.com
 AUTH_MODE=local
 SECURE_COOKIES=true
 MCP_OAUTH_ENABLED=true
+# Enable application content and read/create/update tools:
+MCP_APP_TOOLS_ENABLED=true
 ```
 
 Rebuild and restart Core with these settings. Existing Core password login or
@@ -96,11 +98,11 @@ For Codex CLI, on the person's own computer:
 
 ```sh
 codex mcp add pocket_account --url https://core.example.com/mcp
-codex mcp login pocket_account
+codex mcp login pocket_account --scopes status:read,apps:read,apps:write
 ```
 
-Complete the browser login and choose **Allow status access**. Start a new Codex
-session and ask: “List my permitted Pocket apps and check Notes now.” Do not set
+Complete the browser login and choose **Allow application access**. Start a new Codex
+session and ask: “Find my grocery task list and add oat milk.” Do not set
 `bearer_token_env_var` on this OAuth connection. Codex manages the access and
 refresh tokens. See the [official Codex MCP documentation](https://developers.openai.com/codex/mcp/).
 
@@ -117,7 +119,50 @@ Disabling the account, changing its authentication revision, or disconnecting
 revokes access. App sharing and enabled state are checked on every request, so
 newly permitted apps appear automatically and removed permissions stop applying.
 Only registered Pocket apps with an enabled service shared with that person are
-included; the three tools above cover all of them without individual MCP servers.
+included. A single connection covers all of them without individual MCP servers.
+
+### Application tools and examples
+
+The gateway includes curated tools for all 22 current Pocket applications. Your
+assistant discovers only tools for apps shared with you and scopes you approved.
+Applications still enforce their own item, calendar, file-space and group permissions.
+
+| Scope | Allows |
+|---|---|
+| `status:read` | The three health/discovery tools above |
+| `status:read apps:read` | Also read application content |
+| `status:read apps:read apps:write` | Also create/update supported items |
+
+Deletion, service administration, credential management, sharing changes and
+sending messages are excluded. Existing status-only connections and operator
+keys stay status-only. To upgrade a Codex connection, run `codex mcp logout
+pocket_account`, then the login command above and approve the new scopes.
+Other assistants must request these scopes through OAuth; approving only
+`status:read` will show only status tools.
+
+Example requests after connecting:
+
+- “Find my Notes about the renovation and summarize the open questions.”
+- “Create a note called Weekend plan with these three ideas.”
+- “List my calendars, then add a 30-minute planning event tomorrow at 09:00 in my timezone.”
+- “Show low-stock inventory and add the missing ingredients to my Kitchen shopping list.”
+- “Record a 12.50 EUR expense in my selected Money account.”
+- “Show the tasks in this Collaborator review and mark this one done.”
+
+For example, `pocket_notes_create` accepts:
+
+```json
+{
+  "request_id": "bfbdc908-8bb0-4d54-8258-084defa36928",
+  "data": {"title": "Weekend plan", "content": "- Buy ingredients\n- Plan the trip"}
+}
+```
+
+Every change needs a new unique `request_id` (a UUID works). Retry the *identical*
+change with the same ID to avoid duplicates. If a result is uncertain, read the
+application before trying again with a different ID. Tool descriptions and schemas
+explain required fields, units and update behavior. See the [application coverage
+and extension guide](docs/mcp-apps.md) for every app and current limitations.
 
 ### Quick example: Pocket Notes
 
@@ -258,8 +303,8 @@ The server limits aggregate MCP traffic to 120 requests/minute with a burst of
 six-second deadline. HTTP 429 includes `Retry-After`. Client IDs and tool outcomes
 appear in Core's logs; tokens and raw upstream responses do not.
 
-Account connections use a separate status-only OAuth authorization server with
-explicit consent, S256 PKCE, resource binding and rotating refresh tokens.
+Account connections use a separate OAuth authorization server with explicit scopes,
+consent, S256 PKCE, resource binding and rotating refresh tokens.
 These tokens cannot access Core's ordinary API or its first-party OIDC apps.
 The [full MCP guide](docs/mcp.md) covers both authentication modes, reverse-proxy
 configuration, troubleshooting and the current scope.
@@ -308,7 +353,8 @@ Report anything you find privately before opening an issue.
 | [docs/links.md](docs/links.md) | App links: one Pocket app acting for a person in another (`uses` / `offers`, `pcx_` tokens, per-person switches) |
 | [docs/connectors.md](docs/connectors.md) | Core acting on third-party apps: accounts, sign-in, events (Immich first); how to write one |
 | [docs/api.md](docs/api.md) | the whole REST surface |
-| [docs/mcp.md](docs/mcp.md) | Read-only MCP status gateway, local Notes example and remote access design |
+| [docs/mcp-apps.md](docs/mcp-apps.md) | Application tools, permissions, examples and adding adapters |
+| [docs/mcp.md](docs/mcp.md) | MCP authentication, status gateway and remote access design |
 | [docs/spec.md](docs/spec.md) | the versioned contract: tokens, manifest, events, profile, OIDC |
 | [deploy/nix](deploy/nix) | Nix package and `services.pocket.core` NixOS module |
 | [docs/roadmap.md](docs/roadmap.md) | where the box is going |

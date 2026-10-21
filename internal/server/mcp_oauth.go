@@ -40,11 +40,11 @@ func (s *Server) mcpOAuthRoutes(r chi.Router) {
 	})
 	r.Get("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		writeJSON(w, 200, map[string]any{"resource": s.mcpResource(), "resource_name": "Pocket Core status", "authorization_servers": []string{s.mcpIssuer()}, "scopes_supported": []string{mcpOAuthScope}, "bearer_methods_supported": []string{"header"}})
+		writeJSON(w, 200, map[string]any{"resource": s.mcpResource(), "resource_name": "Pocket Core", "authorization_servers": []string{s.mcpIssuer()}, "scopes_supported": s.mcpSupportedScopes(), "bearer_methods_supported": []string{"header"}})
 	})
 	discovery := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		writeJSON(w, 200, map[string]any{"issuer": s.mcpIssuer(), "authorization_endpoint": s.mcpIssuer() + "/authorize", "token_endpoint": s.mcpIssuer() + "/token", "registration_endpoint": s.mcpIssuer() + "/register", "revocation_endpoint": s.mcpIssuer() + "/revoke", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic", "client_secret_post"}, "scopes_supported": []string{mcpOAuthScope}, "authorization_response_iss_parameter_supported": true})
+		writeJSON(w, 200, map[string]any{"issuer": s.mcpIssuer(), "authorization_endpoint": s.mcpIssuer() + "/authorize", "token_endpoint": s.mcpIssuer() + "/token", "registration_endpoint": s.mcpIssuer() + "/register", "revocation_endpoint": s.mcpIssuer() + "/revoke", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic", "client_secret_post"}, "scopes_supported": s.mcpSupportedScopes(), "authorization_response_iss_parameter_supported": true})
 	}
 	r.Get("/.well-known/oauth-authorization-server/mcp/oauth", discovery)
 	r.Get("/mcp/oauth/.well-known/oauth-authorization-server", discovery)
@@ -127,8 +127,8 @@ func (s *Server) handleMCPRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if in.Scope != "" && in.Scope != mcpOAuthScope {
-		tokenErr(w, 400, "invalid_scope", "only status:read is supported")
+	if in.Scope != "" && !s.mcpValidScopes(in.Scope) {
+		tokenErr(w, 400, "invalid_scope", "unsupported scope; request the scopes advertised in discovery")
 		return
 	}
 	if in.AuthMethod == "" {
@@ -151,7 +151,7 @@ func (s *Server) handleMCPRegister(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 503, "temporarily_unavailable", "client registration unavailable")
 		return
 	}
-	out := map[string]any{"client_id": c.ClientID, "client_name": c.Name, "redirect_uris": c.RedirectURIs, "token_endpoint_auth_method": c.AuthMethod, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "scope": mcpOAuthScope, "client_id_issued_at": time.Now().Unix()}
+	out := map[string]any{"client_id": c.ClientID, "client_name": c.Name, "redirect_uris": c.RedirectURIs, "token_endpoint_auth_method": c.AuthMethod, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "scope": strings.Join(s.mcpSupportedScopes(), " "), "client_id_issued_at": time.Now().Unix()}
 	if secret != "" {
 		out["client_secret"] = secret
 		out["client_secret_expires_at"] = 0
@@ -164,12 +164,14 @@ type mcpAuthorization struct {
 	State     string `json:"state"`
 	Challenge string `json:"challenge"`
 	Resource  string `json:"resource"`
+	Scope     string `json:"scope,omitempty"`
+	Target    string `json:"target,omitempty"`
 }
 
 var mcpChallengeRE = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 var mcpVerifierRE = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 
-var mcpConsentPage = template.Must(template.New("consent").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect your assistant · Pocket Core</title><link rel="stylesheet" href="/mcp-consent.css"></head><body><main><p>Pocket Core</p><h1>Connect {{.Name}}?</h1><p>Signed in as <strong>{{.Email}}</strong>.</p><p>This assistant will be able to check Core's availability and the status of Pocket apps shared with your account, including apps shared with you later.</p><p>It cannot read notes, tasks or other application content, or change your data.</p><p>The connection lasts up to 30 days. You can disconnect it at any time under <a href="/ai-connections">AI connections</a>.</p><p>Client names are supplied by the application. Approve only if you started this connection.</p><p>Return address: <code>{{.Redirect}}</code></p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="request" value="{{.Request}}"><button name="decision" value="approve">Allow status access</button><button name="decision" value="deny">Cancel</button></form></main></body></html>`))
+var mcpConsentPage = template.Must(template.New("consent").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect your assistant · Pocket Core</title><link rel="stylesheet" href="/mcp-consent.css"></head><body><main><p>Pocket Core</p><h1>Connect {{.Name}}?</h1><p>Signed in as <strong>{{.Email}}</strong>.</p><p>This assistant will be able to check Core's availability and the status of Pocket apps shared with your account, including apps shared with you later.</p>{{if .Write}}<p><strong>It can read your application content and create or update items in the Pocket apps shared with you.</strong> This includes personal notes, tasks, events and other supported app records. Deletion, sharing controls, sending messages and service administration are excluded.</p>{{else if .Read}}<p><strong>It can read your application content</strong> in supported Pocket apps shared with you. It cannot create or change items.</p>{{else}}<p>It cannot read notes, tasks or other application content, or change your data.</p>{{end}}<p>The connection lasts up to 30 days. You can disconnect it at any time under <a href="/ai-connections">AI connections</a>.</p><p>Client names are supplied by the application. Approve only if you started this connection.</p><p>Return address: <code>{{.Redirect}}</code></p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="request" value="{{.Request}}"><button name="decision" value="approve">{{if .Read}}Allow application access{{else}}Allow status access{{end}}</button><button name="decision" value="deny">Cancel</button></form></main></body></html>`))
 
 func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -197,8 +199,8 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 		s.mcpRedirectErr(w, r, redirect, q.Get("state"), "invalid_target", "resource must be this Core's MCP URL")
 		return
 	}
-	if q.Get("scope") != mcpOAuthScope {
-		s.mcpRedirectErr(w, r, redirect, q.Get("state"), "invalid_scope", "request status:read")
+	if !s.mcpValidScopes(q.Get("scope")) {
+		s.mcpRedirectErr(w, r, redirect, q.Get("state"), "invalid_scope", "request supported scopes; apps:write also requires apps:read")
 		return
 	}
 	u := s.sessionUser(r)
@@ -210,7 +212,7 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 403, "access_denied", "account unavailable")
 		return
 	}
-	pending, err := s.store.CreateMCPConsent(r.Context(), c.ClientID, u.ID, mcpAuthorization{Redirect: redirect, State: q.Get("state"), Challenge: q.Get("code_challenge"), Resource: s.mcpResource()})
+	pending, err := s.store.CreateMCPConsent(r.Context(), c.ClientID, u.ID, mcpAuthorization{Redirect: redirect, State: q.Get("state"), Challenge: q.Get("code_challenge"), Resource: s.mcpResource(), Scope: canonicalMCPScopes(q.Get("scope"))})
 	if err != nil {
 		tokenErr(w, 503, "temporarily_unavailable", "authorization unavailable")
 		return
@@ -223,7 +225,7 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self' "+callback.Scheme+"://"+callback.Host+"; base-uri 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = mcpConsentPage.Execute(w, map[string]string{"Name": c.Name, "Email": u.Email, "Redirect": redirect, "Request": pending})
+	_ = mcpConsentPage.Execute(w, map[string]any{"Name": c.Name, "Email": u.Email, "Redirect": redirect, "Request": pending, "Read": hasMCPScope(q.Get("scope"), "apps:read"), "Write": hasMCPScope(q.Get("scope"), "apps:write")})
 }
 
 func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +257,7 @@ func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
 		s.mcpRedirectErr(w, r, in.Redirect, in.State, "access_denied", "connection declined")
 		return
 	}
-	code, err := s.store.CreateMCPGrantCode(r.Context(), pending.ClientID, u, in)
+	code, err := s.store.CreateMCPGrantCode(r.Context(), pending.ClientID, u, in, in.scopes())
 	if err != nil {
 		tokenErr(w, 503, "temporarily_unavailable", "authorization unavailable")
 		return
@@ -302,10 +304,7 @@ func (s *Server) handleMCPToken(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 400, "invalid_target", "resource must be this Core's MCP URL")
 		return
 	}
-	if scope := r.PostForm.Get("scope"); scope != "" && scope != mcpOAuthScope {
-		tokenErr(w, 400, "invalid_scope", "only status:read is supported")
-		return
-	}
+
 	var kind, plain string
 	switch r.PostForm.Get("grant_type") {
 	case "authorization_code":
@@ -327,6 +326,10 @@ func (s *Server) handleMCPToken(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 400, "invalid_grant", "resource binding rejected")
 		return
 	}
+	if scope := r.PostForm.Get("scope"); scope != "" && (!s.mcpValidScopes(scope) || canonicalMCPScopes(scope) != in.scopes()) {
+		tokenErr(w, 400, "invalid_scope", "scope must match the approved connection")
+		return
+	}
 	if kind == "code" {
 		verifier := r.PostForm.Get("code_verifier")
 		sum := sha256.Sum256([]byte(verifier))
@@ -342,7 +345,7 @@ func (s *Server) handleMCPToken(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 400, "invalid_grant", "credential expired, revoked, or already used")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 900, "scope": mcpOAuthScope})
+	writeJSON(w, 200, map[string]any{"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 900, "scope": in.scopes()})
 }
 
 func (s *Server) handleMCPRevokeToken(w http.ResponseWriter, r *http.Request) {
@@ -373,7 +376,7 @@ func (s *Server) handleMCPConnections(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "list AI connections")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"enabled": s.cfg.MCPOAuthEnabled, "url": s.mcpResource(), "connections": grants})
+	writeJSON(w, 200, map[string]any{"enabled": s.cfg.MCPOAuthEnabled, "app_tools_enabled": s.cfg.MCPAppToolsEnabled, "scopes": s.mcpSupportedScopes(), "url": s.mcpResource(), "connections": grants})
 }
 
 func (s *Server) handleMCPDisconnect(w http.ResponseWriter, r *http.Request) {
@@ -408,4 +411,51 @@ func (s *Server) mcpRedirectErr(w http.ResponseWriter, r *http.Request, redirect
 	q.Set("iss", s.mcpIssuer())
 	u.RawQuery = q.Encode()
 	oidcRedirectErr(w, r, u.String(), state, code, desc)
+}
+
+func (s *Server) mcpSupportedScopes() []string {
+	if s.cfg.MCPAppToolsEnabled {
+		return []string{"status:read", "apps:read", "apps:write"}
+	}
+	return []string{"status:read"}
+}
+func hasMCPScope(scope, want string) bool {
+	for _, v := range strings.Fields(scope) {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+func canonicalMCPScopes(scope string) string {
+	out := []string{}
+	for _, v := range []string{"status:read", "apps:read", "apps:write"} {
+		if hasMCPScope(scope, v) {
+			out = append(out, v)
+		}
+	}
+	return strings.Join(out, " ")
+}
+func (s *Server) mcpValidScopes(scope string) bool {
+	if !hasMCPScope(scope, "status:read") {
+		return false
+	}
+	for _, v := range strings.Fields(scope) {
+		found := false
+		for _, allowed := range s.mcpSupportedScopes() {
+			if v == allowed {
+				found = true
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return !hasMCPScope(scope, "apps:write") || hasMCPScope(scope, "apps:read")
+}
+func (a mcpAuthorization) scopes() string {
+	if a.Scope == "" {
+		return mcpOAuthScope
+	}
+	return a.Scope
 }

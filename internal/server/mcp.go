@@ -59,6 +59,15 @@ func (s *Server) mcpHandler() http.Handler {
 	if s.cfg.MCPTokenHash == "" && s.cfg.MCPClientsFile == "" && !s.cfg.MCPOAuthEnabled {
 		return http.NotFoundHandler()
 	}
+	transport := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		ms := s.mcpStatusServer()
+		s.addMCPAppTools(ms, r.Context())
+		return ms
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 64 << 10, PropagateRequestCancellation: true})
+	return s.mcpAccess(transport)
+}
+
+func (s *Server) mcpStatusServer() *mcp.Server {
 	ms := mcp.NewServer(&mcp.Implementation{Name: "pocket-core", Version: Version}, nil)
 	readOnly := func(name, description string) *mcp.Tool {
 		return &mcp.Tool{Name: name, Description: description, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}
@@ -103,10 +112,7 @@ func (s *Server) mcpHandler() http.Handler {
 			s.log.Info("mcp tool", "client", mcpClient(ctx).ID, "tool", "pocket_app_status", "app", in.Slug, "fresh", in.Fresh, "status", out.Status)
 			return nil, out, nil
 		})
-	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return ms }, &mcp.StreamableHTTPOptions{
-		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 64 << 10, PropagateRequestCancellation: true,
-	})
-	return s.mcpAccess(transport)
+	return ms
 }
 
 // Only the server-owned registry selects a target. Never follow redirects, send

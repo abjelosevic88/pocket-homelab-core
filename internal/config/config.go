@@ -57,10 +57,11 @@ type Config struct {
 	DemoData bool
 
 	// MCP is opt-in and has a separate status-only credential.
-	MCPTokenHash    string
-	MCPApps         []string
-	MCPClientsFile  string
-	MCPOAuthEnabled bool
+	MCPTokenHash       string
+	MCPApps            []string
+	MCPClientsFile     string
+	MCPOAuthEnabled    bool
+	MCPAppToolsEnabled bool
 }
 
 func env(key, def string) string {
@@ -137,11 +138,12 @@ func Load() (*Config, error) {
 		SSOAutoCreate:   envBool("SSO_AUTO_CREATE", false),
 		PasswordLogin:   envBool("PASSWORD_LOGIN", true),
 
-		DemoData:        envBool("DEMO_DATA", false),
-		MCPTokenHash:    env("MCP_TOKEN_HASH", ""),
-		MCPOAuthEnabled: envBool("MCP_OAUTH_ENABLED", false),
-		MCPClientsFile:  env("MCP_CLIENTS_FILE", ""),
-		MCPApps:         strings.FieldsFunc(env("MCP_APPS", ""), func(r rune) bool { return r == ',' || r == ' ' }),
+		DemoData:           envBool("DEMO_DATA", false),
+		MCPTokenHash:       env("MCP_TOKEN_HASH", ""),
+		MCPOAuthEnabled:    envBool("MCP_OAUTH_ENABLED", false),
+		MCPAppToolsEnabled: envBool("MCP_APP_TOOLS_ENABLED", false),
+		MCPClientsFile:     env("MCP_CLIENTS_FILE", ""),
+		MCPApps:            strings.FieldsFunc(env("MCP_APPS", ""), func(r rune) bool { return r == ',' || r == ' ' }),
 	}
 	if c.MCPTokenHash != "" {
 		b, err := hex.DecodeString(c.MCPTokenHash)
@@ -162,6 +164,9 @@ func Load() (*Config, error) {
 	}
 	if c.BaseURL == "" {
 		c.BaseURL = fmt.Sprintf("http://localhost:%d", c.Port)
+	}
+	if c.MCPAppToolsEnabled && !c.MCPOAuthEnabled {
+		return nil, fmt.Errorf("MCP_APP_TOOLS_ENABLED requires MCP_OAUTH_ENABLED")
 	}
 	if c.MCPOAuthEnabled {
 		u, err := url.Parse(c.BaseURL)
