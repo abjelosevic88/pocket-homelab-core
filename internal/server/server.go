@@ -175,6 +175,8 @@ func (s *Server) Router() http.Handler {
 	r.Get("/readyz", s.handleReady)
 	r.Get("/api/health", s.handleHealth)
 	r.Get("/metrics", s.handleMetrics)
+	// Separate, narrowly scoped authentication; never inherits AUTH_MODE=none.
+	r.Handle("/mcp", s.mcpHandler())
 
 	// OpenID Connect (browser + relying parties).
 	r.Get("/.well-known/openid-configuration", s.handleDiscovery)

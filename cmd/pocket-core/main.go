@@ -32,6 +32,9 @@ var version = "dev"
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "mcp":
+			runMCP(os.Args[2:])
+			return
 		case "version", "--version", "-v":
 			fmt.Println("pocket-core", version)
 			return
@@ -71,6 +74,7 @@ Usage:
                                      drive a connector (test, enable-events, enable-sso, provision <email>, status…)
                                      through the running server's admin API; "pocket-core connector -h" for actions
   pocket-core version                print version
+  pocket-core mcp setup|check         create MCP client credentials or check a running MCP endpoint
 
 Configuration is read from environment variables, see docs/configuration.md.`)
 			return

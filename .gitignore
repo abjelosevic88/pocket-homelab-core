@@ -3,6 +3,7 @@
 /dist/
 /result
 .env
+/mcp-secrets/
 *.db
 *.db-wal
 *.db-shm

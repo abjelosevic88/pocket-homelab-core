@@ -10,5 +10,6 @@ deploy
 .env.*
 !.env.example
 /pocket-core
+/mcp-secrets
 dist
 result

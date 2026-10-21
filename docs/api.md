@@ -4,6 +4,15 @@ Base path `/api/v1`. JSON in and out. Authenticate with the session cookie (brow
 
 Who may call what: **anyone authenticated** = users, apps and devices; **user** = a person (session, `pcu_`, `pco_`) or a device acting for its owner; **admin** = a user with the admin role; **app** = a registered app's `pca_` token. The registry (`/apps`, `/resolve`), the service list and the bus (`/events`, `/webhooks`) are **admin or app** only; a household member sees their own devices, profile and credentials.
 
+## MCP status endpoint
+
+`POST /mcp` is a separate Streamable HTTP MCP endpoint, outside `/api/v1`, using
+dedicated bearer credentials. It exposes `pocket_core_status`, `pocket_list_apps`
+and `pocket_app_status`. Household sessions and ordinary API tokens do not grant
+MCP access. Configure named clients with `MCP_CLIENTS_FILE` or a single credential
+with `MCP_TOKEN_HASH` and `MCP_APPS`. With neither, it returns 404.
+See [MCP setup, tools and examples](mcp.md).
+
 ## Auth & account
 | Method | Path | Who | Notes |
 |---|---|---|---|

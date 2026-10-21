@@ -30,7 +30,7 @@
           pname = "pocket-core";
           inherit version src;
           # Refresh with: nix build .#pocket-core (the error prints the right hash)
-          vendorHash = "sha256-qqQRlTYPjgLXJDT7lqqQNtduXPF/hym2emClZVlFfxk=";
+          vendorHash = "sha256-/QD+e39BeO06DdNx166/FcRLQeA9j8EJSwpkEl/Tbdc=";
           subPackages = [ "cmd/pocket-core" ];
           env.CGO_ENABLED = 0;
           ldflags = [ "-s" "-w" "-X main.version=${version}" ];

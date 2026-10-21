@@ -5,6 +5,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -53,6 +54,11 @@ type Config struct {
 	PasswordLogin   bool // false = only the upstream provider; tokens keep working
 
 	DemoData bool
+
+	// MCP is opt-in and has a separate status-only credential.
+	MCPTokenHash   string
+	MCPApps        []string
+	MCPClientsFile string
 }
 
 func env(key, def string) string {
@@ -129,7 +135,27 @@ func Load() (*Config, error) {
 		SSOAutoCreate:   envBool("SSO_AUTO_CREATE", false),
 		PasswordLogin:   envBool("PASSWORD_LOGIN", true),
 
-		DemoData: envBool("DEMO_DATA", false),
+		DemoData:       envBool("DEMO_DATA", false),
+		MCPTokenHash:   env("MCP_TOKEN_HASH", ""),
+		MCPClientsFile: env("MCP_CLIENTS_FILE", ""),
+		MCPApps:        strings.FieldsFunc(env("MCP_APPS", ""), func(r rune) bool { return r == ',' || r == ' ' }),
+	}
+	if c.MCPTokenHash != "" {
+		b, err := hex.DecodeString(c.MCPTokenHash)
+		if err != nil || len(b) != 32 {
+			return nil, fmt.Errorf("MCP_TOKEN_HASH must be a hex SHA-256 digest")
+		}
+		if err := ValidateMCPApps(c.MCPApps); err != nil {
+			return nil, err
+		}
+	}
+	if c.MCPClientsFile != "" {
+		if c.MCPTokenHash != "" {
+			return nil, fmt.Errorf("use either MCP_CLIENTS_FILE or MCP_TOKEN_HASH, not both")
+		}
+		if _, err := ReadMCPClients(c.MCPClientsFile); err != nil {
+			return nil, fmt.Errorf("MCP_CLIENTS_FILE: %w", err)
+		}
 	}
 	if c.BaseURL == "" {
 		c.BaseURL = fmt.Sprintf("http://localhost:%d", c.Port)

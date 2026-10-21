@@ -27,6 +27,9 @@ Everything is read from environment variables; every value has a default so a ba
 | `EVENT_RETENTION` | `720h` | Events older than this are purged hourly |
 | `WEBHOOK_ATTEMPTS` | `8` | Delivery attempts before a webhook delivery is marked failed (10 s, 20 s, 40 s… capped at 1 h) |
 | `DEMO_DATA` | `false` | Seed three fake apps, three services and a few events on an empty database |
+| `MCP_TOKEN_HASH` | disabled | Hex SHA-256 digest of a dedicated status-only MCP bearer token; see [MCP setup](mcp.md) |
+| `MCP_APPS` | none | Required with `MCP_TOKEN_HASH`: comma-separated registered app slugs, or `*` for all |
+| `MCP_CLIENTS_FILE` | disabled | JSON file of named clients with token hashes, app grants and expiry; reloaded each request. Use instead of `MCP_TOKEN_HASH`/`MCP_APPS`. See [MCP setup](mcp.md). |
 
 ## Auth modes
 
@@ -50,8 +53,11 @@ In PocketID: *OIDC Clients → Add*, callback `BASE_URL/api/v1/auth/sso/callback
 | `pcu_` | a person's script, Raycast, Homepage | Users → My API tokens |
 | `pco_` / `pcr_` | an OIDC relying party | `/oidc/token` |
 | `pcs_` | an OIDC client secret | Settings → Single sign-on |
+| `pcm_` | an MCP status client | `pocket-core mcp setup`; dedicated status-only credential |
 
-All of them go in `Authorization: Bearer …` (or `X-API-Key`). Core stores only hashes.
+Tokens go in `Authorization: Bearer …` (or `X-API-Key` for the ordinary API).
+MCP accepts only the Authorization bearer header and its own credential; it does
+not accept household/app tokens. Core stores only hashes.
 
 ## Lockouts
 
@@ -68,6 +74,10 @@ pocket-core pair [-email USER]     print a pairing code from the console
 pocket-core connector [-url URL] [-token TOKEN] <type> <action>
                                    drive a connector through the running server (see docs/connectors.md)
 pocket-core version
+pocket-core mcp setup [-apps notes,tasks] [-name codex] [-dir ./mcp-secrets] [-url URL] [-ttl 2160h]
+                                   generate private client configuration without opening the database
+pocket-core mcp check [-url URL] [-app notes]
+                                   call MCP using POCKET_MCP_TOKEN; omit -app to list allowed apps
 ```
 
 Inside the container: `docker exec pocket-core pocket-core pair`. `connector` talks to the running server's admin API with an admin's personal token (`-token` or `POCKET_CORE_TOKEN`), so it never writes the database itself.

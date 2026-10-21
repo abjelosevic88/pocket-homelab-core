@@ -16,6 +16,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Fixed registration key for apps (otherwise one is generated and shown under Settings):
       REGISTRATION_KEY: ${REGISTRATION_KEY:-}
+      # Optional single status-only MCP credential; named clients use docker-compose.mcp.yml.
+      MCP_TOKEN_HASH: ${MCP_TOKEN_HASH:-}
+      MCP_APPS: ${MCP_APPS:-}
     volumes:
       - ./data:/data
     extra_hosts:
