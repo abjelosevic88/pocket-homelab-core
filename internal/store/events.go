@@ -21,14 +21,15 @@ type Event struct {
 
 // EventFilter narrows ListEvents.
 type EventFilter struct {
-	Topic     string // exact, or prefix with trailing "*"
-	Source    string
-	Subject   string
-	Ascending bool // stable cursor scan, including after zero
-	BeforeID  int64
-	AfterID   int64
-	Since     string
-	Limit     int
+	Topic        string // exact, or prefix with trailing "*"
+	ExcludeTopic string // exact topic to omit before pagination
+	Source       string
+	Subject      string
+	Ascending    bool // stable cursor scan, including after zero
+	BeforeID     int64
+	AfterID      int64
+	Since        string
+	Limit        int
 }
 
 // InsertEvent persists an event and returns it with id and timestamp.
@@ -40,6 +41,10 @@ func (s *Store) InsertEvent(ctx context.Context, e *Event) error {
 func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) {
 	var where []string
 	var args []any
+	if f.ExcludeTopic != "" {
+		where = append(where, `topic <> ?`)
+		args = append(args, f.ExcludeTopic)
+	}
 	if f.Topic != "" {
 		if strings.HasSuffix(f.Topic, "*") {
 			where = append(where, `topic LIKE ?`)
@@ -150,8 +155,14 @@ type SourceCount struct {
 }
 
 // EventSources counts the stored events per source.
-func (s *Store) EventSources(ctx context.Context) ([]SourceCount, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT source, COUNT(1), MAX(created_at) FROM events GROUP BY source ORDER BY source`)
+func (s *Store) EventSources(ctx context.Context, excludeTopic string) ([]SourceCount, error) {
+	q := `SELECT source, COUNT(1), MAX(created_at) FROM events`
+	var args []any
+	if excludeTopic != "" {
+		q += ` WHERE topic <> ?`
+		args = append(args, excludeTopic)
+	}
+	rows, err := s.DB.QueryContext(ctx, q+` GROUP BY source ORDER BY source`, args...)
 	if err != nil {
 		return nil, err
 	}

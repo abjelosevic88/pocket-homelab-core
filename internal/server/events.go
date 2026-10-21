@@ -65,6 +65,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	after, _ := strconv.ParseInt(q.Get("after"), 10, 64)
 	f := store.EventFilter{Topic: strings.ToLower(q.Get("topic")), Source: q.Get("source"), Subject: q.Get("subject"), AfterID: after, Since: q.Get("since"), Limit: queryInt(r, "limit")}
+	f.ExcludeTopic = strings.ToLower(q.Get("exclude_topic"))
 	list, err := s.visibleEvents(r.Context(), principalFrom(r.Context()), f)
 	if err != nil {
 		s.fail(w, err, "list events")
@@ -106,7 +107,7 @@ func (s *Server) handleEventSources(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "admin only")
 		return
 	}
-	list, err := s.store.EventSources(r.Context())
+	list, err := s.store.EventSources(r.Context(), strings.ToLower(r.URL.Query().Get("exclude_topic")))
 	if err != nil {
 		s.fail(w, err, "event sources")
 		return

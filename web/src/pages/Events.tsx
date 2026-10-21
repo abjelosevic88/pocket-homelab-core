@@ -7,6 +7,8 @@ import { Select } from '../components/Select'
 import { useApp } from '../lib/app-context'
 import { Card, Collapse, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
 
+const registrationTopic = 'core.app.registered'
+
 export default function Events() {
   const [tab, setTab] = useState<'log' | 'webhooks'>('log')
   return (
@@ -37,6 +39,8 @@ function dayLabel(iso: string) {
 function Log() {
   const { toast } = useToast()
   const [topic, setTopic] = useState('')
+  // Registration history remains available when explicitly searching for it.
+  const excludeTopic = topic === registrationTopic ? '' : registrationTopic
   const [source, setSource] = useState('')
   const [live, setLive] = useState(true)
   const [items, setItems] = useState<Event[]>([])
@@ -44,7 +48,7 @@ function Log() {
   const [open, setOpen] = useState<number | null>(null)
   const { data: topics } = useAsync(() => api.get<Topic[]>(`${V1}/events/topics`), [items.length])
   // every source there could be, with how many events each has stored (not just the ones loaded)
-  const { data: counts } = useAsync(() => api.get<{ source: string; count: number }[]>(`${V1}/events/sources`).catch(() => []), [items.length])
+  const { data: counts } = useAsync(() => api.get<{ source: string; count: number }[]>(`${V1}/events/sources?exclude_topic=${encodeURIComponent(excludeTopic)}`).catch(() => []), [items.length, excludeTopic])
   const { data: catalog } = useAsync(() => api.get<CatalogEntry[]>(`${V1}/catalog`).catch(() => [] as CatalogEntry[]), [])
   const { data: conns } = useAsync(() => api.get<{ type: string; name: string }[]>(`${V1}/connectors`).catch(() => []), [])
   const ctx = useEventCtx()
@@ -52,22 +56,25 @@ function Log() {
   // one source: ask the server, so older events than the newest 200 show up too
   const one = source && !source.startsWith('kind:') ? source : ''
   useEffect(() => {
-    const q = [`limit=200`, topic && `topic=${encodeURIComponent(topic)}`, one && `source=${encodeURIComponent(one)}`].filter(Boolean).join('&')
-    api.get<Event[]>(`${V1}/events?${q}`).then(setItems)
-  }, [topic, one])
+    const q = [`limit=200`, topic && `topic=${encodeURIComponent(topic)}`, one && `source=${encodeURIComponent(one)}`, excludeTopic && `exclude_topic=${encodeURIComponent(excludeTopic)}`].filter(Boolean).join('&')
+    let cancelled = false
+    api.get<Event[]>(`${V1}/events?${q}`).then(events => { if (!cancelled) setItems(events) })
+    return () => { cancelled = true }
+  }, [topic, one, excludeTopic])
   useEffect(() => {
     es.current?.close()
     if (!live) return
     const s = new EventSource(`${V1}/events/stream?topics=${encodeURIComponent(topic || '*')}`)
     s.onmessage = (e: MessageEvent) => {
       const ev = JSON.parse(e.data) as Event
+      if (ev.topic === excludeTopic) return
       setItems(list => [ev, ...list.filter(x => x.id !== ev.id)].slice(0, 300))
       setFresh(f => new Set(f).add(ev.id))
       setTimeout(() => setFresh(f => { const n = new Set(f); n.delete(ev.id); return n }), 2500)
     }
     es.current = s
     return () => s.close()
-  }, [live, topic])
+  }, [live, topic, excludeTopic])
   const stored = new Map((counts || []).map(c => [c.source, c.count]))
   const known = new Map<string, SourceInfo>()
   const add = (src: string, info: SourceInfo) => { if (!known.has(src)) known.set(src, info) }
@@ -79,7 +86,7 @@ function Log() {
   for (const e of items) add(e.source, sourceInfo(e.source, ctx))
   const sources = [...known].map(([src, info]) => ({ src, info, n: stored.get(src) ?? items.filter(e => e.source === src).length }))
   const groups: [SourceKind, string][] = [['app', 'Pocket apps'], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
-  const shown = items.filter(e => !source || (source.startsWith('kind:') ? sourceInfo(e.source, ctx).kind === source.slice(5) : e.source === source))
+  const shown = items.filter(e => e.topic !== excludeTopic && (!source || (source.startsWith('kind:') ? sourceInfo(e.source, ctx).kind === source.slice(5) : e.source === source)))
   const days: [string, Event[]][] = []
   for (const e of shown) { const k = dayLabel(e.created_at); const last = days[days.length - 1]; if (last && last[0] === k) last[1].push(e); else days.push([k, [e]]) }
   const copy = async (e: Event) => { await navigator.clipboard.writeText(JSON.stringify(e.payload, null, 2)); toast('Payload copied') }

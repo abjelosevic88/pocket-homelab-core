@@ -204,9 +204,9 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 	}
 	go s.checkApp(context.WithoutCancel(ctx), app)
 	s.log.Info("app registered", "slug", app.Slug, "url", app.URL, "new", existing == nil)
-	_ = s.hub.Publish(ctx, &store.Event{Topic: "core.app.registered", Source: "core", Subject: "app:" + app.Slug, Payload: mustJSON(map[string]any{"slug": app.Slug, "name": app.Name, "version": app.Version, "new": existing == nil})})
 	status := http.StatusOK
 	if existing == nil {
+		_ = s.hub.Publish(ctx, &store.Event{Topic: "core.app.registered", Source: "core", Subject: "app:" + app.Slug, Payload: mustJSON(map[string]any{"slug": app.Slug, "name": app.Name, "version": app.Version, "new": true})})
 		status = http.StatusCreated
 	}
 	writeJSON(w, status, resp)

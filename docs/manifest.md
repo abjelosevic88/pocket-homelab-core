@@ -70,7 +70,7 @@ Persist `token`. Afterwards register with it instead of the key; Core updates th
 3. Creates the webhooks from `subscribes`.
 4. Creates the OIDC client from `oidc`.
 5. Creates or removes the app's links from `uses`.
-6. Publishes `core.app.registered`.
+6. Publishes `core.app.registered` only for a newly enrolled app. Restarts, manifest updates and token recovery do not publish another registration event.
 
 ## Accepting device tokens
 

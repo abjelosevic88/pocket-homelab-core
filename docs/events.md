@@ -261,13 +261,16 @@ Polled every check interval; the first check only records a baseline. `user_emai
 
 ## Read
 
+The Events log hides `core.app.registered` by default, including existing registration history. Search for that exact topic to inspect it. Core publishes it only on initial enrollment, not on routine re-registration.
+
 Event reads require publisher ownership or an approved per-person `events:read` link. Core and connector events remain admin-only for cross-app access. See [the platform contract](platform-contract.md#authorization).
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/events?topic=&source=&subject=&after=&since=&limit=` | newest first; `topic` may end in `*`; `after=<id>` returns oldest first for replay |
+| GET | `/api/v1/events?topic=&source=&subject=&after=&since=&limit=&exclude_topic=` | newest first; `topic` may end in `*`; `after=<id>` returns oldest first for replay; `exclude_topic` omits one exact topic before pagination |
 | GET | `/api/v1/events/{id}` | one event |
 | GET | `/api/v1/events/topics` | distinct topics with counts |
+| GET | `/api/v1/events/sources?exclude_topic=` | source counts, optionally omitting one exact topic |
 | GET | `/api/v1/events/stream?topics=kitchen.*,habits.marked&after=&typed=` | Server-Sent Events |
 
 The stream sends `id: <event id>` with every message; reconnect with `Last-Event-ID` (or `?after=`) and Core drains all retained replay pages in one ordered sequence across all matching patterns. Notifications wake a persisted-log reader; a slow connection does not silently skip buffered events. With `typed=1` the SSE `event:` field is the topic (for `addEventListener('kitchen.cooked', …)`); without it every message is a plain `message`. A `: ping` comment arrives every 25 s.
