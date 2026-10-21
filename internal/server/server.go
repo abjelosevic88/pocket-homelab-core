@@ -236,6 +236,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/apps", s.handleListApps)
 				r.Get("/apps/{slug}", s.handleGetApp)
 				r.Get("/resolve", s.handleResolve)
+				r.Get("/people", s.handlePeople)
 
 				r.Get("/services", s.handleListServices)
 				r.Get("/services/{id}", s.handleGetService)

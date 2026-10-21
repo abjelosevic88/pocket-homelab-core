@@ -21,6 +21,7 @@ Who may call what: **anyone authenticated** = users, apps and devices; **user** 
 | GET | `/apps` | admin, app | |
 | GET | `/apps/{slug}` | admin, app | `{app, webhooks, oidc_client}` |
 | GET | `/resolve?slug=` | admin, app | `{url, public_url, status, version}`; without `slug` a map of every app |
+| GET | `/people` | admin, app | `[{email, name}]` of every active account, for share pickers (nothing else about anyone) |
 | PUT/DELETE | `/apps/{slug}` | admin | edit descriptive fields / remove (cascades to service, webhooks, OIDC client) |
 | POST | `/apps/{slug}/rotate` · `/apps/{slug}/check` | admin | new token (shown once) / health check now |
 

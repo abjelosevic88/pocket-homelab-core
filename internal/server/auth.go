@@ -492,6 +492,27 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
+// handlePeople lists the household for apps' share pickers: name and email
+// of every active account, nothing else.
+func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
+	users, err := s.store.ListUsers(r.Context())
+	if err != nil {
+		s.fail(w, err, "list people")
+		return
+	}
+	type person struct {
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	}
+	out := []person{}
+	for _, u := range users {
+		if !u.Disabled {
+			out = append(out, person{Email: u.Email, Name: u.Name})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`
