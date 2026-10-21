@@ -2,19 +2,39 @@ import { useEffect, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { Card, Field } from '../components/ui'
 
-type Connection = { id: string; client_name: string; created_at: string; expires_at: string; scope: string }
+type Connection = { id: string; client_name: string; created_at: string; expires_at: string; scope: string; kind: string }
 type Connections = { enabled: boolean; app_tools_enabled: boolean; url: string; connections: Connection[] }
+
+type CreatedToken = { token: string; url: string; connection: Connection }
 
 export default function AIConnections() {
   const [data, setData] = useState<Connections | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [copied, setCopied] = useState(false)
+  const [name, setName] = useState('Codex')
+  const [scope, setScope] = useState('status:read apps:read apps:write')
+  const [days, setDays] = useState(30)
+  const [created, setCreated] = useState<CreatedToken | null>(null)
+  const [tokenCopied, setTokenCopied] = useState(false)
+  const createToken = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy('create'); setError(''); setTokenCopied(false)
+    try {
+      const result = await api.post<CreatedToken>(`${V1}/me/ai-connections/token`, { name, scope: data?.app_tools_enabled ? scope : 'status:read', expires_in_days: days, approved: true })
+      setCreated(result)
+      await refresh()
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy('') }
+  }
+  const copyToken = async () => {
+    try { await navigator.clipboard.writeText(created!.token); setTokenCopied(true) }
+    catch { setError('Select and copy the connection token below.') }
+  }
   const refresh = async () => setData(await api.get<Connections>(`${V1}/me/ai-connections`))
   useEffect(() => { refresh().catch(e => setError(e.message)) }, [])
   const disconnect = async (id: string) => {
     setBusy(id); setError('')
-    try { await api.del(`${V1}/me/ai-connections/${encodeURIComponent(id)}`); await refresh() }
+    try { await api.del(`${V1}/me/ai-connections/${encodeURIComponent(id)}`); await refresh(); if (created?.connection.id === id) setCreated(null) }
     catch (e) { setError((e as Error).message) }
     finally { setBusy('') }
   }
@@ -28,7 +48,28 @@ export default function AIConnections() {
     {error && <div className="callout danger" role="alert">{error}</div>}
     {!data && !error && <p>Loading connections…</p>}
     {data && <div className="grid" style={{ gap: 20 }}>
-      <Card title="Connect an assistant">
+      {data.enabled && <Card title="Connect without redirects">
+        <p>Use a connection token when your assistant runs on another computer, a server or in the cloud. This setup stays on Core and does not redirect to localhost.</p>
+        {!created ? <form onSubmit={createToken}>
+          <Field label="Connection name"><input value={name} onChange={e => setName(e.target.value)} maxLength={80} required autoComplete="off" /></Field>
+          <Field label="Access"><select aria-label="Access" value={data.app_tools_enabled ? scope : 'status:read'} onChange={e => setScope(e.target.value)}>
+            <option value="status:read">Status checks only</option>
+            {data.app_tools_enabled && <><option value="status:read apps:read">Read application content</option><option value="status:read apps:read apps:write">Read and create/update items</option></>}
+          </select></Field>
+          <Field label="Expires after"><select aria-label="Expires after" value={days} onChange={e => setDays(Number(e.target.value))}><option value={1}>1 day</option><option value={7}>7 days</option><option value={30}>30 days</option></select></Field>
+          <p>This grants the selected access to your permitted apps, including apps shared with you later. Deletion and service administration are unavailable.</p>
+          <button className="btn primary" type="submit" disabled={!!busy}>{busy === 'create' ? 'Creating…' : 'Create token with this access'}</button>
+        </form> : <>
+          <p role="status">Token created. Copy it now; Core cannot show it again. It expires {new Date(created.connection.expires_at).toLocaleDateString()}. Keep it in your assistant's secret settings.</p>
+          <Field label="Connection token"><input type="password" readOnly value={created.token} autoComplete="off" onFocus={e => e.target.select()} /></Field>
+          <button className="btn" onClick={copyToken}>{tokenCopied ? 'Token copied' : 'Copy token'}</button>
+          <p>On the machine running Codex, set <code>POCKET_ACCOUNT_MCP_TOKEN</code> to this token in its environment or secret manager, then run:</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{`codex mcp add pocket_account --url ${created.url} --bearer-token-env-var POCKET_ACCOUNT_MCP_TOKEN`}</pre>
+          <p>Start a new Codex session with that environment variable available. You do not need <code>codex mcp login</code>. Other clients can send this token as a Bearer authorization header.</p>
+          <button className="btn mt" onClick={() => { setCreated(null); setTokenCopied(false) }}>I've saved the token</button>
+        </>}
+      </Card>}
+      <Card title="Connect with browser sign-in">
         {data.enabled ? <>
           <p>Add this URL as a remote MCP server in your assistant, choose account sign-in, and approve access using your Core account.</p>
           <Field label="MCP server URL"><input readOnly value={data.url} onFocus={e => e.target.select()} /></Field>
@@ -40,7 +81,7 @@ export default function AIConnections() {
       </Card>
       <Card title="Your connections">
         {data.connections.length === 0 ? <p>No assistants connected yet.</p> : data.connections.map(c => <div key={c.id} className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}>
-          <div><strong>{c.client_name}</strong><div className="small">{c.scope?.includes("apps:write") ? "Read and create/update items" : c.scope?.includes("apps:read") ? "Read application content" : "Status checks only"}</div><div className="muted small">Connected {new Date(c.created_at).toLocaleDateString()} · {new Date(c.expires_at) <= new Date() ? 'Expired' : 'Expires'} {new Date(c.expires_at).toLocaleDateString()}</div></div>
+          <div><strong>{c.client_name}</strong><span className="muted small"> · {c.kind === 'token' ? 'Connection token' : 'Browser sign-in'}</span><div className="small">{c.scope?.includes("apps:write") ? "Read and create/update items" : c.scope?.includes("apps:read") ? "Read application content" : "Status checks only"}</div><div className="muted small">Connected {new Date(c.created_at).toLocaleDateString()} · {new Date(c.expires_at) <= new Date() ? 'Expired' : 'Expires'} {new Date(c.expires_at).toLocaleDateString()}</div></div>
           <button className="btn danger" disabled={!!busy} onClick={() => disconnect(c.id)}>{busy === c.id ? 'Disconnecting…' : 'Disconnect'}</button>
         </div>)}
       </Card>

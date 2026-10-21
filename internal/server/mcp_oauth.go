@@ -386,8 +386,7 @@ func (s *Server) handleMCPDisconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// This endpoint only accepts browser sessions, so never exempt CSRF by a bearer header.
-	base, _ := url.Parse(s.cfg.BaseURL)
-	if base == nil || len(r.Header.Values("Origin")) != 1 || r.Header.Get("Origin") != base.Scheme+"://"+base.Host {
+	if !s.mcpConnectionOrigin(r) {
 		writeErr(w, 403, "origin rejected")
 		return
 	}

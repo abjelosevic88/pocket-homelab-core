@@ -94,7 +94,28 @@ put these settings in `.env` and deploy an image built from this source.
 **The person connecting only needs the URL and a Core account.** No SSH access,
 server configuration, copied API key or custom sign-in programming is required.
 
-For Codex CLI, on the person's own computer:
+For a remote/cloud Codex instance, or when a localhost callback cannot reach
+Codex, use **Core → AI connections → Connect without redirects**. Choose the
+access level and expiry, click **Create token with this access**, and copy the
+token shown once. It uses your account's permissions and can be disconnected there.
+
+Set `POCKET_ACCOUNT_MCP_TOKEN` in the environment/secret manager of the machine
+running Codex, then add the connection:
+
+```sh
+codex mcp add pocket_account --url https://core.example.com/mcp \
+  --bearer-token-env-var POCKET_ACCOUNT_MCP_TOKEN
+```
+
+Start a new Codex session with that variable available. **Do not run `codex mcp
+login` for token mode**; no OAuth callback is needed. If replacing an existing
+OAuth entry, update it to the URL and bearer environment variable above. Do not
+put the token in chat, a repository, or the URL. Tokens expire after 1, 7 or 30
+days and must then be replaced. Other clients can use an `Authorization: Bearer`
+header if they support manual credentials. See [token setup](docs/mcp-apps.md#connect-without-a-localhost-redirect).
+
+For browser OAuth sign-in, with the browser able to reach Codex's callback:
+
 
 ```sh
 codex mcp add pocket_account --url https://core.example.com/mcp

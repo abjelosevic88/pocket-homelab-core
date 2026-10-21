@@ -6,6 +6,19 @@ Streamable HTTP. Status tools cover Core and registered Pocket apps. Optional
 items across all current Pocket apps. Deletion, service administration and logs
 are not exposed. Operator credentials remain status-only.
 
+## Connection tokens for remote assistants
+
+Account users can create scoped, expiring tokens under **AI connections → Connect
+without redirects**. This avoids a localhost callback when the browser and
+assistant run on different machines. See the [no-redirect setup guide](mcp-apps.md#connect-without-a-localhost-redirect).
+Tokens require `MCP_OAUTH_ENABLED=true`; content scopes additionally require
+`MCP_APP_TOOLS_ENABLED=true`. They are separate from operator status keys and
+ordinary personal API tokens. Creation requires an authenticated browser session,
+an exact same-origin request, and explicit scope approval. The raw token is returned
+once with `Cache-Control: no-store`; only its hash is stored. Per-account limits
+and expiry bound active tokens, and orphan private client records are removed
+when disconnected or expired. No callback or refresh credential is issued.
+
 ## Account sign-in
 
 Enable `MCP_OAUTH_ENABLED=true`, `AUTH_MODE=local`, and an HTTPS origin in

@@ -12,7 +12,62 @@ token introspection. The gateway uses their existing APIs; no separate MCP serve
 or app deployment is needed. Unsupported third-party services remain outside
 this application catalog.
 
-## Connect and choose access
+## Connect without a localhost redirect
+
+Use this option when Codex is on a remote machine or a browser callback to
+`127.0.0.1` fails. That address refers to the browser's machine; it does not reach
+a callback listener on a different server.
+
+1. Sign in to Core and open **AI connections → Connect without redirects**.
+2. Name the connection and choose status, reading, or reading and creating/updating.
+3. Choose an expiry (1, 7 or 30 days), then **Create token with this access**.
+4. Copy the token. It appears only in that response; Core stores a hash.
+5. On the machine running the assistant, store it as `POCKET_ACCOUNT_MCP_TOKEN`
+   in the environment or the hosting service's secret manager.
+
+```sh
+codex mcp add pocket_account --url https://core.example.com/mcp \
+  --bearer-token-env-var POCKET_ACCOUNT_MCP_TOKEN
+```
+
+Equivalent `~/.codex/config.toml` configuration:
+
+```toml
+[mcp_servers.pocket_account]
+url = "https://core.example.com/mcp"
+bearer_token_env_var = "POCKET_ACCOUNT_MCP_TOKEN"
+```
+
+For an interactive terminal you can read the token without putting it in shell
+history. Use the command for your shell, paste the token, press Enter, then launch
+Codex from that same shell:
+
+```sh
+# Bash
+read -rs -p 'Core connection token: ' POCKET_ACCOUNT_MCP_TOKEN
+export POCKET_ACCOUNT_MCP_TOKEN
+
+# Zsh (default on macOS)
+read -rs 'POCKET_ACCOUNT_MCP_TOKEN?Core connection token: '
+export POCKET_ACCOUNT_MCP_TOKEN
+```
+
+Use **one** of these shell examples. Desktop apps and hosted instances need the
+variable in their own launch environment/secret settings; exporting in an unrelated
+terminal does not configure an already-running app. Restart the assistant after
+configuring the connection. **Do not run `codex mcp login` in token mode.** Bearer
+environment configuration is documented in the [official Codex MCP guide](https://developers.openai.com/codex/mcp/).
+
+Other clients need support for a Bearer token or custom Authorization header.
+Clients supporting only OAuth still use the browser flow below. A connection token
+is tied to your account, scope and expiry; it cannot authenticate ordinary Core
+APIs. It has no refresh token or callback. Replace it at expiry, or disconnect it
+under **Your connections** to revoke it immediately. Limit: 20 active connection
+tokens per account. Account disable/authentication-revision changes and app sharing
+changes apply just as they do to OAuth connections. Do not share tokens in chat,
+source control, URLs or screenshots.
+
+## Connect with browser sign-in and choose access
 
 ```sh
 codex mcp add pocket_account --url https://core.example.com/mcp

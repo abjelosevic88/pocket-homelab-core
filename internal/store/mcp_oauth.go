@@ -21,7 +21,7 @@ func (s *Store) CreateMCPOAuthClient(ctx context.Context, c *MCPOAuthClient) err
 	redirects, _ := json.Marshal(c.RedirectURIs)
 	// Bound unauthenticated registration storage. Existing clients remain valid.
 	res, err := s.DB.ExecContext(ctx, `INSERT INTO mcp_oauth_clients(client_id,name,auth_method,secret_hash,redirect_uris,created_at)
- SELECT ?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM mcp_oauth_clients) < 1000`, c.ClientID, c.Name, c.AuthMethod, c.SecretHash, string(redirects), Now())
+ SELECT ?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM mcp_oauth_clients WHERE kind='oauth') < 1000`, c.ClientID, c.Name, c.AuthMethod, c.SecretHash, string(redirects), Now())
 	if err != nil {
 		return err
 	}
@@ -50,6 +50,7 @@ type MCPGrant struct {
 	ClientID     string `json:"client_id"`
 	ClientName   string `json:"client_name"`
 	Scope        string `json:"scope"`
+	Kind         string `json:"kind"`
 	UserID       int64  `json:"-"`
 	AuthRevision int64  `json:"-"`
 	CreatedAt    string `json:"created_at"`
@@ -57,7 +58,7 @@ type MCPGrant struct {
 }
 
 func (s *Store) ListMCPGrants(ctx context.Context, userID int64) ([]MCPGrant, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT g.id,g.client_id,c.name,g.created_at,g.expires_at,g.scope FROM mcp_oauth_grants g JOIN mcp_oauth_clients c ON c.client_id=g.client_id JOIN users u ON u.id=g.user_id WHERE g.user_id=? AND u.auth_revision=g.auth_revision AND u.disabled=0 ORDER BY g.created_at DESC`, userID)
+	rows, err := s.DB.QueryContext(ctx, `SELECT g.id,g.client_id,c.name,g.created_at,g.expires_at,g.scope,c.kind FROM mcp_oauth_grants g JOIN mcp_oauth_clients c ON c.client_id=g.client_id JOIN users u ON u.id=g.user_id WHERE g.user_id=? AND u.auth_revision=g.auth_revision AND u.disabled=0 ORDER BY g.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func (s *Store) ListMCPGrants(ctx context.Context, userID int64) ([]MCPGrant, er
 	out := []MCPGrant{}
 	for rows.Next() {
 		var g MCPGrant
-		if err := rows.Scan(&g.ID, &g.ClientID, &g.ClientName, &g.CreatedAt, &g.ExpiresAt, &g.Scope); err != nil {
+		if err := rows.Scan(&g.ID, &g.ClientID, &g.ClientName, &g.CreatedAt, &g.ExpiresAt, &g.Scope, &g.Kind); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -75,7 +76,10 @@ func (s *Store) ListMCPGrants(ctx context.Context, userID int64) ([]MCPGrant, er
 
 func (s *Store) DeleteMCPGrant(ctx context.Context, id string, userID int64) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM mcp_oauth_grants WHERE id=? AND user_id=?`, id, userID)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.purgeMCPTokenClients(ctx)
 }
 
 // MCPOAuthSecret is a one-time consent request, code, refresh token, or access token.

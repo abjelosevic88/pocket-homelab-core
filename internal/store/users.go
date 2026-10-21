@@ -155,6 +155,9 @@ func (s *Store) PurgeExpired(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.purgeMCPTokenClients(ctx); err != nil {
+		return err
+	}
 	// Keep request-ID tombstones so an old retry can never repeat a write;
 	// discard personal response bodies after seven days.
 	_, err := s.DB.ExecContext(ctx, `UPDATE mcp_app_operations SET result='' WHERE result<>'' AND created_at<?`, Stamp(time.Now().Add(-7*24*time.Hour)))

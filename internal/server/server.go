@@ -228,6 +228,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/overview", s.handleOverview)
 			r.Get("/me/services", s.handleMyServices)
 			r.Get("/me/ai-connections", s.handleMCPConnections)
+			r.Post("/me/ai-connections/token", s.handleMCPConnectionToken)
 			r.Delete("/me/ai-connections/{id}", s.handleMCPDisconnect)
 
 			r.Get("/users/{id}/credentials", s.handleListCredentials)
