@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import type { CatalogEntry, ConnectorCaps, ConnectorListItem, Service, User } from '../lib/types'
 import { useApp } from '../lib/app-context'
-import { Card, Confirm, Empty, Field, Loading, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
+import { Card, Confirm, Empty, Field, Loading, MenuButton, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
+import { Icon } from '../components/icons'
 import { ConnectorModal } from '../components/ConnectorPanel'
 import { Select } from '../components/Select'
 import { bundledIcon, iconCandidates } from '../lib/icons'
@@ -29,6 +31,9 @@ export default function Services() {
   const [q, setQ] = useState('')
   const [show, setShow] = useState<'all' | 'on' | 'off' | 'conn'>('all')
   const [tests, setTests] = useState<Record<number, TestResult>>({})
+  // ?add=1 (the sidebar's New menu and the palette) opens the picker
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => { if (admin && sp.get('add')) { setAdding(true); sp.delete('add'); setSp(sp, { replace: true }) } }, [admin, sp, setSp])
   const list = data || []
   const pocketBases = list.filter(s => s.catalog.pocket || s.app_id).map(s => s.public_url || s.url)
   const missing = useMemo<Missing[]>(() => {
@@ -70,14 +75,14 @@ export default function Services() {
   return (
     <>
       <PageHeader title="Services" sub="Everything a paired device receives: registered Pocket apps plus the services you add with their credentials."
-        actions={<><a className="btn" href={`${V1}/pair/profile?format=env`} download>Download env</a>{admin && <button className="btn primary" onClick={() => setAdding(true)}>Add service</button>}</>} />
+        actions={<><a className="btn" href={`${V1}/pair/profile?format=env`} download><Icon name="download" size={15} />Download env</a>{admin && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={15} />Add service</button>}</>} />
       <div className="toolbar">
-        <div className="search"><span className="ico">⌕</span><input placeholder="Search services…" value={q} onChange={e => setQ(e.target.value)} /></div>
+        <div className="search"><Icon name="search" size={15} /><input placeholder="Search services…" value={q} onChange={e => setQ(e.target.value)} /></div>
         <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length + missing.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length + missing.filter(m => m.kind === 'connector').length}` }] : [])]} />
-        <button className="btn sm" onClick={testAll} title="Check every service in the profile">Test all</button>
+        <button type="button" className="btn sm" onClick={testAll} title="Check every service in the profile"><Icon name="activity" size={14} />Test all</button>
       </div>
       {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} pocketBases={pocketBases} onOpen={setConn} onAdd={type => { const e = catalog?.find(c => c.type === type); if (e) setAdding(e) }} />}
-      {list.length === 0 && missing.length === 0 ? <Card><Empty title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
+      {list.length === 0 && missing.length === 0 ? <Card><Empty icon="server" title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
         groups.length === 0 ? <Card><Empty title="No match">Nothing matches this search.</Empty></Card> :
         groups.map(([g, { svcs: items, missing: absent }]) => <section key={g} className="svc-group">
           <div className="svc-group-head"><span>{g}</span><span className="count">{items.length}</span>{absent.length > 0 && <span className="count muted">+{absent.length} not set up</span>}</div>
@@ -112,7 +117,7 @@ export default function Services() {
                     {t && <span className={`pill ${t.busy ? '' : t.ok ? 'ok' : 'err'}`} title={t.error || ''}>{t.busy ? 'Testing…' : t.ok ? `${t.status} · ${t.ms} ms` : 'Unreachable'}</span>}
                   </div>
                   <div className="svc-actions">
-                    {admin && <button className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
+                    {admin && <button type="button" className="btn sm ghost" onClick={() => setEdit(s)}>Edit</button>}
                     <RowMenu items={[
                       { label: t?.busy ? 'Testing…' : 'Test connection', onClick: () => { if (!t?.busy) test(s) } },
                       ...(admin && connFor(s) ? [{ label: 'Connector…', onClick: () => setConn(s) }] : []),
@@ -136,11 +141,11 @@ export default function Services() {
 
 // ConnectorLine sits under a service's name: what its connector is doing.
 function ConnectorLine({ c, onOpen }: { c?: ConnectorListItem['connector']; onOpen: () => void }) {
-  if (!c || !c.enabled) return <button type="button" className="conn-line off" onClick={onOpen}><span className="conn-bolt">ϟ</span><span className="conn-label">Connector available · off</span></button>
+  if (!c || !c.enabled) return <button type="button" className="conn-line off" onClick={onOpen}><span className="conn-bolt"><Icon name="zap" size={10} strokeWidth={2.2} /></span><span className="conn-label">Connector available · off</span></button>
   const parts: [string, boolean, boolean][] = [['Accounts', c.provision_on_create, c.capabilities.provision], ['Sign-in', c.sso_enabled, c.capabilities.sso], ['Events', c.events_enabled, c.capabilities.events]]
   return (
     <button type="button" className={`conn-line ${c.last_error ? 'err' : 'on'}`} onClick={onOpen} title={c.last_error || 'Open connector'}>
-      <span className="conn-bolt">ϟ</span><span className="conn-label">{c.last_error ? 'Connector error' : 'Connector on'}</span>
+      <span className="conn-bolt"><Icon name="zap" size={10} strokeWidth={2.2} /></span><span className="conn-label">{c.last_error ? 'Connector error' : 'Connector on'}</span>
       {parts.filter(p => p[2]).map(([label, on]) => <span key={label} className={`conn-part ${on ? 'on' : ''}`}>{on ? '✓' : '–'} {label}</span>)}
     </button>
   )
@@ -165,7 +170,7 @@ function MissingRow({ m, onAdd, onHowTo }: { m: Missing; onAdd: () => void; onHo
       </div>
       <div className="svc-foot">
         <div className="svc-status"><span className="pill">{pocket ? 'Not installed' : 'Not added'}</span></div>
-        <div className="svc-actions">{pocket ? <button className="btn sm ghost" onClick={onHowTo}>How to</button> : <button className="btn sm" onClick={onAdd}>Add</button>}</div>
+        <div className="svc-actions">{pocket ? <button type="button" className="btn sm ghost" onClick={onHowTo}>How to</button> : <button type="button" className="btn sm" onClick={onAdd}>Add</button>}</div>
       </div>
       <Switch on={false} onChange={() => {}} disabled title={pocket ? 'Install it first' : 'Add it first'} />
     </div>
@@ -179,7 +184,7 @@ function PocketHowTo({ entry, onClose }: { entry: CatalogEntry; onClose: () => v
     <Modal title={`Connect ${entry.name}`} onClose={onClose}>
       <p className="muted small">Add these to {entry.name}'s environment and restart it. It registers with Core, shows up here by itself, and paired phones get it with their device token.</p>
       {st ? <pre>{`CORE_URL=${window.location.origin}\nCORE_REGISTRATION_KEY=${st.registration_key}`}</pre> : <Loading />}
-      <div className="form-actions"><button className="btn" onClick={onClose}>Close</button></div>
+      <div className="form-actions"><button type="button" className="btn" onClick={onClose}>Close</button></div>
     </Modal>
   )
 }
@@ -205,7 +210,7 @@ function ConnectorsOverview({ conns, services, pocketBases, onOpen, onAdd }: { c
               {k.capabilities.sso && <span className={`conn-part ${c?.enabled && c.sso_enabled ? 'on' : ''}`}>Sign-in</span>}
               {k.capabilities.events && <span className={`conn-part ${c?.enabled && c.events_enabled ? 'on' : ''}`}>Events</span>}
               <span className="grow" />
-              {svc ? <button className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button> : <button className="btn sm" onClick={() => onAdd(k.type)} title={`Add ${k.name}'s address and API key first`}>Add</button>}
+              {svc ? <button type="button" className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button> : <button type="button" className="btn sm" onClick={() => onAdd(k.type)} title={`Add ${k.name}'s address and API key first`}>Add</button>}
             </div>
           </div>
         )
@@ -232,21 +237,7 @@ function ServiceIcon({ s, pocketBases = [] }: { s: Service; pocketBases?: string
 }
 
 function RowMenu({ items }: { items: { label: string; onClick: () => void; danger?: boolean }[] }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
-  }, [open])
-  return (
-    <div className="row-menu" ref={ref}>
-      <button className="btn sm ghost icon" aria-label="More" aria-expanded={open} onClick={() => setOpen(o => !o)}>⋯</button>
-      {open && <div className="row-menu-pop" role="menu">{items.map(it => <button key={it.label} role="menuitem" className={it.danger ? 'danger-text' : ''} onClick={() => { setOpen(false); it.onClick() }}>{it.label}</button>)}</div>}
-    </div>
-  )
+  return <MenuButton label="More" className="btn sm ghost icon-only" align="right" width={180} items={items.map(it => ({ label: it.label, danger: it.danger, onSelect: it.onClick }))}><Icon name="more" size={15} /></MenuButton>
 }
 
 function ServiceForm({ entry, initial, onSubmit, onClose }: { entry: CatalogEntry; initial?: Service; onSubmit: (body: Record<string, unknown>) => Promise<void>; onClose: () => void }) {
@@ -295,7 +286,7 @@ function AddService({ catalog, initial, onClose, onSaved }: { catalog: CatalogEn
   const items = catalog.filter(c => !c.pocket || c.type === 'core' ? !c.pocket : false).filter(c => !q || (c.name + c.type + c.group).toLowerCase().includes(q.toLowerCase()))
   if (!entry) return (
     <Modal title="Add a service" onClose={onClose} size="lg">
-      <div className="toolbar"><div className="search"><span className="ico">⌕</span><input autoFocus placeholder="Jellyfin, Immich, Paperless…" value={q} onChange={e => setQ(e.target.value)} /></div></div>
+      <div className="toolbar"><div className="search"><Icon name="search" size={15} /><input autoFocus placeholder="Jellyfin, Immich, Paperless…" value={q} onChange={e => setQ(e.target.value)} /></div></div>
       {items.length === 0 ? <p className="muted small">Nothing matches. Use “Something else” below for a custom entry.</p> :
         (q ? [['Results', items] as [string, CatalogEntry[]]] : groupBy(items)).map(([g, list]) => <div key={g} className="pick-group">
           {!q && <div className="pick-group-head">{g}</div>}

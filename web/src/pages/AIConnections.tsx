@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, V1 } from '../lib/api'
-import { Card, Field } from '../components/ui'
+import { Card, Field, Loading, PageHeader } from '../components/ui'
+import { Select } from '../components/Select'
+import { Icon } from '../components/icons'
 
 type Connection = { id: string; client_name: string; created_at: string; expires_at: string; scope: string; kind: string }
 type Connections = { enabled: boolean; app_tools_enabled: boolean; url: string; connections: Connection[] }
@@ -43,37 +45,36 @@ export default function AIConnections() {
     catch { setError('Select and copy the URL below.') }
   }
   return <>
-    <h1>AI connections</h1>
-    <p className="muted">Connect your assistant to the Pocket apps shared with your account.</p>
-    {error && <div className="callout danger" role="alert">{error}</div>}
-    {!data && !error && <p>Loading connections…</p>}
+    <PageHeader title="AI connections" sub="Connect your assistant to the Pocket apps shared with your account." />
+    {error && <div className="callout danger mb" role="alert"><Icon name="alert" size={15} /><span>{error}</span></div>}
+    {!data && !error && <Loading label="Loading connections…" />}
     {data && <div className="grid" style={{ gap: 20 }}>
       {data.enabled && <Card title="Connect without redirects">
         <p>Use a connection token when your assistant runs on another computer, a server or in the cloud. This setup stays on Core and does not redirect to localhost.</p>
-        {!created ? <form onSubmit={createToken}>
+        {!created ? <form onSubmit={createToken} className="stack">
           <Field label="Connection name"><input value={name} onChange={e => setName(e.target.value)} maxLength={80} required autoComplete="off" /></Field>
-          <Field label="Access"><select aria-label="Access" value={data.app_tools_enabled ? scope : 'status:read'} onChange={e => setScope(e.target.value)}>
-            <option value="status:read">Status checks only</option>
-            {data.app_tools_enabled && <><option value="status:read apps:read">Read application content</option><option value="status:read apps:read apps:write">Read and create/update items</option></>}
-          </select></Field>
-          <Field label="Expires after"><select aria-label="Expires after" value={days} onChange={e => setDays(Number(e.target.value))}><option value={1}>1 day</option><option value={7}>7 days</option><option value={30}>30 days</option></select></Field>
+          <Field label="Access"><Select ariaLabel="Access" value={data.app_tools_enabled ? scope : 'status:read'} onChange={setScope} options={[
+            { value: 'status:read', label: 'Status checks only' },
+            ...(data.app_tools_enabled ? [{ value: 'status:read apps:read', label: 'Read application content' }, { value: 'status:read apps:read apps:write', label: 'Read and create/update items' }] : []),
+          ]} /></Field>
+          <Field label="Expires after"><Select ariaLabel="Expires after" value={String(days)} onChange={v => setDays(Number(v))} options={[{ value: '1', label: '1 day' }, { value: '7', label: '7 days' }, { value: '30', label: '30 days' }]} /></Field>
           <p>This grants the selected access to your permitted apps, including apps shared with you later. Deletion and service administration are unavailable.</p>
           <button className="btn primary" type="submit" disabled={!!busy}>{busy === 'create' ? 'Creating…' : 'Create token with this access'}</button>
         </form> : <>
           <p role="status">Token created. Copy it now; Core cannot show it again. It expires {new Date(created.connection.expires_at).toLocaleDateString()}. Keep it in your assistant's secret settings.</p>
           <Field label="Connection token"><input type="password" readOnly value={created.token} autoComplete="off" onFocus={e => e.target.select()} /></Field>
-          <button className="btn" onClick={copyToken}>{tokenCopied ? 'Token copied' : 'Copy token'}</button>
+          <button type="button" className="btn" onClick={copyToken}>{tokenCopied ? 'Token copied' : 'Copy token'}</button>
           <p>On the machine running Codex, set <code>POCKET_ACCOUNT_MCP_TOKEN</code> to this token in its environment or secret manager, then run:</p>
           <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{`codex mcp add pocket_account --url ${created.url} --bearer-token-env-var POCKET_ACCOUNT_MCP_TOKEN`}</pre>
           <p>Start a new Codex session with that environment variable available. You do not need <code>codex mcp login</code>. Other clients can send this token as a Bearer authorization header.</p>
-          <button className="btn mt" onClick={() => { setCreated(null); setTokenCopied(false) }}>I've saved the token</button>
+          <button type="button" className="btn mt" onClick={() => { setCreated(null); setTokenCopied(false) }}>I've saved the token</button>
         </>}
       </Card>}
       <Card title="Connect with browser sign-in">
         {data.enabled ? <>
           <p>Add this URL as a remote MCP server in your assistant, choose account sign-in, and approve access using your Core account.</p>
           <Field label="MCP server URL"><input readOnly value={data.url} onFocus={e => e.target.select()} /></Field>
-          <button className="btn mt" onClick={copy}>{copied ? 'Copied' : 'Copy URL'}</button>
+          <button type="button" className="btn mt" onClick={copy}>{copied ? 'Copied' : 'Copy URL'}</button>
           <p>{data.app_tools_enabled ? 'Choose status checks, reading application content, or reading and creating/updating items when connecting your assistant. Deletion and service administration are unavailable.' : 'Access includes Core availability and status checks for your permitted Pocket apps. Personal content and changes are excluded.'} Access follows your account permissions, including apps shared with you later.</p>
           {data.app_tools_enabled && <p className="muted">Existing status connections keep their original access. To enable application tools, reconnect and approve application access. In Codex, use <code style={{ overflowWrap: 'anywhere' }}>codex mcp login pocket_account --scopes status:read,apps:read,apps:write</code> after adding this URL.</p>}
           <p className="muted">Your assistant needs to support remote MCP with OAuth. Connections expire after 30 days; reconnect when prompted.</p>
@@ -82,7 +83,7 @@ export default function AIConnections() {
       <Card title="Your connections">
         {data.connections.length === 0 ? <p>No assistants connected yet.</p> : data.connections.map(c => <div key={c.id} className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}>
           <div><strong>{c.client_name}</strong><span className="muted small"> · {c.kind === 'token' ? 'Connection token' : 'Browser sign-in'}</span><div className="small">{c.scope?.includes("apps:write") ? "Read and create/update items" : c.scope?.includes("apps:read") ? "Read application content" : "Status checks only"}</div><div className="muted small">Connected {new Date(c.created_at).toLocaleDateString()} · {new Date(c.expires_at) <= new Date() ? 'Expired' : 'Expires'} {new Date(c.expires_at).toLocaleDateString()}</div></div>
-          <button className="btn danger" disabled={!!busy} onClick={() => disconnect(c.id)}>{busy === c.id ? 'Disconnecting…' : 'Disconnect'}</button>
+          <button type="button" className="btn danger" disabled={!!busy} onClick={() => disconnect(c.id)}>{busy === c.id ? 'Disconnecting…' : 'Disconnect'}</button>
         </div>)}
       </Card>
     </div>}

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import type { CatalogEntry, Delivery, Event, Topic, Webhook } from '../lib/types'
@@ -6,11 +7,15 @@ import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceInfo, ty
 import { Select } from '../components/Select'
 import { useApp } from '../lib/app-context'
 import { Card, Collapse, Confirm, Empty, Field, Loading, Modal, PageHeader, Switch, Tabs, useAsync, useToast } from '../components/ui'
+import { Icon } from '../components/icons'
 
 const registrationTopic = 'core.app.registered'
 
 export default function Events() {
-  const [tab, setTab] = useState<'log' | 'webhooks'>('log')
+  // ?tab=webhooks opens the second tab (the overview's webhook tile, the palette)
+  const [sp, setSp] = useSearchParams()
+  const tab: 'log' | 'webhooks' = sp.get('tab') === 'webhooks' ? 'webhooks' : 'log'
+  const setTab = (t: 'log' | 'webhooks') => { if (t === 'webhooks') sp.set('tab', t); else sp.delete('tab'); setSp(sp, { replace: true }) }
   return (
     <>
       <PageHeader title="Events" sub="Every message apps publish on the bus. Live, searchable, replayable." />
@@ -93,7 +98,7 @@ function Log() {
   return (
     <>
       <div className="toolbar">
-        <div className="search"><span className="ico">⌕</span><input placeholder="Topic or pattern, e.g. kitchen.*" value={topic} onChange={e => setTopic(e.target.value.toLowerCase())} list="event-topics" /></div>
+        <div className="search"><Icon name="search" size={15} /><input placeholder="Topic or pattern, e.g. kitchen.*" value={topic} onChange={e => setTopic(e.target.value.toLowerCase())} list="event-topics" /></div>
         <datalist id="event-topics">{(topics || []).map(t => <option key={t.topic} value={t.topic}>{t.count}</option>)}</datalist>
         <div className="ev-filter wide"><Select ariaLabel="Source" value={source} onChange={setSource} placeholder={`All sources · ${items.length}`} clearLabel="All sources"
           options={groups.flatMap(([k, title]) => {
@@ -106,7 +111,7 @@ function Log() {
         <span className={`live-pill ${live ? 'on' : ''}`}><span className="pulse" />{live ? 'Live' : 'Paused'}</span>
         <Switch on={live} onChange={setLive} title={live ? 'Pause the live stream' : 'Resume the live stream'} />
       </div>
-      {shown.length === 0 ? <Card><Empty title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
+      {shown.length === 0 ? <Card><Empty icon="activity" title="No events">Publish one with <span className="inline-code">POST /api/v1/events</span> or wait for an app.</Empty></Card> :
         days.map(([day, list]) => <section key={day} className="svc-group">
           <div className="svc-group-head"><span>{day}</span><span className="count">{list.length}</span></div>
           <div className="svc-list feed">{list.map(e => { const info = sourceInfo(e.source, ctx); const d = describeEvent(e, ctx); const isOpen = open === e.id; return (
@@ -119,14 +124,14 @@ function Log() {
                 </span>
                 {d.facts ? null : e.subject && <span className="subject-chip mono">{e.subject}</span>}
                 <span className="feed-time" title={when(e.created_at)}>{ago(e.created_at)}</span>
-                <span className="chev">›</span>
+                <span className="chev"><Icon name="chevron-right" size={15} /></span>
               </button>
               <Collapse open={isOpen}><div className="feed-detail">
                 <div className="feed-detail-meta">
                   <span className="mono">{e.topic}</span><span>#{e.id}</span><span title={e.created_at}>{when(e.created_at)}</span>{e.subject && <span className="mono">{e.subject}</span>}
                   <span className="spacer" />
-                  {d.link && <a className="btn sm primary" href={d.link.href} target="_blank" rel="noreferrer">{d.link.label} ↗</a>}
-                  <button className="btn sm ghost" onClick={() => copy(e)}>Copy JSON</button>
+                  {d.link && <a className="btn sm primary" href={d.link.href} target="_blank" rel="noreferrer">{d.link.label}<Icon name="external" size={13} /></a>}
+                  <button type="button" className="btn sm ghost" onClick={() => copy(e)}><Icon name="copy" size={14} />Copy JSON</button>
                 </div>
                 {(() => { const facts = d.facts || autoFacts(e.payload); return facts.length > 0 && <dl className="event-facts">{facts.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl> })()}
                 <details className="cx-more"><summary>Raw payload</summary><pre>{JSON.stringify(e.payload, null, 2)}</pre></details>
@@ -145,6 +150,8 @@ function Webhooks() {
   const [edit, setEdit] = useState<Partial<Webhook> & { secret?: string } | null>(null)
   const [del, setDel] = useState<Webhook | null>(null)
   const [deliv, setDeliv] = useState<Webhook | null>(null)
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => { if (admin && sp.get('add')) { setEdit({ topics: '*', enabled: true }); sp.delete('add'); setSp(sp, { replace: true }) } }, [admin, sp, setSp])
   if (!admin) return <div className="callout">Webhooks are managed by admins and by the apps that own them.</div>
   if (loading && !data) return <Loading />
   if (error) return <div className="callout danger">{error}</div>
@@ -158,15 +165,15 @@ function Webhooks() {
   const test = async (w: Webhook) => { const r = await api.post<{ ok: boolean; status: number; error?: string }>(`${V1}/webhooks/${w.id}/test`); toast(r.ok ? `Delivered · HTTP ${r.status}` : `Failed: ${r.error || r.status}`, r.ok ? 'ok' : 'err') }
   return (
     <>
-      <div className="toolbar"><span className="muted small">Core POSTs matching events as JSON with an <span className="inline-code">X-Pocket-Signature</span> HMAC when a secret is set, retrying with backoff.</span><span className="spacer" /><button className="btn primary" onClick={() => setEdit({ topics: '*', enabled: true })}>Add webhook</button></div>
-      {list.length === 0 ? <Card><Empty title="No webhooks">Apps declare theirs in the manifest; add your own here for n8n, Home Assistant, ntfy…</Empty></Card> :
+      <div className="toolbar"><span className="muted small">Core POSTs matching events as JSON with an <span className="inline-code">X-Pocket-Signature</span> HMAC when a secret is set, retrying with backoff.</span><span className="spacer" /><button type="button" className="btn primary" onClick={() => setEdit({ topics: '*', enabled: true })}><Icon name="plus" size={15} />Add webhook</button></div>
+      {list.length === 0 ? <Card><Empty icon="send" title="No webhooks">Apps declare theirs in the manifest; add your own here for n8n, Home Assistant, ntfy…</Empty></Card> :
         <Card flush><table className="table">
           <thead><tr><th></th><th>Name</th><th>Topics</th><th>URL</th><th></th></tr></thead>
           <tbody>{list.map(w => <tr key={w.id} className={w.enabled ? '' : 'muted'}>
             <td style={{ width: 44 }}><Switch on={w.enabled} onChange={async v => { await api.put(`${V1}/webhooks/${w.id}`, { enabled: v }); reload() }} /></td>
             <td><b>{w.name || '—'}</b>{w.app_id ? <span className="badge cat" style={{ marginLeft: 6 }}>app</span> : null}{w.has_secret && <span className="badge" style={{ marginLeft: 6 }}>signed</span>}</td>
             <td className="mono small">{w.topics}</td><td className="mono small">{w.url}</td>
-            <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn sm" onClick={() => test(w)}>Test</button> <button className="btn sm" onClick={() => setDeliv(w)}>Log</button> <button className="btn sm" onClick={() => setEdit({ ...w })}>Edit</button> <button className="btn sm ghost danger-text" onClick={() => setDel(w)}>✕</button></td>
+            <td className="right" style={{ whiteSpace: 'nowrap' }}><button type="button" className="btn sm" onClick={() => test(w)}>Test</button> <button type="button" className="btn sm" onClick={() => setDeliv(w)}>Log</button> <button type="button" className="btn sm" onClick={() => setEdit({ ...w })}>Edit</button> <button type="button" className="btn sm ghost icon-only danger-text" onClick={() => setDel(w)} aria-label="Delete webhook" title="Delete"><Icon name="trash" size={14} /></button></td>
           </tr>)}</tbody>
         </table></Card>}
       {edit && <Modal title={edit.id ? 'Edit webhook' : 'Add webhook'} onClose={() => setEdit(null)}>

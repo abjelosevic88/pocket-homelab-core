@@ -167,7 +167,7 @@ export default function Links() {
             ? <>No links yet. An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</>
             : <>Tap an arrow to see and switch its permissions, or an app to see everything it uses and offers. Drag a card to move it (on a phone, hold it first); drag anywhere else to move around, scroll or pinch to zoom.</>}</p>}
         </Card>
-      </> : groups.length === 0 ? <Card><Empty title="No links yet">An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</Empty></Card> :
+      </> : groups.length === 0 ? <Card><Empty icon="nodes" title="No links yet">An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</Empty></Card> :
         <Card>{groups.map(g => (
           <LinkPair key={g.key} g={g} apps={apps || []}>
             {g.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}
@@ -182,11 +182,11 @@ export function MyLinks() {
   const { data, reload } = useAsync(() => api.get<AppLink[]>(`${V1}/me/links`), [])
   const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`).catch(() => [] as App[]), [])
   const groups = groupLinks(data || [])
-  if (!data || groups.length === 0) return null
+  if (!data) return <Loading />
+  if (groups.length === 0) return <Card><Empty icon="nodes" title="No app acts for you">When a Pocket app gets a link to another app, it shows up here with a switch.</Empty></Card>
   const flip = async (l: AppLink, on: boolean) => { await api.put(`${V1}/me/links/${l.id}`, { enabled: on }); reload(); toast(on ? 'Allowed' : 'Switched off for you') }
   return (
-    <Card title="Apps acting for me">
-      <p className="muted small">Pocket apps that can do things in another app as you. Switching one off here stops it at once, for you only.</p>
+    <Card>
       {groups.map(g => (
         <LinkPair key={g.key} g={g} apps={apps || []}>
           {g.links.map(l => (

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import type { APIToken, Credential, User, UserConnector } from '../lib/types'
@@ -6,6 +7,7 @@ import { useApp } from '../lib/app-context'
 import { Avatar, Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { StatusBadge } from '../components/ConnectorPanel'
 import { Select } from '../components/Select'
+import { Icon } from '../components/icons'
 
 export default function Users() {
   const { user: me } = useApp()
@@ -14,6 +16,9 @@ export default function Users() {
   const [edit, setEdit] = useState<Partial<User> & { password?: string } | null>(null)
   const [del, setDel] = useState<User | null>(null)
   const [creds, setCreds] = useState<User | null>(null)
+  // ?add=1 (the sidebar's New menu and the palette) opens the form
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => { if (sp.get('add')) { setEdit({ role: 'member' }); sp.delete('add'); setSp(sp, { replace: true }) } }, [sp, setSp])
   if (loading && !data) return <Loading />
   const list = data || []
   const save = async (e: React.FormEvent) => {
@@ -26,16 +31,16 @@ export default function Users() {
   }
   return (
     <>
-      <PageHeader title="Users" sub="One account per person. It signs in to Core, to every Pocket app over single sign-on, and owns its paired devices." actions={<button className="btn primary" onClick={() => setEdit({ role: 'member' })}>Add user</button>} />
+      <PageHeader title="People" sub="One account per person. It signs in to Core, to every Pocket app over single sign-on, and owns its paired devices." actions={<button type="button" className="btn primary" onClick={() => setEdit({ role: 'member' })}><Icon name="plus" size={15} />Add person</button>} />
       <Card flush><table className="table">
-        <thead><tr><th>User</th><th>Role</th><th>Created</th><th></th></tr></thead>
+        <thead><tr><th>Person</th><th>Role</th><th>Created</th><th></th></tr></thead>
         <tbody>{list.map(u => <tr key={u.id} className={u.disabled ? 'muted' : ''}>
           <td><span className="row"><Avatar name={u.name} email={u.email} /><span><b>{u.name || u.email}</b>{u.name && <div className="muted small">{u.email}</div>}</span>{u.disabled && <span className="badge warn">disabled</span>}</span></td>
           <td>{u.role}</td><td className="muted small" title={when(u.created_at)}>{ago(u.created_at)}</td>
-          <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn sm" onClick={() => setCreds(u)}>Credentials</button> <button className="btn sm" onClick={() => setEdit({ id: u.id, email: u.email, name: u.name, role: u.role, disabled: u.disabled })}>Edit</button> {u.id !== me?.id && <button className="btn sm ghost danger-text" onClick={() => setDel(u)}>✕</button>}</td>
+          <td className="right" style={{ whiteSpace: 'nowrap' }}><button type="button" className="btn sm" onClick={() => setCreds(u)}>Credentials</button> <button type="button" className="btn sm" onClick={() => setEdit({ id: u.id, email: u.email, name: u.name, role: u.role, disabled: u.disabled })}>Edit</button> {u.id !== me?.id && <button type="button" className="btn sm ghost icon-only danger-text" onClick={() => setDel(u)} aria-label={`Delete ${u.name || u.email}`} title="Delete"><Icon name="trash" size={14} /></button>}</td>
         </tr>)}</tbody></table></Card>
-      <Tokens />
-      {edit && <Modal title={edit.id ? 'Edit user' : 'Add user'} onClose={() => setEdit(null)}>
+      <p className="muted small mt">Your own API tokens are under <Link to="/settings/tokens">Settings → API tokens</Link>.</p>
+      {edit && <Modal title={edit.id ? 'Edit person' : 'Add person'} onClose={() => setEdit(null)}>
         <form onSubmit={save} className="grid" style={{ gap: 12 }}>
           <Field label="Name"><input value={edit.name || ''} onChange={e => setEdit(v => ({ ...v, name: e.target.value }))} /></Field>
           <Field label="Email"><input type="email" required value={edit.email || ''} onChange={e => setEdit(v => ({ ...v, email: e.target.value }))} /></Field>
@@ -59,11 +64,11 @@ export function Tokens() {
   const [secret, setSecret] = useState('')
   const create = async (e: React.FormEvent) => { e.preventDefault(); const r = await api.post<{ secret: string }>(`${V1}/tokens`, { name: name || 'token' }); setSecret(r.secret); setName(''); reload() }
   return (
-    <Card title="My API tokens" className="mt">
-      <p className="muted small">For scripts, Raycast and Homepage widgets. They act as you against Core and, through introspection, against every Pocket app.</p>
-      <form onSubmit={create} className="row mt-sm"><input placeholder="Name (e.g. Raycast)" value={name} onChange={e => setName(e.target.value)} style={{ maxWidth: 260 }} /><button className="btn">Create</button></form>
+    <Card title={<><Icon name="key" size={16} />My API tokens</>}>
+      <p className="muted small">They act as you against Core and, through introspection, against every Pocket app.</p>
+      <form onSubmit={create} className="row mt-sm"><input placeholder="Name (e.g. Raycast)" value={name} onChange={e => setName(e.target.value)} style={{ maxWidth: 260 }} /><button className="btn"><Icon name="plus" size={14} />Create</button></form>
       {secret && <div className="mt-sm"><div className="callout success mb-sm">Copy it now — it is shown once.</div><Secret value={secret} /></div>}
-      {(data || []).length > 0 && <table className="table compact mt"><tbody>{(data || []).map(t => <tr key={t.id}><td><b>{t.name}</b></td><td className="mono small">{t.prefix}…</td><td className="muted small">used {ago(t.last_used_at)}</td><td className="right"><button className="btn sm ghost danger-text" onClick={async () => { await api.del(`${V1}/tokens/${t.id}`); reload(); toast('Revoked') }}>✕</button></td></tr>)}</tbody></table>}
+      {(data || []).length > 0 && <table className="table compact mt"><tbody>{(data || []).map(t => <tr key={t.id}><td><b>{t.name}</b></td><td className="mono small">{t.prefix}…</td><td className="muted small">used {ago(t.last_used_at)}</td><td className="right"><button type="button" className="btn sm ghost icon-only danger-text" aria-label={`Revoke ${t.name}`} title="Revoke" onClick={async () => { await api.del(`${V1}/tokens/${t.id}`); reload(); toast('Revoked') }}><Icon name="trash" size={14} /></button></td></tr>)}</tbody></table>}
     </Card>
   )
 }
@@ -92,7 +97,7 @@ export function CredentialsModal({ user, onClose }: { user: User; onClose: () =>
               <div className="form-actions"><button type="button" className="btn" onClick={() => setOpen(null)}>Cancel</button>{c.set && <button type="button" className="btn danger" onClick={() => clear(c)}>Clear</button>}<button type="button" className="btn primary" onClick={() => save(c)}>Save</button></div>
             </div>}
           </td>
-          <td className="right">{open !== c.service.id && <button className="btn sm" onClick={() => start(c)}>{c.set ? 'Edit' : 'Set own'}</button>}</td>
+          <td className="right">{open !== c.service.id && <button type="button" className="btn sm" onClick={() => start(c)}>{c.set ? 'Edit' : 'Set own'}</button>}</td>
         </tr>)}</tbody></table>}
       {(conns || []).length > 0 && <>
         <div className="mt"><b>Connected services</b></div>

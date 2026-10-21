@@ -4,6 +4,7 @@ import { ago, when } from '../lib/format'
 import type { ConnectorAccount, ConnectorPush, ConnectorStatus, ConnectorTest, ConnectorView, HookState, ProvisionResult, RemoteAccount, Service } from '../lib/types'
 import { Avatar, Loading, Modal, Switch, useAsync, useToast } from './ui'
 import { Select } from './Select'
+import { Icon } from './icons'
 
 export function StatusBadge({ status }: { status: ConnectorStatus | 'skipped' }) {
   switch (status) {
@@ -123,7 +124,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
           <div className="cx-hero-title"><span className={`pill ${off ? '' : c.last_error ? 'err' : 'ok'}`}>{off ? 'Off' : c.last_error ? 'Error' : 'On'}</span><b>Connector</b></div>
           <p className="muted small">Core manages {service.name} with the admin key saved on the service: {[c.capabilities.provision && 'accounts for your people', c.capabilities.sso && 'sign-in through Core'].filter(Boolean).join(', ')}{c.capabilities.provision || c.capabilities.sso ? ', and ' : ''}<span className="inline-code">{c.type}.*</span> events{!c.capabilities.provision && !c.capabilities.sso ? ` (${service.name} has no per-person accounts or sign-in)` : ''}.</p>
         </div>
-        <button className="btn" onClick={doTest} disabled={busy === 'test'} title="Read-only: version and admin rights">{busy === 'test' ? 'Testing…' : 'Test'}</button>
+        <button type="button" className="btn" onClick={doTest} disabled={busy === 'test'} title="Read-only: version and admin rights">{busy === 'test' ? 'Testing…' : 'Test'}</button>
         <Switch on={c.enabled} onChange={v => save('enabled', { enabled: v }, v ? 'Connector on' : 'Connector off')} title="Master switch" />
       </div>
       {test && (test.ok
@@ -134,12 +135,12 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
 
       <div className={`cx-sections ${off ? 'off' : ''}`}>
         {c.capabilities.provision && <section className="cx-sec">
-          <header><span className="cx-ico">👤</span><div className="grow"><b>Create accounts for new people</b><span>New people under Users get a {service.name} account and their own key, saved as their credential.</span></div>
+          <header><span className="cx-ico"><Icon name="user" size={16} /></span><div className="grow"><b>Create accounts for new people</b><span>New people under Users get a {service.name} account and their own key, saved as their credential.</span></div>
             <Switch on={c.provision_on_create} onChange={v => !off && save('prov', { provision_on_create: v })} /></header>
         </section>}
 
         {c.capabilities.sso && <section className="cx-sec">
-          <header><span className="cx-ico">🔑</span><div className="grow"><b>Sign in with Pocket Core {busy === 'sso' && <span className="spinner sm" />}</b><span>Adds the button to {service.name}'s login. Password login stays on; only this service's audience can sign in.</span></div>
+          <header><span className="cx-ico"><Icon name="key" size={16} /></span><div className="grow"><b>Sign in with Pocket Core {busy === 'sso' && <span className="spinner sm" />}</b><span>Adds the button to {service.name}'s login. Password login stays on; only this service's audience can sign in.</span></div>
             <Switch on={c.sso_enabled} onChange={v => !off && save('sso', { sso_enabled: v }, v ? 'Sign in with Pocket Core is on' : 'Sign in with Pocket Core is off')} /></header>
           {c.sso_enabled && c.oidc_client && <div className="cx-body">
             <dl className="cx-kv"><dt>Client</dt><dd className="mono">{c.oidc_client.client_id}</dd><dt>Issuer</dt><dd className="mono">{c.issuer}</dd></dl>
@@ -148,7 +149,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
         </section>}
 
         {c.capabilities.events && <section className="cx-sec">
-          <header><span className="cx-ico">⚡</span><div className="grow"><b>Events {busy === 'events' && <span className="spinner sm" />}</b>
+          <header><span className="cx-ico"><Icon name="zap" size={16} /></span><div className="grow"><b>Events {busy === 'events' && <span className="spinner sm" />}</b>
             <span>{c.push ? <>{service.name} pushes each change to Core by {hookNoun(c.push, service.type).replace(/s$/, '')}: {c.push.triggers.map((t, i) => <span key={t.trigger}>{i > 0 && (i === c.push!.triggers.length - 1 ? ' and ' : ', ')}<b>{t.name.replace(/^Pocket Core · /, '')}</b></span>)}. No polling.</> : <>Core checks {service.name} and publishes changes; the first check only records a baseline.</>}</span></div>
             <Switch on={c.events_enabled} onChange={v => !off && save('events', { events_enabled: v })} /></header>
           {c.events_enabled && <div className="cx-body">
@@ -157,8 +158,8 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
               <div style={{ width: 120 }}><Select ariaLabel="Check interval" value={String(c.poll_interval_s)} onChange={v => save('interval', { poll_interval_s: Number(v) })} options={intervals.map(n => ({ value: String(n), label: fmtSec(n) }))} /></div>
               <span className="muted small" title={when(c.last_poll_at)}>last {ago(c.last_poll_at)}</span>
               <span className="spacer" />
-              <button className="btn sm" disabled={off || busy === 'poll' || c.polling} onClick={poll}>{busy === 'poll' || c.polling ? 'Checking…' : c.push ? 'Check now' : 'Run now'}</button>
-              {c.push && <button className="btn sm ghost" disabled={off || busy === 'recreate'} onClick={recreate} title={`Delete and create every ${hookNoun(c.push, service.type).replace(/s$/, '')} again, with new secrets`}>{busy === 'recreate' ? 'Re-creating…' : `Re-create ${hookNoun(c.push, service.type)}`}</button>}
+              <button type="button" className="btn sm" disabled={off || busy === 'poll' || c.polling} onClick={poll}>{busy === 'poll' || c.polling ? 'Checking…' : c.push ? 'Check now' : 'Run now'}</button>
+              {c.push && <button type="button" className="btn sm ghost" disabled={off || busy === 'recreate'} onClick={recreate} title={`Delete and create every ${hookNoun(c.push, service.type).replace(/s$/, '')} again, with new secrets`}>{busy === 'recreate' ? 'Re-creating…' : `Re-create ${hookNoun(c.push, service.type)}`}</button>}
             </div>
             {c.push && <PushStatus push={c.push} service={service} />}
           </div>}
@@ -167,7 +168,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
 
       {(c.capabilities.provision || c.capabilities.link) && <div className="cx-people-block">
         <div className="cx-block-head"><b>People</b><span className="muted small">{people ? `${people.filter(p => p.status === 'ok' || p.status === 'linked').length} of ${people.length} connected` : ''}</span><span className="spacer" />
-          {c.capabilities.provision && <button className="btn sm" disabled={off || busy === 'all'} onClick={() => provision({ all: true })} title="Everyone in the audience without an account">{busy === 'all' ? 'Working…' : 'Provision everyone missing'}</button>}</div>
+          {c.capabilities.provision && <button type="button" className="btn sm" disabled={off || busy === 'all'} onClick={() => provision({ all: true })} title="Everyone in the audience without an account">{busy === 'all' ? 'Working…' : 'Provision everyone missing'}</button>}</div>
         {c.key_rotation && <p className="muted small">{c.key_rotation === 'replaces'
           ? <>When someone's service link to {service.name} is switched off (by them or for everyone), Core replaces the key it made for an account it created here: the old key stops working in every app, and apps still allowed get the new one within a minute. Linked accounts and keys set by hand are never touched.</>
           : <>Core can't replace keys in {service.name} automatically: when a service link is switched off, the key it made keeps working there until someone deletes it in {service.name}.</>}</p>}
@@ -184,7 +185,7 @@ export function ConnectorModal({ service, onClose }: { service: Service; onClose
               {!p.in_audience && <span className="badge warn">outside audience</span>}
               {p.manual && <span className="badge" title="Linked by hand; provisioning leaves it alone">by hand</span>}
               <StatusBadge status={p.status} />
-              {c.capabilities.provision && p.status !== 'ok' && !p.manual && p.in_audience && !p.disabled ? <button className="btn sm" disabled={off || busy === `p${p.user_id}`} onClick={() => provision({ user_id: p.user_id })}>{busy === `p${p.user_id}` ? '…' : p.status === 'linked' ? 'Re-check' : 'Provision'}</button> : <span className="cx-btn-gap" />}
+              {c.capabilities.provision && p.status !== 'ok' && !p.manual && p.in_audience && !p.disabled ? <button type="button" className="btn sm" disabled={off || busy === `p${p.user_id}`} onClick={() => provision({ user_id: p.user_id })}>{busy === `p${p.user_id}` ? '…' : p.status === 'linked' ? 'Re-check' : 'Provision'}</button> : <span className="cx-btn-gap" />}
             </div>))}</div>}
       </div>}
     </Modal>

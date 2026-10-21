@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Icon } from './icons'
 
 export interface SelectOption { value: string; label: string; hint?: string; group?: string; icon?: React.ReactNode }
 
@@ -83,7 +84,7 @@ export function Select({ value, onChange, options, placeholder = 'Choose…', on
   let group = ''
   return (
     <div ref={root} className={`sel ${className} ${open ? 'open' : ''}`} onKeyDown={open ? onKey : undefined}>
-      <button type="button" className={`sel-btn ${current ? '' : 'empty'}`} onClick={() => !disabled && setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} aria-controls={id} disabled={disabled}
+      <button type="button" className={`sel-btn ${current ? '' : 'is-empty'}`} onClick={() => !disabled && setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} aria-controls={id} disabled={disabled}
         onKeyDown={e => { if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(true) } }}>
         {current?.icon && <span className="sel-ico">{current.icon}</span>}
         <span className="sel-val">{current ? current.label : placeholder}</span>
@@ -91,7 +92,7 @@ export function Select({ value, onChange, options, placeholder = 'Choose…', on
       </button>
       {open && (
         <div className={`sel-pop ${up ? 'up' : ''}`}>
-          <div className="sel-search"><span className="ico">⌕</span><input ref={search} value={q} onChange={e => setQ(e.target.value)} placeholder="Type to filter…" aria-label="Filter options" autoComplete="off" /></div>
+          <div className="sel-search"><Icon name="search" size={14} /><input ref={search} value={q} onChange={e => setQ(e.target.value)} placeholder="Type to filter…" aria-label="Filter options" autoComplete="off" /></div>
           <div className="sel-list" role="listbox" id={id} ref={list}>
             {rows.length === 0 && <div className="sel-empty muted">No matches</div>}
             {rows.map((r, i) => {
@@ -102,7 +103,7 @@ export function Select({ value, onChange, options, placeholder = 'Choose…', on
                   <div role="option" aria-selected={r.opt?.value === value} data-i={i} className={`sel-opt ${i === hl ? 'hl' : ''} ${r.opt && r.opt.value === value ? 'cur' : ''} ${r.kind !== 'opt' ? 'action' : ''}`}
                     onMouseEnter={() => setHl(i)} onMouseDown={e => e.preventDefault()} onClick={() => pick(r)}>
                     {r.kind === 'clear' ? <span>× {clearLabel}</span> : r.kind === 'create' ? <span>{busy ? 'Creating…' : `+ ${createLabel} “${q.trim()}”`}</span> : <>{r.opt!.icon && <span className="sel-ico">{r.opt!.icon}</span>}<span className="sel-lbl">{r.opt!.label}</span>{r.opt!.hint && <span className="sel-hint muted">{r.opt!.hint}</span>}</>}
-                    {r.opt && r.opt.value === value && <span className="sel-check">✓</span>}
+                    {r.opt && r.opt.value === value && <span className="sel-check"><Icon name="check" size={14} /></span>}
                   </div>
                 </div>
               )

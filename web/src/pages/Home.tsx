@@ -7,6 +7,7 @@ import { AppIcon } from '../components/AppIcon'
 import { SourceIcon, describeEvent, sourceInfo, useEventCtx } from '../components/EventView'
 import { Card, Dot, Empty, Loading, PageHeader, useAsync } from '../components/ui'
 import PairModal from '../components/PairModal'
+import { Icon } from '../components/icons'
 import { iconCandidates } from '../lib/icons'
 
 export default function Home() {
@@ -18,26 +19,26 @@ export default function Home() {
   const d = data
   if (d.member) return (
     <>
-      <PageHeader title={d.box_name} sub="Your services and devices on this box." actions={<button className="btn primary" onClick={() => setPair(true)}>Pair a device</button>} />
+      <PageHeader title={d.box_name} sub="Your services and devices on this box." actions={<button type="button" className="btn primary" onClick={() => setPair(true)}><Icon name="qr" size={15} />Pair a device</button>} />
       <div className="stats"><Link to="/devices" className="stat"><div className="n">{d.devices.length}</div><div className="l">Your devices</div></Link><a href="#services" className="stat"><div className="n">{d.services_enabled}</div><div className="l">Services in your profile</div></a></div>
       <MyServices />
-      <Card title="Your own logins"><p className="muted small">Under <Link to="/settings">Settings</Link> you can set your own Jellyfin, Navidrome or Audiobookshelf login; otherwise your phone receives the household one.</p></Card>
+      <Card title={<><Icon name="key" size={16} />Your own logins</>}><p className="muted small">Under <Link to="/settings/logins">Settings → My logins</Link> you can set your own Jellyfin, Navidrome or Audiobookshelf login; otherwise your phone receives the household one.</p></Card>
       {pair && <PairModal onClose={() => { setPair(false); reload() }} />}
     </>
   )
   const down = d.apps.filter(a => a.status === 'down').length
   return (
     <>
-      <PageHeader title={d.box_name} sub="Everything on this box, in one place." actions={<><button className="btn" onClick={reload}>Refresh</button><button className="btn primary" onClick={() => setPair(true)}>Pair a device</button></>} />
+      <PageHeader title={d.box_name} sub="Everything on this box, in one place." actions={<><button type="button" className="btn" onClick={reload}><Icon name="refresh" size={15} />Refresh</button><button type="button" className="btn primary" onClick={() => setPair(true)}><Icon name="qr" size={15} />Pair a device</button></>} />
       <div className="kpis">
-        <Kpi to="/apps" icon="▦" tone={down ? 'err' : 'ok'} value={<>{d.apps_up}<span className="of"> / {d.apps.length}</span></>} label={down ? `${down} app${down > 1 ? 's' : ''} down` : 'Apps up'} />
-        <Kpi to="/services" icon="⚙" value={d.services_enabled} label="Services in profile" />
-        <Kpi to="/devices" icon="📱" value={d.devices.length} label="Paired devices" />
-        <Kpi to="/events" icon="⚡" value={d.listeners} label="Live listeners" />
-        <Kpi to="/events" icon="↻" tone={(d.deliveries.pending || 0) > 0 ? 'warn' : ''} value={d.deliveries.pending || 0} label="Webhooks pending" />
+        <Kpi to="/apps" icon="grid" tone={down ? 'err' : 'ok'} value={<>{d.apps_up}<span className="of"> / {d.apps.length}</span></>} label={down ? `${down} app${down > 1 ? 's' : ''} down` : 'Apps up'} />
+        <Kpi to="/services" icon="server" value={d.services_enabled} label="Services in profile" />
+        <Kpi to="/devices" icon="smartphone" value={d.devices.length} label="Paired devices" />
+        <Kpi to="/events" icon="activity" value={d.listeners} label="Live listeners" />
+        <Kpi to="/events?tab=webhooks" icon="send" tone={(d.deliveries.pending || 0) > 0 ? 'warn' : ''} value={d.deliveries.pending || 0} label="Webhooks pending" />
       </div>
       <div className="two-col">
-        <Card title="Apps" actions={<Link className="btn sm ghost" to="/apps">All apps →</Link>}>
+        <Card title={<><Icon name="grid" size={16} />Apps</>} actions={<Link className="btn sm ghost" to="/apps">All apps<Icon name="chevron-right" size={14} /></Link>}>
           {d.apps.length === 0 ? <Empty title="No apps yet">Start a Pocket app with CORE_URL and the registration key from Settings and it appears here.</Empty> :
             <div className="mini-apps">{d.apps.map(a => (
               <Link key={a.id} to={`/apps/${a.slug}`} className="mini-app" title={a.status === 'down' ? a.last_error || 'down' : `seen ${ago(a.last_seen_at || a.last_check_at)}`}>
@@ -46,7 +47,7 @@ export default function Home() {
                 <span className={`status-dot ${a.status}`} />
               </Link>))}</div>}
         </Card>
-        <Card title="Recent events" actions={<Link className="btn sm ghost" to="/events">Live →</Link>} flush>
+        <Card title={<><Icon name="activity" size={16} />Recent events</>} actions={<Link className="btn sm ghost" to="/events">Live<Icon name="chevron-right" size={14} /></Link>} flush>
           {d.recent_events.length === 0 ? <Empty title="Quiet">Nothing published yet.</Empty> :
             <div className="feed">{d.recent_events.map(e => {
               const info = sourceInfo(e.source, ectx)
@@ -70,7 +71,7 @@ export default function Home() {
 }
 
 function Kpi({ to, icon, value, label, tone = '' }: { to: string; icon: string; value: React.ReactNode; label: string; tone?: string }) {
-  return <Link to={to} className={`kpi ${tone}`}><span className="kpi-ico">{icon}</span><span><span className="kpi-n">{value}</span><span className="kpi-l">{label}</span></span></Link>
+  return <Link to={to} className={`kpi ${tone}`}><span className="kpi-ico"><Icon name={icon} size={19} /></span><span><span className="kpi-n">{value}</span><span className="kpi-l">{label}</span></span></Link>
 }
 
 // MyServices is the member's launcher: every service their profile holds, as a link.
@@ -103,5 +104,7 @@ function MyServices() {
 function ServiceIcon({ sv, pocketBases }: { sv: MyService; pocketBases: string[] }) {
   const list = [...(sv.icon ? [sv.icon] : []), ...iconCandidates({ type: sv.type, url: sv.url, pocket: sv.pocket }, pocketBases)]
   const [i, setI] = useState(0)
-  return <span className="icon">{i >= list.length ? sv.name[0] : <img src={list[i]} alt="" onError={() => setI(n => n + 1)} />}</span>
+  // the initial shows until an icon has loaded (an unreachable host can take a while to fail)
+  const [loaded, setLoaded] = useState(false)
+  return <span className="icon">{!loaded && sv.name[0]}{i < list.length && <img src={list[i]} alt="" className={loaded ? '' : 'loading'} onLoad={() => setLoaded(true)} onError={() => { setLoaded(false); setI(n => n + 1) }} />}</span>
 }

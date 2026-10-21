@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import type { Device, Pairing } from '../lib/types'
 import { Modal, Secret, useToast } from './ui'
+import { Icon } from './icons'
 
 /** Mint a pairing code, show the QR, and wait for the phone to claim it. */
 export default function PairModal({ onClose, userId }: { onClose: () => void; userId?: number }) {
@@ -40,9 +41,9 @@ export default function PairModal({ onClose, userId }: { onClose: () => void; us
         </div>
       )}
       {claimed && <div className="grid" style={{ gap: 10 }}>
-        <div className="callout success">✓ <b>{claimed.name}</b> ({claimed.platform || 'device'}) received the profile and its own token.</div>
+        <div className="callout success"><Icon name="check-circle" size={16} /><span><b>{claimed.name}</b> ({claimed.platform || 'device'}) received the profile and its own token.</span></div>
         <p className="muted small">Revoke it any time under Devices.</p>
-        <div className="form-actions"><button className="btn primary" onClick={onClose}>Done</button></div>
+        <div className="form-actions"><button type="button" className="btn primary" onClick={onClose}>Done</button></div>
       </div>}
     </Modal>
   )

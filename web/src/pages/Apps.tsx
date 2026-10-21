@@ -5,6 +5,7 @@ import { ago, when } from '../lib/format'
 import type { App, OIDCClient, Settings, Webhook } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
+import { Icon } from '../components/icons'
 
 export default function Apps() {
   const { slug } = useParams()
@@ -19,8 +20,8 @@ export default function Apps() {
   const down = apps.filter(a => a.status === 'down').length
   return (
     <>
-      <PageHeader title="Apps" sub="Pocket apps that registered themselves with this box." actions={<button className="btn" onClick={reload}>Refresh</button>} />
-      {apps.length === 0 ? <Card><Empty title="No apps registered">Give each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
+      <PageHeader title="Apps" sub="Pocket apps that registered themselves with this box." actions={<button type="button" className="btn" onClick={reload}><Icon name="refresh" size={15} />Refresh</button>} />
+      {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">Give each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
         <div className="app-summary">
           <span className="pill">{apps.length} apps</span>
           <span className="pill ok">{up} up</span>
@@ -63,7 +64,7 @@ function AppTile({ a }: { a: App }) {
         <span className="muted small" title={when(a.last_seen_at)}>seen {ago(a.last_seen_at || a.last_check_at)}</span>
         <span className="grow" />
         {pub && <a className="btn sm" href={a.open_url || pub} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-          title={a.open_url && a.open_url !== pub.replace(/\/$/, '') ? 'Opens signed in with your Pocket Core account' : undefined}>Open ↗</a>}
+          title={a.open_url && a.open_url !== pub.replace(/\/$/, '') ? 'Opens signed in with your Pocket Core account' : undefined}>Open<Icon name="external" size={13} /></a>}
       </div>
     </div>
   )
@@ -92,7 +93,7 @@ function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
   return (
     <>
       <PageHeader title={<span className="row"><Dot status={a.status} />{a.name}</span>} sub={<span>{a.slug} · {a.description || 'no description'}</span>}
-        actions={<><Link className="btn" to="/apps">← Apps</Link><button className="btn" onClick={check}>Check now</button>{admin && <button className="btn" onClick={() => { setForm({ name: a.name, description: a.description, url: a.url, public_url: a.public_url, health_path: a.health_path, env_prefix: a.env_prefix, icon: a.icon }); setEdit(true) }}>Edit</button>}</>} />
+        actions={<><Link className="btn" to="/apps"><Icon name="chevron-left" size={15} />Apps</Link><button type="button" className="btn" onClick={check}><Icon name="refresh" size={15} />Check now</button>{admin && <button type="button" className="btn" onClick={() => { setForm({ name: a.name, description: a.description, url: a.url, public_url: a.public_url, health_path: a.health_path, env_prefix: a.env_prefix, icon: a.icon }); setEdit(true) }}>Edit</button>}</>} />
       <div className="two-col">
         <Card title="Registration">
           <dl className="kv">
@@ -107,7 +108,7 @@ function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
             <dt>Last check</dt><dd>{when(a.last_check_at) || 'never'}</dd>
             <dt>Registered</dt><dd>{when(a.created_at)}</dd>
           </dl>
-          {admin && <div className="form-actions mt"><button className="btn" onClick={() => setConfirm('rotate')}>Rotate token</button><button className="btn danger" onClick={() => setConfirm('delete')}>Remove app</button></div>}
+          {admin && <div className="form-actions mt"><button type="button" className="btn" onClick={() => setConfirm('rotate')}>Rotate token</button><button type="button" className="btn danger" onClick={() => setConfirm('delete')}>Remove app</button></div>}
           {newToken && <div className="mt"><div className="callout success mb-sm">New app token — set it in the app's environment or delete its token file so it re-registers with the key.</div><Secret value={newToken} /></div>}
         </Card>
         <div className="grid" style={{ gap: 16 }}>
