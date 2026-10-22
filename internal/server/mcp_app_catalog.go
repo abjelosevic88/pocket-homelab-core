@@ -68,6 +68,9 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		req := []string{}
 		for _, p := range mcpPathParams.FindAllStringSubmatch(path, -1) {
 			root[p[1]] = map[string]any{"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+			if app == "ai" {
+				root[p[1]] = map[string]any{"type": "string", "pattern": `^[a-f0-9-]{36}$`}
+			}
 			if app == "calendar" {
 				root[p[1]] = map[string]any{"anyOf": []any{root[p[1]], map[string]any{"type": "string", "pattern": `^[1-9][0-9]{0,15}$`}}, "description": "Numeric event/series ID, not an occurrence ID."}
 			}
@@ -258,6 +261,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 
 	read("office", "sources", "List document sources available to you; credentials are omitted.", "/sources", "")
 	read("office", "list", "List documents in an accessible source folder.", "/sources/{source_id}/ls", "path")
+	read("office", "read_text", "Read bounded text from DOCX, XLSX, PPTX, OpenDocument or UTF-8 files. Images, formatting and live formulas are not interpreted.", "/sources/{source_id}/text", "path")
 	read("office", "recent", "List recently opened office documents.", "/recent", "")
 	write("office", "create", "Create a blank office document, spreadsheet or presentation.", "POST", "/sources/{source_id}/new", textFields("path name").enum("type", "docx", "xlsx", "pptx"), "name type")
 	write("office", "rename", "Rename a document within its existing folder.", "POST", "/sources/{source_id}/rename", textFields("from name"), "from name")
@@ -281,5 +285,12 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("hub", "preferences", "Read your personal Hub layout and preferences.", "/prefs", "")
 	space := objectSchema(textFields("id name color").strings("apps"), "id name apps")
 	write("hub", "update_preferences", "Create/update personal Hub spaces, favorites or appearance. Supplied arrays replace those arrays; other preferences are preserved. Does not change server configuration.", "PUT", "/prefs", mcpFields{}.enum("theme", "system", "light", "dark").enum("density", "cozy", "compact").strings("order dock hidden").field("spaces", arraySchema(space)), "").Merge = true
+
+	read("monitoring", "servers", "List the servers you can monitor and their current summaries.", "/servers", "")
+	read("monitoring", "get_server", "Read one accessible server's status.", "/servers/{id}", "")
+	read("monitoring", "snapshot", "Read current metrics for an accessible server.", "/servers/{id}/snapshot", "")
+	read("monitoring", "alerts", "Read monitoring alerts visible to you.", "/alerts", "server_id status limit")
+	read("ai", "threads", "Find your Pocket AI conversations.", "/threads", "q limit")
+	read("ai", "conversation", "Read the recent messages in one of your Pocket AI conversations.", "/ask-context/{id}", "")
 	return out
 }

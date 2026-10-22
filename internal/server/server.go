@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	coreSDK "github.com/abjelosevic88/pocket-homelab-core/sdk"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/crypto/bcrypt"
@@ -171,6 +172,7 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5, "application/json", "text/html", "text/css", "application/javascript", "image/svg+xml"))
 
+	r.Get("/pocket-ask.js", func(w http.ResponseWriter, r *http.Request) { coreSDK.ServeAskWidget(w, r, "core", s.cfg.BaseURL) })
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
 	r.Get("/api/health", s.handleHealth)
@@ -178,6 +180,7 @@ func (s *Server) Router() http.Handler {
 	// Separate, narrowly scoped authentication; never inherits AUTH_MODE=none.
 	r.Handle("/mcp", s.mcpHandler())
 	s.mcpOAuthRoutes(r)
+	s.askRoutes(r)
 
 	// OpenID Connect (browser + relying parties).
 	r.Get("/.well-known/openid-configuration", s.handleDiscovery)

@@ -9,12 +9,13 @@ p.add_argument('--apps-root',type=Path,default=Path(__file__).resolve().parents[
 a=p.parse_args()
 root=Path(__file__).resolve().parents[1]
 files={str(f.relative_to(root)):f.read_bytes() for f in sorted((root/'sdk').glob('*.go')) if not f.name.endswith('_test.go')}
+files.update({str(f.relative_to(root)):f.read_bytes() for f in sorted((root/'sdk').glob('*.js'))})
 files['go.mod']=b'module github.com/abjelosevic88/pocket-homelab-core\n\ngo 1.26.5\n'
 files['LICENSE']=(root/'LICENSE').read_bytes()
 lock={'source':'https://github.com/abjelosevic88/pocket-homelab-core','contract':'platform-v1','sha256':{k:hashlib.sha256(v).hexdigest() for k,v in files.items()}}
 files['sdk.lock.json']=(json.dumps(lock,indent=2)+'\n').encode()
 files['SHA256SUMS']=''.join(hashlib.sha256(body).hexdigest()+'  '+name+'\n' for name,body in files.items()).encode()
-names='bookshelf clips collaborator cost-split day documents garage habit-tracker inventory invoicing kitchen money notes podcasts subtitles tasks travel'.split()
+names=[p.name.removeprefix('pocket-homelab-') for p in sorted(a.apps_root.glob('pocket-homelab-*')) if p.name != 'pocket-homelab-core' and (p/'third_party/pocket-core').is_dir()]
 apps=[a.apps_root / ('pocket-homelab-'+name) for name in names]
 failed=[]
 for app in apps:
@@ -29,7 +30,9 @@ for app in apps:
   mod=app/'go.mod';s=mod.read_text();s=re.sub(r'(github.com/abjelosevic88/pocket-homelab-core) v[^\s]+',r'\1 v0.18.5',s)
   if 'replace github.com/abjelosevic88/pocket-homelab-core' not in s:s+='\n// Reviewed SDK snapshot; see third_party/pocket-core/sdk.lock.json.\nreplace github.com/abjelosevic88/pocket-homelab-core => ./third_party/pocket-core\n'
   mod.write_text(s)
-  docker=app/'Dockerfile';s=docker.read_text();line='COPY third_party/pocket-core ./third_party/pocket-core\n'
+  docker=app/'Dockerfile'
+  if not docker.exists():continue
+  s=docker.read_text();line='COPY third_party/pocket-core ./third_party/pocket-core\n'
   if line not in s:s=s.replace('COPY go.mod go.sum ./\n','COPY go.mod go.sum ./\n'+line)
   verify='RUN cd third_party/pocket-core && sha256sum -c SHA256SUMS\n'
   if verify not in s:s=s.replace(line,line+verify)
