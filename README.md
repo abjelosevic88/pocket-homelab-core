@@ -51,6 +51,10 @@ New box, or sign-in not working? Follow [docs/getting-started.md](docs/getting-s
 
 Core includes an **account-based MCP gateway** using Streamable HTTP, with status checks and application-specific read/create/update tools.
 One connection gives an assistant access to the registered Pocket apps you allow.
+Ask “Who am I in Pocket?” to call `pocket_whoami`, which identifies the Core account
+that approved the connection. Then ask for your data, such as “Show my open tasks”
+or “Summarize my spending this month.” App tools use that account's identity and
+permissions; they do not use an administrator's account.
 The endpoint is disabled until configured. Build this checkout to use the feature;
 an older release or an existing `latest` image may not include it.
 
@@ -63,6 +67,7 @@ flowchart LR
 
 | Tool | Use | Example arguments |
 |---|---|---|
+| `pocket_whoami` | Your signed-in Core account and connection permissions (account connections only) | `{}` |
 | `pocket_core_status` | Core uptime, version and database readiness | `{}` |
 | `pocket_list_apps` | Allowed apps and their cached health, including freshness | `{}` |
 | `pocket_app_status` | Check one app; `fresh: true` probes it now | `{"slug":"notes","fresh":true}` |
@@ -192,7 +197,7 @@ sending messages are excluded. Existing status-only connections and operator
 keys stay status-only. To upgrade a Codex connection, run `codex mcp logout
 pocket_account`, then the login command above and approve the new scopes.
 Other assistants must request these scopes through OAuth; approving only
-`status:read` will show only status tools.
+`status:read` will show status tools and your own account identity, without application content tools.
 
 Example requests after connecting:
 

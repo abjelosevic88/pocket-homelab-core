@@ -139,6 +139,7 @@ Remove the config entry when finished, or replace its URL when deploying Core.
 
 | Tool | Arguments | Result |
 |---|---|---|
+| `pocket_whoami` | `{}` | Signed-in account, approved scopes and current app access (account connections only) |
 | `pocket_core_status` | `{}` | Core process uptime/version and database readiness |
 | `pocket_list_apps` | `{}` | Allowed registered apps, cached health, timestamps and freshness |
 | `pocket_app_status` | `{"slug":"notes","fresh":true}` | Live HTTP health check; omit `fresh` for cached status |

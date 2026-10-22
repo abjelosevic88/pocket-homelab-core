@@ -255,6 +255,23 @@ an interrupted request: read the app and reconcile first. Receipt bodies expire
 after seven days; small ID/digest tombstones remain to prevent old requests from
 being repeated. A server crash after reservation can leave an unknown outcome.
 
+## Identify your account and read your data
+
+After connecting, ask: “Who am I in Pocket? Use `pocket_whoami`.” The tool returns
+only the signed-in person's Core ID, stable subject, name, email and role, plus
+the connection's approved scopes, currently permitted apps and whether app reads
+or create/update operations are enabled. It accepts no user ID. OAuth and manual
+account tokens support it; operator status credentials have no user attached and
+do not expose this tool. Existing account connections can use it without signing
+in again; restart the assistant if it has cached the older tool list.
+
+Then ask, for example: “Show my Money spending summary for this month” or
+“List my open tasks.” Application tools already use the account that approved the
+connection, including when the assistant runs on a remote machine. No extra user
+ID or administrator token is needed. Approved scopes and each application's
+record permissions still apply; app visibility alone does not grant access to
+all records. Profile identity does not itself enable reading application content.
+
 ## Authorization and boundaries
 
 Core checks the OAuth grant, account status, current app audience and approved

@@ -61,6 +61,7 @@ func (s *Server) mcpHandler() http.Handler {
 	}
 	transport := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		ms := s.mcpStatusServer()
+		s.addMCPIdentityTool(ms, r.Context())
 		s.addMCPAppTools(ms, r.Context())
 		return ms
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 64 << 10, PropagateRequestCancellation: true})

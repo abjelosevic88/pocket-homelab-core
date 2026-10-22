@@ -180,6 +180,7 @@ var mcpConsentPage = template.Must(template.New("consent").Parse(`<!doctype html
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect your assistant · Pocket Core</title><link rel="stylesheet" href="/mcp-consent.css"></head>
 <body><main><p>Pocket Core</p><h1>Connect {{.Name}}?</h1>
 <p>Signed in as <strong>{{.Email}}</strong>.</p>
+<p>This assistant can identify your Core account (name, email, account identifiers and role) and see this connection's permissions.</p>
 <p>This assistant will be able to check Core's availability and the status of Pocket apps shared with your account, including apps shared with you later.</p>
 {{if .Write}}<p><strong>It can read your application content and create or update items in the Pocket apps shared with you.</strong> This includes personal notes, tasks, events and other supported app records. Deletion, sharing controls, sending messages and service administration are excluded.</p>
 {{else if .Read}}<p><strong>It can read your application content</strong> in supported Pocket apps shared with you. It cannot create or change items.</p>

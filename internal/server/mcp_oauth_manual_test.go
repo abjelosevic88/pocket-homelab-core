@@ -62,7 +62,7 @@ func TestMCPOAuthManualCompletion(t *testing.T) {
 		t.Fatal("manual response bypassed PKCE")
 	}
 	access, refresh := f.exchange(code)
-	if refresh == "" || len(toolNames(t, mcpSessionWithToken(t, f.env, access))) != 3 {
+	if refresh == "" || len(toolNames(t, mcpSessionWithToken(t, f.env, access))) != 4 {
 		t.Fatal("native OAuth credentials missing")
 	}
 	res, _ = f.request("POST", "/mcp/oauth/authorize", url.Values{"request": {request}, "decision": {"approve_manual"}}.Encode(), oauthTestOrigin, true)

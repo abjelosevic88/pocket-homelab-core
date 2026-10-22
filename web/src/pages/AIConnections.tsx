@@ -50,6 +50,7 @@ export default function AIConnections() {
     {error && <div className="callout danger mb" role="alert"><Icon name="alert" size={15} /><span>{error}</span></div>}
     {!data && !error && <Loading label="Loading connections…" />}
     {data && <div className="grid" style={{ gap: 20 }}>
+      {data.enabled && <p>Every account connection lets your assistant identify you by your Core name, email, account identifiers and role. Ask “Who am I in Pocket?” to check the connected account and its permissions. Application tools use that account to access your data.</p>}
       {data.enabled && <ConnectAssistant url={data.url} appTools={data.app_tools_enabled} />}
       <details>
         <summary>Advanced: manual tokens and other clients</summary>

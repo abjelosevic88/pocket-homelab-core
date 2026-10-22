@@ -71,7 +71,7 @@ func TestMCPApplicationScopes(t *testing.T) {
 	f.app("money", "http://127.0.0.1:1", "admins")
 	status, _ := f.exchange(f.code())
 	statusTools := toolNames(t, mcpSessionWithToken(t, f.env, status))
-	if len(statusTools) != 3 {
+	if len(statusTools) != 4 {
 		t.Fatal("existing status grant gained content access")
 	}
 	read, _ := f.appAccess("status:read apps:read")
@@ -85,7 +85,7 @@ func TestMCPApplicationScopes(t *testing.T) {
 		t.Fatal("write tools unavailable")
 	}
 	f.s.cfg.MCPAppToolsEnabled = false
-	if len(toolNames(t, session)) != 3 {
+	if len(toolNames(t, session)) != 4 {
 		t.Fatal("disabled application tools remain available")
 	}
 	f.s.cfg.MCPAppToolsEnabled = true

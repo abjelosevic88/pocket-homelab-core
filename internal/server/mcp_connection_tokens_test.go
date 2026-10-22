@@ -140,7 +140,7 @@ func TestMCPConnectionTokenConsentAndScopes(t *testing.T) {
 		t.Fatal("disabled scope granted")
 	}
 	status := f.connectionToken("status:read")
-	if len(toolNames(t, mcpSessionWithToken(t, f.env, status.Token))) != 3 {
+	if len(toolNames(t, mcpSessionWithToken(t, f.env, status.Token))) != 4 {
 		t.Fatal("status token gained app tools")
 	}
 	f.s.cfg.MCPOAuthEnabled = false

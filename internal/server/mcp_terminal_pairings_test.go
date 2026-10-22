@@ -116,7 +116,7 @@ func TestMCPTerminalPairingConsentAndBinding(t *testing.T) {
 	exchangeTerminalPairing(f, p, "pcmp_done_wrong", 400)
 	pairingRequest(f, "approve", map[string]string{"user_code": p.Code}, oauthTestOrigin, true, 400, nil)
 	created := exchangeTerminalPairing(f, p, completion, 200)
-	if len(toolNames(t, mcpSessionWithToken(t, f.env, created.Token))) != 3 {
+	if len(toolNames(t, mcpSessionWithToken(t, f.env, created.Token))) != 4 {
 		t.Fatal("status pairing escalated scopes")
 	}
 	pairingRequest(f, "deny", map[string]string{"user_code": other.Code}, oauthTestOrigin, true, 200, nil)
