@@ -35,6 +35,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"subtitles/library": {"/library", ""}, "subtitles/files": {"/library", "/files/{id}"},
 	"monitoring/servers": {"/", "/server/{id}"}, "monitoring/alerts": {"/alerts", ""},
 	"ai/threads": {"/", "/t/{id}"}, "ai/ask-context": {"/", "/t/{id}"},
+	"projects/dashboard": {"/my-issues", ""}, "projects/issues": {"/my-issues", "/issue/{id}"}, "projects/projects": {"/projects", "/project/{id}"},
+	"projects/teams": {"/teams", ""}, "projects/cycles": {"/projects", ""}, "projects/calendar": {"/calendar", ""}, "projects/search": {"/search", ""},
+	"projects/notifications": {"/inbox", ""},
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
