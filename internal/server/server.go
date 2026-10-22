@@ -517,6 +517,8 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 		if st, err := f.Stat(); err == nil && !st.IsDir() {
 			if strings.HasPrefix(p, "assets/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else if p == "ask-markdown.js" {
+				w.Header().Set("Cache-Control", "no-cache")
 			}
 			http.ServeFileFS(w, r, s.webFS, p)
 			return

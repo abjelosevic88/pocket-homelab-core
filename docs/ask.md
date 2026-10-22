@@ -87,3 +87,17 @@ mode escalation. Office tests cover text, spreadsheet strings, invalid archives,
 unsupported formats and decompression limits. The live browser verification
 checks a real read, a declined write, an approved write, saved-thread continuity,
 mobile overflow and the actual restricted CLI tool list.
+
+## Answer rendering
+
+The panel renders assistant Markdown with Marked and sanitizes it with DOMPurify.
+Tables scroll within the answer; headers, lists, tasks, quotations and code blocks
+use the current light/dark theme. User input stays literal. Raw HTML is displayed
+as text and Markdown images become links without loading remote images.
+
+`npm run build` in `web` builds both the main application and the standalone
+`ask-markdown.js` asset embedded in the Go binary. Run `npm run test:ask` for the
+browser regression suite (install Chromium with `npx playwright install chromium`
+first, or set `POCKET_ASK_CDP` to an existing Chromium debugging endpoint). Tests
+cover formatting, unsafe content, incomplete streamed replies, stable polling and
+320/390/460-pixel layouts in both themes.

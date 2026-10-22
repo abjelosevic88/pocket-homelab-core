@@ -13,3 +13,6 @@ web/dist/*
 .DS_Store
 *.log
 /tmp/
+
+web/test-results/
+web/playwright-report/
