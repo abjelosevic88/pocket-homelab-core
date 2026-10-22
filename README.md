@@ -101,10 +101,35 @@ put these settings in `.env` and deploy an image built from this source.
 **The person connecting only needs the URL and a Core account.** No SSH access,
 server configuration, copied API key or custom sign-in programming is required.
 
-**Start at `https://core.example.com/connect` (Core → AI connections).** Choose **Claude Code** or **Codex terminal**,
-choose the requested access, and click **Copy setup commands**. Run those native
-client commands on the machine where your assistant runs. No downloaded helper,
-Python installation, or manually managed token is required.
+#### First-time setup on someone else's PC
+
+Pocket is not preconfigured in Claude Code or Codex. Each person adds the Core
+server to their own assistant, then signs in with their own Core account.
+
+1. **The Core administrator gives the person an account.** For local accounts,
+   use **People → Add person**, then set the apps they can access under
+   **Services → Audience**. Existing Core accounts or configured SSO can be used.
+2. **Share `https://core.example.com/connect`**, replacing the hostname with your
+   actual Core URL. The person opens it and signs in with their own Core account.
+   Being on the same Tailscale tailnet provides network access only; it does not
+   create a Core account or grant application permissions. If Core is private,
+   both their browser and the machine running their assistant must be able to
+   reach that HTTPS URL through the tailnet.
+3. **On their own PC, they need Claude Code or Codex installed and working.** On
+   the **AI connections** page, choose the client and requested access, then click
+   **Copy setup commands**. Run the commands in that PC's terminal. If the
+   assistant runs on a remote machine, run them in that machine's terminal instead.
+4. **Run the add command, then the login command**, shown below. The first saves
+   a connection named `pocket` pointing to your Core MCP URL in that assistant's
+   configuration. The second authenticates it. Adding the URL alone grants no
+   access and does not create a Core account.
+
+`pocket` is just a local connection name, not a built-in service, username or
+cloud account. You can choose another name if you use it in both commands.
+Claude's `--scope user` saves the configuration for the current operating-system
+user across projects; the `oauth.scopes` values describe the access requested
+from Core. Each person and each assistant installation needs its own setup.
+No downloaded helper, Python installation, or manually managed token is required.
 
 For Claude Code:
 
@@ -120,13 +145,22 @@ codex mcp add pocket --url https://core.example.com/mcp
 codex mcp login pocket --no-browser --scopes status:read,apps:read,apps:write
 ```
 
-Open the link printed by the terminal on any computer or phone. Sign in to Core,
-review access, and choose **Approve and copy sign-in response**. Click **Copy
-sign-in response**, paste it into the waiting terminal, and press Enter. The
-browser stays on Core; the assistant completes its normal OAuth login and manages
-its credentials. Start a new assistant session and try: “Check the status of all
-applications I can access.” If already configured with the same access, run only
-the login command. Use a current client version supporting `--no-browser`.
+5. **Open the authorization link printed by the terminal** on any computer or
+   phone that can reach Core. Sign in as yourself, review access, and choose
+   **Approve and copy sign-in response**.
+6. **Click Copy sign-in response on Core's completion page.** Paste that response
+   into the original terminal's waiting prompt and press Enter. It starts with
+   `http://localhost:…/callback?code=…`; copy it as text, do not open it in the
+   browser. Do not paste the original authorization link back into the terminal.
+   The assistant exchanges the code with Core over HTTPS and saves its credentials
+   on the machine where it runs. The browser can be on a different machine.
+7. **Start a new assistant session** and ask: “Who am I in Pocket? Use
+   `pocket_whoami`.” Check that it identifies your own Core account. Then ask
+   “Show my open tasks” or “Check the status of all applications I can access.”
+
+Already added `pocket` with the same access? Run only the login command when you
+need to sign in again. If it reports that `pocket` is unknown, run the add command
+first. Use a current client version supporting `--no-browser`.
 
 Connections follow the user's app permissions, last up to 30 days, and can be
 revoked in Core. See [native terminal setup](docs/mcp-apps.md#connect-claude-code-or-codex-recommended)

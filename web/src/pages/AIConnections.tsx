@@ -50,6 +50,12 @@ export default function AIConnections() {
     {error && <div className="callout danger mb" role="alert"><Icon name="alert" size={15} /><span>{error}</span></div>}
     {!data && !error && <Loading label="Loading connections…" />}
     {data && <div className="grid" style={{ gap: 20 }}>
+      {data.enabled && <Card title="First time connecting?" sub="Set up your own PC with your own Core account.">
+        <p>Pocket is not preconfigured in Claude Code or Codex. You add this Core server to your assistant once, then sign in as yourself.</p>
+        <p><strong>Before you start:</strong> have Claude Code or Codex installed and working on the machine where you will use it. Your browser and that machine must both be able to reach Core. If access is through Tailscale, both need access through your tailnet.</p>
+        <p><strong>Inviting someone new?</strong> A Core administrator can create their account under <strong>People → Add person</strong> and share apps under <strong>Services → Audience</strong>. Existing Core accounts or configured SSO also work. Being on the same tailnet does not create an account or grant app permissions.</p>
+        <p>Send them this setup page: <a href="/connect" style={{ overflowWrap: 'anywhere' }}>{new URL('/connect', data.url).href}</a>. They sign in with their own account and follow the steps below on their own computer. A remote assistant needs the commands run in its remote terminal.</p>
+      </Card>}
       {data.enabled && <p>Every account connection lets your assistant identify you by your Core name, email, account identifiers and role. Ask “Who am I in Pocket?” to check the connected account and its permissions. Application tools use that account to access your data.</p>}
       {data.enabled && <ConnectAssistant url={data.url} appTools={data.app_tools_enabled} />}
       <details>
