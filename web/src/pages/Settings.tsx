@@ -1,3 +1,4 @@
+import { AskButton } from '../components/AskButton'
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
@@ -47,6 +48,8 @@ export default function Settings() {
         <button type="button" className="btn ghost icon-only" aria-label="Back to Pocket Core" title="Back (esc)" onClick={() => navigate('/')}><Icon name="chevron-left" size={18} /></button>
         <img src="/favicon.svg" alt="" width={24} height={24} className="set-logo" />
         <h1>Settings</h1>
+        <span style={{ flex: 1 }} />
+        <AskButton />
       </header>
       {mobile && <div className="set-tabs-mobile"><Tabs tabs={tabs.map(t => ({ id: t.id, label: t.label, icon: t.icon }))} value={tab} onChange={go} /></div>}
       <div className="set-body">
