@@ -77,6 +77,21 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute)}
 }
 
+// warnStaleAdminEnv logs when ADMIN_* no longer describe a working sign-in. The
+// env only seeds an empty database, so editing it later silently changes nothing.
+func (s *Server) warnStaleAdminEnv(ctx context.Context) {
+	if s.cfg.AuthMode != "local" || s.cfg.AdminEmail == "" || s.cfg.AdminPassword == "" {
+		return
+	}
+	u, err := s.store.GetUserByEmail(ctx, s.cfg.AdminEmail)
+	switch {
+	case err != nil:
+		s.log.Warn("ADMIN_EMAIL has no account here: ADMIN_* only create the first admin on an empty database. Sign in with the account created at setup, or run `pocket-core reset-password`", "email", s.cfg.AdminEmail)
+	case u.PasswordHash != "" && bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(s.cfg.AdminPassword)) != nil:
+		s.log.Warn("ADMIN_PASSWORD no longer matches the stored password and is ignored: ADMIN_* only seed an empty database. Run `pocket-core reset-password` to change it", "email", s.cfg.AdminEmail)
+	}
+}
+
 // Bootstrap seeds the first admin (if configured), the registration key and
 // the OIDC signing key, then starts the background work.
 func (s *Server) Bootstrap(ctx context.Context) error {
@@ -94,6 +109,8 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 			return err
 		}
 		s.log.Info("admin user created from environment", "email", u.Email)
+	} else if n > 0 {
+		s.warnStaleAdminEnv(ctx)
 	}
 	st, err := s.store.GetSettings(ctx)
 	if err != nil {

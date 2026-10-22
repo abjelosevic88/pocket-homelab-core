@@ -1,6 +1,6 @@
 export interface User { id: number; email: string; name: string; role: 'admin' | 'member'; disabled: boolean; created_at: string; updated_at: string }
 export interface Principal { kind: 'user' | 'app' | 'device'; user?: User | null; app?: App | null; device?: Device | null; scope?: string }
-export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; sso?: boolean; sso_name?: string; password_login?: boolean }
+export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string }
 export interface Settings { title: string; box_name: string; registration_key: string; setup_complete: boolean }
 export interface App {
   id: number; slug: string; name: string; description: string; icon: string; version: string; url: string; public_url: string

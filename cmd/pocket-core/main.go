@@ -155,6 +155,9 @@ func serve() {
 	}
 	go func() {
 		log.Info("pocket-core started", "version", version, "addr", cfg.Addr(), "base_url", cfg.BaseURL, "issuer", cfg.OIDCIssuer, "db", cfg.DBPath, "auth_mode", cfg.AuthMode)
+		for _, w := range cfg.Warnings() {
+			log.Warn(w)
+		}
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http server", "err", err)
 			os.Exit(1)

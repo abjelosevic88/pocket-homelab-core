@@ -13,7 +13,7 @@ interface AppState {
   theme: 'light' | 'dark'
   setThemeMode: (m: ThemeMode) => void
   toggleTheme: () => void
-  refresh: () => Promise<void>
+  refresh: () => Promise<AuthStatus>
   setUser: (u: User | null) => void
 }
 const Ctx = createContext<AppState>(null!)
@@ -41,6 +41,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const st = await api.get<AuthStatus>(`${V1}/auth/status`)
     setStatus(st)
     setUser(st.user)
+    return st
   }, [])
   useEffect(() => { refresh().catch(() => setStatus({ needs_setup: false, auth_mode: 'local', authenticated: false, user: null, version: '', title: 'Pocket Core', box_name: 'Pocket Box' })) }, [refresh])
   useEffect(() => {

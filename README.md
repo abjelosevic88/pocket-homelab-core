@@ -43,7 +43,9 @@ or `docker compose up -d` with the included `docker-compose.yml`, or the single 
 2. **Services → Add service** for the rest of the box: Jellyfin, Immich, Nextcloud… with their credentials.
 3. **Pair a device**, scan, open Pocket Homelab. Everything is there.
 
-`BASE_URL` matters: it is baked into pairing codes and is the OIDC issuer. Set it to the address phones and apps really use before pairing anything.
+`BASE_URL` matters: it is baked into pairing codes and is the OIDC issuer. Set it to the address phones and apps really use before pairing anything. Serving Core over plain http on the LAN? Use `SECURE_COOKIES=false`, or the browser drops the sign-in.
+
+New box, or sign-in not working? Follow [docs/getting-started.md](docs/getting-started.md): install, connect apps, add people, and a troubleshooting table.
 
 ## Connect an AI assistant with MCP
 
@@ -365,6 +367,7 @@ Report anything you find privately before opening an issue.
 
 | | |
 |---|---|
+| [docs/getting-started.md](docs/getting-started.md) | first install step by step: address, admin, connecting apps, people, pairing; why sign-in fails |
 | [docs/configuration.md](docs/configuration.md) | every environment variable, auth modes, token prefixes, CLI, what to back up |
 | [docs/manifest.md](docs/manifest.md) | how an app registers; the Go SDK |
 | [docs/platform-contract.md](docs/platform-contract.md) | upgrade order, permissions, identity, retries, validation and remaining delivery boundaries |

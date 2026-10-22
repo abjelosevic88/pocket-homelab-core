@@ -26,7 +26,12 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setBusy(true); setErr('')
-    try { await api.post(`${V1}/auth/${mode}`, form); await refresh(); go() } catch (e: unknown) { setErr((e as Error).message) } finally { setBusy(false) }
+    try {
+      await api.post(`${V1}/auth/${mode}`, form)
+      // The password was right but the browser threw the session cookie away.
+      if (!(await refresh()).authenticated) { setErr("Your password was accepted, but your browser didn't keep the sign-in. This usually means Core is set to SECURE_COOKIES=true while opened over plain http."); return }
+      go()
+    } catch (e: unknown) { setErr((e as Error).message) } finally { setBusy(false) }
   }
   const sso = mode === 'login' && status?.sso
   const passwords = mode === 'setup' || status?.password_login !== false
@@ -43,6 +48,7 @@ export default function Login({ mode }: { mode: 'login' | 'setup' }) {
           <h1>{title}</h1>
           <p className="login-tagline">{mode === 'setup' ? 'Welcome! Set up your box: the first account becomes its admin.' : next ? 'Sign in to continue to the app that sent you here.' : 'One account for every Pocket app and service on this box.'}</p>
         </div>
+        {status?.cookie_warning && <div className="callout warn"><Icon name="alert" size={15} /><span>{status.cookie_warning}</span></div>}
         {sso && <>
           <a className="btn primary lg block" href={ssoHref}><Icon name="key" size={16} />Sign in with {status?.sso_name}</a>
           {passwords ? <div className="login-or"><span>or with a password</span></div> : err && <div className="callout danger"><Icon name="alert" size={15} /><span>{err}</span></div>}

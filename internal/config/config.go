@@ -208,3 +208,34 @@ func Load() (*Config, error) {
 
 // Addr returns host:port.
 func (c *Config) Addr() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }
+
+// Warnings lists settings that start fine but break sign-in or pairing on a
+// fresh install. They are logged at startup; none of them stops Core.
+func (c *Config) Warnings() []string {
+	u, err := url.Parse(c.BaseURL)
+	if err != nil || u.Host == "" {
+		return []string{fmt.Sprintf("BASE_URL %q is not a URL; pairing codes and app sign-in will not work", c.BaseURL)}
+	}
+	host := strings.ToLower(u.Hostname())
+	var w []string
+	if c.AuthMode == "local" && c.SecureCookies && u.Scheme == "http" && !IsLoopback(host) {
+		w = append(w, "SECURE_COOKIES=true but BASE_URL is plain http: browsers drop the session cookie and every sign-in bounces back to the login page. Set SECURE_COOKIES=false or serve Core over HTTPS")
+	}
+	if c.AuthMode == "local" && !c.SecureCookies && u.Scheme == "https" {
+		w = append(w, "BASE_URL is https but SECURE_COOKIES=false: set SECURE_COOKIES=true so the session cookie is never sent over plain http")
+	}
+	switch {
+	case IsLoopback(host):
+		w = append(w, fmt.Sprintf("BASE_URL is %s: phones and apps on other machines cannot reach it. Set it to the address everyone uses before pairing or connecting apps", c.BaseURL))
+	case host == "example.com" || strings.HasSuffix(host, ".example.com") || strings.HasSuffix(host, ".example.org") || strings.HasSuffix(host, ".example.net"):
+		w = append(w, fmt.Sprintf("BASE_URL is still the placeholder %s: pairing codes and \"Sign in with Pocket Core\" will point there", c.BaseURL))
+	}
+	return w
+}
+
+// IsLoopback reports whether host (no port) names this machine. Browsers treat
+// these as secure, so Secure cookies survive on plain http there.
+func IsLoopback(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "::1" || strings.HasPrefix(host, "127.")
+}

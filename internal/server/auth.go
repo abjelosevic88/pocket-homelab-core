@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/abjelosevic88/pocket-homelab-core/internal/config"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/crypto"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 )
@@ -263,7 +265,34 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"needs_setup": n == 0 && s.cfg.AuthMode == "local", "auth_mode": s.cfg.AuthMode,
 		"authenticated": p != nil, "user": u, "version": Version, "title": st.Title, "box_name": st.BoxName,
 		"sso": s.ssoEnabled() && s.cfg.AuthMode == "local", "sso_name": s.cfg.SSOName, "password_login": s.cfg.PasswordLogin || s.cfg.AuthMode != "local",
+		"cookie_warning": s.cookieWarning(r),
 	})
+}
+
+// cookieWarning explains up front why a sign-in would bounce: a Secure session
+// cookie on a page the browser loaded over plain http is silently dropped.
+func (s *Server) cookieWarning(r *http.Request) string {
+	if s.cfg.AuthMode != "local" || !s.cfg.SecureCookies || requestIsHTTPS(r, s.cfg.TrustProxy) {
+		return ""
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if config.IsLoopback(host) {
+		return ""
+	}
+	return "This page was opened over plain http, but Core is set to SECURE_COOKIES=true, so your browser will not keep the sign-in. Open Core over https, or set SECURE_COOKIES=false and restart it."
+}
+
+func requestIsHTTPS(r *http.Request, trustProxy bool) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if !trustProxy {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]), "https")
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {

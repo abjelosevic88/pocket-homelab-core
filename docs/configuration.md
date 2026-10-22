@@ -19,8 +19,8 @@ Everything is read from environment variables; every value has a default so a ba
 | `AUTH_MODE` | `local` | `local` (built-in accounts), `proxy` (trust `AUTH_PROXY_HEADER`), `none` (single implicit admin, LAN only) |
 | `AUTH_PROXY_HEADER` / `AUTH_PROXY_EMAIL_HEADER` | `Remote-User` / `Remote-Email` | Headers for proxy mode |
 | `SESSION_TTL` | `720h` | Browser session lifetime |
-| `SECURE_COOKIES` | `false` | Set `true` behind HTTPS |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | – | Create the first admin on an empty database (otherwise the UI asks) |
+| `SECURE_COOKIES` | `false` | Set `true` behind HTTPS. On plain http it makes every sign-in bounce back to the login page (Core warns at startup and on the login page) |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | – | Create the first admin on an empty database (otherwise the UI asks). Ignored afterwards; Core warns when they no longer match. Change a password with `pocket-core reset-password` |
 | `REGISTRATION_KEY` | generated | The key apps present on first registration. Generated and shown under Settings when empty. |
 | `PAIR_TTL` | `10m` | How long a pairing code stays valid |
 | `HEALTH_INTERVAL` | `60s` | How often registered apps are polled on their health path |
