@@ -89,38 +89,46 @@ MCP_APP_TOOLS_ENABLED=true
 
 Rebuild and restart Core with these settings. Existing Core password login or
 upstream SSO works. Publish Core at that HTTPS URL, including its login,
-`/mcp/oauth/*`, `/mcp/pair/*`, `/mcp/connect.py` and `/.well-known/*` routes. A proxy login wall must not intercept
+`/mcp/oauth/*` and `/.well-known/*` routes. A proxy login wall must not intercept
 MCP discovery, registration or token requests. With the repository Compose file,
 put these settings in `.env` and deploy an image built from this source.
 
 **The person connecting only needs the URL and a Core account.** No SSH access,
 server configuration, copied API key or custom sign-in programming is required.
 
-**Recommended for Codex or Claude Code in a remote terminal:** run Pocket Connect
-on the machine where your assistant runs (Python 3.11+):
+**Start at `https://core.example.com/connect` (Core → AI connections).** Choose **Claude Code** or **Codex terminal**,
+choose the requested access, and click **Copy setup commands**. Run those native
+client commands on the machine where your assistant runs. No downloaded helper,
+Python installation, or manually managed token is required.
+
+For Claude Code:
 
 ```sh
-curl -fsS https://core.example.com/mcp/connect.py -o pocket-connect.py
-python3 pocket-connect.py --url https://core.example.com --client codex
+claude mcp add-json --scope user pocket '{"type":"http","url":"https://core.example.com/mcp","oauth":{"scopes":"status:read apps:read apps:write"}}'
+claude mcp login pocket --no-browser
 ```
 
-For Claude Code, use `--client claude`. The terminal prints a public link and a
-pairing code. Open the link on any device, sign in to Core, enter the pairing
-code, and review/approve the access. Copy Core's completion code back into the
-waiting terminal. Pocket Connect configures the assistant and checks MCP tool
-discovery. **Start a new assistant session; no separate MCP login or environment
-variable is needed.** Try: “Check the status of all applications I can access.”
+For Codex:
 
-The default requests read/create/update access for 30 days. Use `--access read`
-or `--access status` for less access, and `--days 1` or `--days 7` for a shorter
-expiry. Credentials are saved with owner-only permissions in the assistant's
-user config. Keep that file private. Pair again with `--replace` to renew a
-connection created by this helper, then disconnect the old grant in Core.
-See [terminal pairing](docs/mcp-apps.md#pair-from-a-terminal-recommended) for
-configuration locations, cloud limitations, and troubleshooting.
+```sh
+codex mcp add pocket --url https://core.example.com/mcp
+codex mcp login pocket --no-browser --scopes status:read,apps:read,apps:write
+```
+
+Open the link printed by the terminal on any computer or phone. Sign in to Core,
+review access, and choose **Approve and copy sign-in response**. Click **Copy
+sign-in response**, paste it into the waiting terminal, and press Enter. The
+browser stays on Core; the assistant completes its normal OAuth login and manages
+its credentials. Start a new assistant session and try: “Check the status of all
+applications I can access.” If already configured with the same access, run only
+the login command. Use a current client version supporting `--no-browser`.
+
+Connections follow the user's app permissions, last up to 30 days, and can be
+revoked in Core. See [native terminal setup](docs/mcp-apps.md#connect-claude-code-or-codex-recommended)
+for read-only access, existing connections, and troubleshooting.
 
 For clients needing a manually managed token, use **Core → AI connections →
-Connect without redirects**. Choose the
+Advanced: manual tokens and other clients → Create a token manually**. Choose the
 access level and expiry, click **Create token with this access**, and copy the
 token shown once. It uses your account's permissions and can be disconnected there.
 

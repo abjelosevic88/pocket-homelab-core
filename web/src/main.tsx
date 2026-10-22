@@ -35,6 +35,7 @@ function App() {
     <Routes>
       <Route path="/login" element={<Login mode="login" />} />
       <Route path="/setup" element={<Login mode="setup" />} />
+      <Route path="/connect" element={<Navigate to="/ai-connections" replace />} />
       <Route path="/settings/:tab?" element={<Gate><ErrorBoundary where="settings"><Settings /></ErrorBoundary></Gate>} />
       <Route element={<Gate><ErrorBoundary where="core"><Layout /></ErrorBoundary></Gate>}>
         <Route path="/" element={<Home />} />

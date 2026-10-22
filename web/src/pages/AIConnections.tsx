@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { Card, Field, Loading, PageHeader } from '../components/ui'
 import { Select } from '../components/Select'
 import { Icon } from '../components/icons'
+import ConnectAssistant from '../components/ConnectAssistant'
 
 type Connection = { id: string; client_name: string; created_at: string; expires_at: string; scope: string; kind: string }
 type Connections = { enabled: boolean; app_tools_enabled: boolean; url: string; connections: Connection[] }
@@ -20,7 +20,6 @@ export default function AIConnections() {
   const [days, setDays] = useState(30)
   const [created, setCreated] = useState<CreatedToken | null>(null)
   const [tokenCopied, setTokenCopied] = useState(false)
-  const [terminalClient, setTerminalClient] = useState('codex')
   const createToken = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy('create'); setError(''); setTokenCopied(false)
     try {
@@ -51,15 +50,11 @@ export default function AIConnections() {
     {error && <div className="callout danger mb" role="alert"><Icon name="alert" size={15} /><span>{error}</span></div>}
     {!data && !error && <Loading label="Loading connections…" />}
     {data && <div className="grid" style={{ gap: 20 }}>
-      {data.enabled && <Card title="Connect from your terminal">
-        <p>Run Pocket Connect on the machine where you use Codex or Claude Code. It gives you a link and pairing code. Approve access here, then paste the completion code back into your terminal to configure MCP automatically.</p>
-        <Field label="Assistant"><Select ariaLabel="Assistant" value={terminalClient} onChange={setTerminalClient} options={[{ value: 'codex', label: 'Codex' }, { value: 'claude', label: 'Claude Code' }]} /></Field>
-        <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{`curl -fsS ${window.location.origin}/mcp/connect.py -o pocket-connect.py\npython3 pocket-connect.py --url ${window.location.origin} --client ${terminalClient}${data.app_tools_enabled ? '' : ' --access status'}`}</pre>
-        <p>Requires Python 3.11 or newer. {data.app_tools_enabled ? <>The default requests reading and creating/updating items for 30 days. Use <code>--access read</code> or <code>--access status</code> for less access.</> : <>This command requests status checks for 30 days.</>} Use <code>--days 1</code> or <code>--days 7</code> for a shorter connection.</p>
-        <Link className="btn primary" to="/ai-connections/pair">Enter pairing code</Link>
-        <p className="muted">No localhost callback or environment variable is needed. Restart your assistant after pairing. Credentials are saved in its private user configuration.</p>
-      </Card>}
-      {data.enabled && <Card title="Connect without redirects">
+      {data.enabled && <ConnectAssistant url={data.url} appTools={data.app_tools_enabled} />}
+      <details>
+        <summary>Advanced: manual tokens and other clients</summary>
+        <div className="grid mt" style={{ gap: 20 }}>
+      {data.enabled && <Card title="Create a token manually">
         <p>Use a connection token when your assistant runs on another computer, a server or in the cloud. This setup stays on Core and does not redirect to localhost.</p>
         {!created ? <form onSubmit={createToken} className="stack">
           <Field label="Connection name"><input value={name} onChange={e => setName(e.target.value)} maxLength={80} required autoComplete="off" /></Field>
@@ -90,6 +85,8 @@ export default function AIConnections() {
           <p className="muted">Your assistant needs to support remote MCP with OAuth. Connections expire after 30 days; reconnect when prompted.</p>
         </> : <p>Account connections are disabled on this Core. Ask your administrator to enable MCP account sign-in.</p>}
       </Card>
+        </div>
+      </details>
       <Card title="Your connections">
         {data.connections.length === 0 ? <p>No assistants connected yet.</p> : data.connections.map(c => <div key={c.id} className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}>
           <div><strong>{c.client_name}</strong><span className="muted small"> · {c.kind === 'token' ? 'Connection token' : 'Browser sign-in'}</span><div className="small">{c.scope?.includes("apps:write") ? "Read and create/update items" : c.scope?.includes("apps:read") ? "Read application content" : "Status checks only"}</div><div className="muted small">Connected {new Date(c.created_at).toLocaleDateString()} · {new Date(c.expires_at) <= new Date() ? 'Expired' : 'Expires'} {new Date(c.expires_at).toLocaleDateString()}</div></div>

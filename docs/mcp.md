@@ -6,40 +6,37 @@ Streamable HTTP. Status tools cover Core and registered Pocket apps. Optional
 items across all current Pocket apps. Deletion, service administration and logs
 are not exposed. Operator credentials remain status-only.
 
-## Terminal pairing
+## Native terminal sign-in
 
-[Pocket Connect](mcp-apps.md#pair-from-a-terminal-recommended) provides a public-URL
-approval flow for Codex CLI and Claude Code. Download `/mcp/connect.py`, run it on
-the assistant's machine, open its link, enter the terminal code, approve, and
-paste the completion code back. The helper configures MCP and checks tool
-discovery without a localhost callback. It needs Python 3.11+, not server access.
+The recommended [Claude Code and Codex setup](mcp-apps.md#connect-claude-code-or-codex-recommended)
+uses each client's built-in `mcp login --no-browser`. Core's **AI connections**
+page generates their setup commands for the selected access. No helper program
+or separate manual credential is required.
 
-This is a Core-specific pairing protocol, separate from OAuth discovery. All
-routes require `MCP_OAUTH_ENABLED`; content scopes require `MCP_APP_TOOLS_ENABLED`.
-`POST /mcp/pair/start` accepts a name, scope and expiry; it returns a terminal-only
-request secret, human pairing code, verification URL and 600-second lifetime.
-Browser `POST /mcp/pair/inspect`, `/approve`, and `/deny` require a Core session and
-exact same Origin. Approval binds the request to that user's authentication
-revision and returns a one-use completion code. `POST /mcp/pair/exchange` requires
-both that completion code and the original terminal secret. It atomically consumes
-the request and creates an ordinary scoped MCP connection token; approval alone
-does not create a credential. Account changes, disabled scopes, expiry, denial,
-or previous redemption prevent issuance. Nothing redirects to the terminal.
+For registered loopback callbacks (`localhost`, `127.0.0.1`, or `::1` over HTTP),
+the consent page offers **Approve and copy sign-in response**. This submits an
+explicit manual approval and renders the complete OAuth response as copyable text
+on Core. The user pastes it into the waiting client, which completes its normal
+code exchange. The browser does not navigate to the callback. The response keeps
+its exact registered callback URI, state and issuer; code expiry, one-time use,
+PKCE, resource binding and refresh rotation are unchanged. Access/refresh tokens
+are never rendered in the browser. Completion pages are non-cacheable, disallow
+framing, suppress referrers, and use a same-origin clipboard script with a manual
+copy fallback. Cancellation also stays on Core and creates no grant.
 
-All three pairing secrets are stored as hashes. Responses are not cacheable,
-request bodies are capped at 4 KiB, and endpoints have independent rate limits
-(start: one per five seconds, burst 10; others: one per second, burst 20).
-At most 1,000 live pairing requests are retained. Expired requests are removed on
-creation and by the janitor. Credentials share the existing 20-active-token
-account limit, 1/7/30-day lifetimes and disconnect semantics. Core never returns
-the MCP credential to the browser in this flow. The helper refuses HTTP except
-for loopback, never follows HTTP redirects, and saves credentials only in the
-assistant's private config. An unredeemed approval expires with its request.
+The consent page retains a direct-return option for local clients. Hosted HTTPS
+callbacks keep their existing redirect behavior; manual completion cannot be
+requested for them. Requests still require an authenticated Core browser session,
+exact Origin and the one-use consent request. `MCP_OAUTH_ENABLED` controls this
+flow, and `MCP_APP_TOOLS_ENABLED` controls available application scopes.
+
+The older `/mcp/pair/*` helper protocol remains available for compatibility, but
+it is no longer advertised by the normal connection screen. New users should use
+the native terminal flow above.
 
 ## Connection tokens for remote assistants
 
-Account users can create scoped, expiring tokens under **AI connections → Connect
-without redirects**. This avoids a localhost callback when the browser and
+Account users can create scoped, expiring tokens under **AI connections → Advanced: manual tokens and other clients → Create a token manually**. This avoids a localhost callback when the browser and
 assistant run on different machines. See the [no-redirect setup guide](mcp-apps.md#connect-without-a-localhost-redirect).
 Tokens require `MCP_OAUTH_ENABLED=true`; content scopes additionally require
 `MCP_APP_TOOLS_ENABLED=true`. They are separate from operator status keys and
@@ -82,7 +79,7 @@ Core publishes protected resource metadata at
 `/.well-known/oauth-authorization-server/mcp/oauth`. The issuer is
 `BASE_URL/mcp/oauth`. Endpoints under it are `/register`, `/authorize`, `/token`
 and `/revoke`. Registration supports public clients and client-secret basic/post
-authentication, exact HTTPS or literal-loopback HTTP callbacks, authorization
+authentication, exact HTTPS or localhost/literal-loopback HTTP callbacks, authorization
 code flow with mandatory S256 PKCE, and refresh rotation. Requests must target
 the exact `BASE_URL/mcp` resource. `status:read` is always supported; enabling
 `MCP_APP_TOOLS_ENABLED=true` additionally advertises `apps:read` and `apps:write`.

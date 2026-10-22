@@ -25,78 +25,73 @@ Child resources such as review comments link to the containing review through
 `source_url`. Apps without individual browser routes provide a page/app link;
 assistants must not claim these links select a specific record or comment.
 
-## Pair from a terminal (recommended)
+## Connect Claude Code or Codex (recommended)
 
-On the machine running **Codex CLI or Claude Code**, with Python 3.11 or newer:
+Open `https://core.example.com/connect` (**Core → AI connections**), select **Claude Code** or **Codex terminal**, and
+choose the requested access. **Copy setup commands** generates the commands for
+your own Core URL and selected access. Only the assistant itself needs to be
+installed on the terminal's machine.
+
+For Claude Code with read/create/update access:
 
 ```sh
-curl -fsS https://core.example.com/mcp/connect.py -o pocket-connect.py
-python3 pocket-connect.py --url https://core.example.com --client codex
-# For Claude Code, use --client claude instead.
+claude mcp add-json --scope user pocket '{"type":"http","url":"https://core.example.com/mcp","oauth":{"scopes":"status:read apps:read apps:write"}}'
+claude mcp login pocket --no-browser
 ```
 
-You can also run `scripts/pocket-connect.py` from this repository. Replace the
-example origin with your Core URL. No packages need to be installed.
+The `add-json` command is Claude Code's built-in MCP configuration command. It
+pins the requested scopes without putting a credential in the command. For Codex:
 
-1. The terminal prints a link to `/ai-connections/pair` and a pairing code.
-2. Open the link in a browser on any device, sign in, and enter the terminal code.
-3. Review the account, client name, permissions, and lifetime; approve only a
-   request you started with the same code.
-4. Core shows a completion code. Copy it into the waiting terminal within
-   10 minutes of starting the request.
-5. The helper exchanges the code, saves the MCP connection, and verifies tool
-   discovery. Start a new assistant session. Do **not** run `codex mcp login` or
-   `claude mcp login` for this connection.
+```sh
+codex mcp add pocket --url https://core.example.com/mcp
+codex mcp login pocket --no-browser --scopes status:read,apps:read,apps:write
+```
 
-The completion code is not your MCP credential. It is single-use and works only
-with the private request secret held by the terminal that started pairing. No
-localhost callback or inbound terminal port is used.
+1. Run the commands in the terminal on the machine where the assistant runs.
+2. Open the sign-in link printed by that terminal in a browser on any device.
+3. Sign in to Core, review the requested permissions, and choose **Approve and
+   copy sign-in response**.
+4. On Core's next page, click **Copy sign-in response**. Paste the entire response
+   into the waiting terminal, then press Enter. It is text for the client, not a
+   link you need to open. Finish within five minutes of approval.
+5. The assistant saves its OAuth credentials. Start a new session and ask:
+   “Check the status of all applications I can access.”
 
-Options:
+The browser never needs to reach a localhost listener in this flow. The response
+contains a short-lived authorization code bound to the client, registered callback,
+resource, and its PKCE verifier. Only the requesting terminal can redeem it. The
+normal access/refresh token lifecycle applies, with a 30-day maximum connection
+lifetime. Disconnect under **Your connections** to revoke access.
 
-| Option | Purpose |
-| --- | --- |
-| `--client codex` / `--client claude` | Configure the selected assistant |
-| `--access status`, `read`, `write` | Status only, reading, or read/create/update (default `write`) |
-| `--days 1`, `7`, `30` | Connection lifetime (default `30`) |
-| `--name pocket_core` | MCP config name; choose another to keep multiple Core connections |
-| `--label "Work laptop"` | Name shown when approving and in Your connections |
-| `--replace` | Renew/replace this named entry; disconnect the old grant in Core afterward |
-| `--config /absolute/path` | Override the user config destination |
+Choose **Read application content** or **Status checks only** in the browser
+setup page for less access. Deletion and service administration remain unavailable.
+The corresponding scope sets are `status:read apps:read` and `status:read`.
+Codex's `--scopes` flag uses commas; Claude's `oauth.scopes` config uses spaces.
 
-Codex configuration goes to `~/.codex/config.toml` (or the existing `CODEX_HOME`
-directory), using its documented `http_headers` authorization support. The helper
-keeps other settings and comments, and only replaces its own marked block when
-`--replace` is given. An existing entry created another way needs a different
-`--name` or manual removal first. Claude Code configuration goes to
-`~/.claude.json` (or `.claude.json` inside `CLAUDE_CONFIG_DIR`), preserving other
-settings and MCP entries. The config contains a credential and is atomically
-written with mode `0600`; it must not be committed or shared. Concurrent changes
-detected during approval stop the update; disconnect the unused new grant and
-retry. Symlinked configs require `--config` pointing to their real file.
+If the entry already exists with the desired scope, use **Already added? Copy
+sign-in command** instead of adding it again. For Claude Code scope changes,
+remove the `pocket` entry with `claude mcp remove --scope user pocket`, then copy
+and run the new setup commands. If that entry has an old manual Authorization
+header or bearer variable, remove and recreate it before using OAuth. Older Core
+instructions used `pocket_core` or `pocket_account`; the native setup here uses
+`pocket`. Remove obsolete entries if they expose duplicate tools; disconnect their
+old grants in Core as well.
 
-Access follows your Core account and app sharing. Tokens expire after the selected
-lifetime and are revocable under **AI connections → Your connections**. Renew by
-running the helper again with `--replace`; it requires fresh browser approval.
-The old grant is not automatically revoked, so disconnect it after confirming
-the new connection. Deletion and service administration remain excluded.
+Use current clients supporting `mcp login --no-browser`. If the flag is unknown,
+update the client. Claude Code may require an interactive SSH terminal (`ssh -t`).
+If you close the approval page or the response expires, restart native sign-in.
+You can still use **Return directly to an app on this computer** on the approval
+page when a client expects an ordinary local callback. Hosted HTTPS callbacks
+continue to use the normal redirect flow.
 
-This configures the assistant running under that OS account, including an SSH
-host, development container, or self-managed cloud VM. A managed web/cloud product
-that does not read these CLI config files needs its own connector/secret settings;
-running this locally does not configure such a product. The browser can be on a
-different device in either case.
+This configures Codex or Claude Code running under that OS account, including a
+remote VM or development container. It does not install a connector into a separate
+managed web product. For those products, use their own remote MCP connection UI
+with Core's `/mcp` URL and account sign-in.
 
-If the pairing expires or the page closes before you copy the completion code,
-start the helper again. If the terminal reports an existing MCP name, choose a
-different `--name` or explicitly renew with `--replace`. If your Core only enables
-status tools, use `--access status`. Keep the terminal open until the helper
-confirms connection. You can inspect the downloaded helper before running it.
-
-The configuration formats are documented by [OpenAI](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
-and [Claude Code](https://code.claude.com/docs/en/mcp). Claude Code also documents a
-manual callback-URL fallback for native OAuth. Pocket Connect is Core's explicit
-pairing flow; it does not change those clients' built-in OAuth login commands.
+See the [OpenAI MCP configuration guide](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+and [Claude Code's native MCP authentication guide](https://code.claude.com/docs/en/mcp#authenticate-from-the-command-line).
+The terminal commands are also available in each installed client's `mcp login --help`.
 
 ## Connect without a localhost redirect
 
@@ -104,7 +99,7 @@ Use this option when Codex is on a remote machine or a browser callback to
 `127.0.0.1` fails. That address refers to the browser's machine; it does not reach
 a callback listener on a different server.
 
-1. Sign in to Core and open **AI connections → Connect without redirects**.
+1. Sign in to Core and open **AI connections → Advanced: manual tokens and other clients → Create a token manually**.
 2. Name the connection and choose status, reading, or reading and creating/updating.
 3. Choose an expiry (1, 7 or 30 days), then **Create token with this access**.
 4. Copy the token. It appears only in that response; Core stores a hash.

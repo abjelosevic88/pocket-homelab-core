@@ -38,6 +38,11 @@ func (s *Server) mcpOAuthRoutes(r chi.Router) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		_, _ = w.Write([]byte(mcpConsentCSS))
 	})
+	r.Get("/mcp-completion.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write([]byte(mcpCompletionJS))
+	})
 	r.Get("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		writeJSON(w, 200, map[string]any{"resource": s.mcpResource(), "resource_name": "Pocket Core", "authorization_servers": []string{s.mcpIssuer()}, "scopes_supported": s.mcpSupportedScopes(), "bearer_methods_supported": []string{"header"}})
@@ -93,7 +98,7 @@ func validMCPRedirect(raw string) bool {
 	if u.Scheme == "https" {
 		return true
 	}
-	return u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
+	return u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1" || u.Hostname() == "localhost")
 }
 
 func (s *Server) handleMCPRegister(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +176,58 @@ type mcpAuthorization struct {
 var mcpChallengeRE = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 var mcpVerifierRE = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 
-var mcpConsentPage = template.Must(template.New("consent").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect your assistant · Pocket Core</title><link rel="stylesheet" href="/mcp-consent.css"></head><body><main><p>Pocket Core</p><h1>Connect {{.Name}}?</h1><p>Signed in as <strong>{{.Email}}</strong>.</p><p>This assistant will be able to check Core's availability and the status of Pocket apps shared with your account, including apps shared with you later.</p>{{if .Write}}<p><strong>It can read your application content and create or update items in the Pocket apps shared with you.</strong> This includes personal notes, tasks, events and other supported app records. Deletion, sharing controls, sending messages and service administration are excluded.</p>{{else if .Read}}<p><strong>It can read your application content</strong> in supported Pocket apps shared with you. It cannot create or change items.</p>{{else}}<p>It cannot read notes, tasks or other application content, or change your data.</p>{{end}}<p>The connection lasts up to 30 days. You can disconnect it at any time under <a href="/ai-connections">AI connections</a>.</p><p>Client names are supplied by the application. Approve only if you started this connection.</p><p>Return address: <code>{{.Redirect}}</code></p><form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="request" value="{{.Request}}"><button name="decision" value="approve">{{if .Read}}Allow application access{{else}}Allow status access{{end}}</button><button name="decision" value="deny">Cancel</button></form></main></body></html>`))
+var mcpConsentPage = template.Must(template.New("consent").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect your assistant · Pocket Core</title><link rel="stylesheet" href="/mcp-consent.css"></head>
+<body><main><p>Pocket Core</p><h1>Connect {{.Name}}?</h1>
+<p>Signed in as <strong>{{.Email}}</strong>.</p>
+<p>This assistant will be able to check Core's availability and the status of Pocket apps shared with your account, including apps shared with you later.</p>
+{{if .Write}}<p><strong>It can read your application content and create or update items in the Pocket apps shared with you.</strong> This includes personal notes, tasks, events and other supported app records. Deletion, sharing controls, sending messages and service administration are excluded.</p>
+{{else if .Read}}<p><strong>It can read your application content</strong> in supported Pocket apps shared with you. It cannot create or change items.</p>
+{{else}}<p>It cannot read notes, tasks or other application content, or change your data.</p>{{end}}
+<p>The connection lasts up to 30 days. You can disconnect it at any time under <a href="/ai-connections">AI connections</a>.</p>
+<p>Client names are supplied by the application. Approve only if you started this connection.</p>
+{{if .Terminal}}<p><strong>Connecting from a terminal?</strong> Approve and copy the sign-in response back into Claude Code or Codex. This page stays on Core.</p>{{else}}<p>Return address: <code>{{.Redirect}}</code></p>{{end}}
+<form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="request" value="{{.Request}}">
+{{if .Terminal}}<button class="primary" name="decision" value="approve_manual">Approve and copy sign-in response</button><button name="decision" value="deny_manual">Cancel</button>
+<details><summary>Return directly to an app on this computer</summary><p>Use this when your assistant is waiting for a local browser callback.</p><button name="decision" value="approve">{{if .Read}}Allow application access{{else}}Allow status access{{end}}</button><p>Return address: <code>{{.Redirect}}</code></p></details>
+{{else}}<button class="primary" name="decision" value="approve">{{if .Read}}Allow application access{{else}}Allow status access{{end}}</button><button name="decision" value="deny">Cancel</button>{{end}}
+</form></main></body></html>`))
+
+func mcpTerminalCallback(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1" || u.Hostname() == "localhost")
+}
+
+var mcpCompletionPage = template.Must(template.New("completion").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Finish connecting · Pocket Core</title><link rel="stylesheet" href="/mcp-consent.css"><script src="/mcp-completion.js" defer></script></head>
+<body><main><p>Pocket Core</p>{{if .Cancelled}}<h1>Connection cancelled</h1><p>No access was granted. Return to your terminal and press Ctrl+C to cancel sign-in.</p>
+{{else}}<h1>Finish in your terminal</h1><p>Access approved. Copy this sign-in response and paste it into the waiting Claude Code or Codex terminal.</p>
+<label for="sign-in-response">Sign-in response</label><textarea id="sign-in-response" rows="5" readonly spellcheck="false" autocomplete="off">{{.Response}}</textarea>
+<button id="copy-response" class="primary" type="button">Copy sign-in response</button><p id="copy-status" role="status" aria-live="polite"></p>
+<p>Paste the entire response as text; you do not need to open its address. It expires in five minutes and can only be used by the terminal that started this sign-in.</p>
+<p>Your assistant will save the connection and manage its credentials. No separate token setup is needed.</p>{{end}}
+<p><a href="/ai-connections">Back to AI connections</a></p></main></body></html>`))
+
+const mcpCompletionJS = `const field = document.getElementById('sign-in-response');
+const button = document.getElementById('copy-response');
+if (field && button) {
+ field.addEventListener('focus', () => field.select());
+ button.addEventListener('click', async () => {
+  const status = document.getElementById('copy-status');
+  try { await navigator.clipboard.writeText(field.value); button.textContent = 'Copied'; status.textContent = 'Now paste it into your terminal.'; }
+  catch { field.focus(); field.select(); status.textContent = 'Copy the selected response, then paste it into your terminal.'; }
+ });
+}`
+
+func (s *Server) mcpShowCompletion(w http.ResponseWriter, response string, cancelled bool) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = mcpCompletionPage.Execute(w, map[string]any{"Response": response, "Cancelled": cancelled})
+}
 
 func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -225,7 +281,7 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self' "+callback.Scheme+"://"+callback.Host+"; base-uri 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = mcpConsentPage.Execute(w, map[string]any{"Name": c.Name, "Email": u.Email, "Redirect": redirect, "Request": pending, "Read": hasMCPScope(q.Get("scope"), "apps:read"), "Write": hasMCPScope(q.Get("scope"), "apps:write")})
+	_ = mcpConsentPage.Execute(w, map[string]any{"Name": c.Name, "Email": u.Email, "Redirect": redirect, "Request": pending, "Read": hasMCPScope(q.Get("scope"), "apps:read"), "Write": hasMCPScope(q.Get("scope"), "apps:write"), "Terminal": mcpTerminalCallback(redirect)})
 }
 
 func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +295,7 @@ func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
 		tokenErr(w, 403, "access_denied", "origin rejected")
 		return
 	}
-	if r.ParseForm() != nil || (r.PostForm.Get("decision") != "approve" && r.PostForm.Get("decision") != "deny") {
+	if r.ParseForm() != nil || (r.PostForm.Get("decision") != "approve" && r.PostForm.Get("decision") != "deny" && r.PostForm.Get("decision") != "approve_manual" && r.PostForm.Get("decision") != "deny_manual") {
 		tokenErr(w, 400, "invalid_request", "approval decision required")
 		return
 	}
@@ -251,6 +307,15 @@ func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
 	var in mcpAuthorization
 	if json.Unmarshal(pending.Data, &in) != nil {
 		tokenErr(w, 400, "invalid_request", "invalid approval")
+		return
+	}
+	manual := strings.HasSuffix(r.PostForm.Get("decision"), "_manual")
+	if manual && !mcpTerminalCallback(in.Redirect) {
+		tokenErr(w, 400, "invalid_request", "manual completion is only available for local terminal callbacks")
+		return
+	}
+	if r.PostForm.Get("decision") == "deny_manual" {
+		s.mcpShowCompletion(w, "", true)
 		return
 	}
 	if r.PostForm.Get("decision") == "deny" {
@@ -268,6 +333,10 @@ func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
 	q.Set("state", in.State)
 	q.Set("iss", s.mcpIssuer())
 	redirect.RawQuery = q.Encode()
+	if manual {
+		s.mcpShowCompletion(w, redirect.String(), false)
+		return
+	}
 	http.Redirect(w, r, redirect.String(), 303)
 }
 
@@ -397,7 +466,7 @@ func (s *Server) handleMCPDisconnect(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-const mcpConsentCSS = `:root{color-scheme:light dark;font:16px/1.6 system-ui,sans-serif}body{margin:0;background:light-dark(#f5f6f8,#171a20);color:light-dark(#222936,#e6e9ef)}main{max-width:580px;margin:5vh auto;padding:28px;background:light-dark(white,#222732);border-radius:16px}h1{line-height:1.2}a{color:light-dark(#325bc7,#a6bfff)}code{overflow-wrap:anywhere}form{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}button{font:inherit;padding:10px 18px;border:1px solid #8091ad;border-radius:8px;cursor:pointer}button[value=approve]{background:#3159bd;color:white}button:focus-visible,a:focus-visible{outline:3px solid #d8911b;outline-offset:3px}@media(max-width:640px){main{margin:16px;padding:22px}}`
+const mcpConsentCSS = `:root{color-scheme:light dark;font:16px/1.6 system-ui,sans-serif}body{margin:0;background:light-dark(#f5f6f8,#171a20);color:light-dark(#222936,#e6e9ef)}main{max-width:580px;margin:5vh auto;padding:28px;background:light-dark(white,#222732);border-radius:16px}h1{line-height:1.2}a{color:light-dark(#325bc7,#a6bfff)}code{overflow-wrap:anywhere}form{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}button{font:inherit;padding:10px 18px;border:1px solid #8091ad;border-radius:8px;cursor:pointer}button.primary,button[value=approve]{background:#3159bd;color:white}textarea{display:block;box-sizing:border-box;width:100%;font:14px/1.5 ui-monospace,monospace;padding:12px;margin:8px 0 16px;border:1px solid #8091ad;border-radius:8px;resize:vertical;overflow-wrap:anywhere}details{width:100%;margin-top:12px}summary{cursor:pointer}button:focus-visible,a:focus-visible,textarea:focus-visible{outline:3px solid #d8911b;outline-offset:3px}@media(max-width:640px){main{margin:16px;padding:22px}}`
 
 // Include the issuer on errors too, as advertised by RFC 9207 metadata.
 func (s *Server) mcpRedirectErr(w http.ResponseWriter, r *http.Request, redirect, state, code, desc string) {
