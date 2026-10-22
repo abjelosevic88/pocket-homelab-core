@@ -6,6 +6,36 @@ Streamable HTTP. Status tools cover Core and registered Pocket apps. Optional
 items across all current Pocket apps. Deletion, service administration and logs
 are not exposed. Operator credentials remain status-only.
 
+## Terminal pairing
+
+[Pocket Connect](mcp-apps.md#pair-from-a-terminal-recommended) provides a public-URL
+approval flow for Codex CLI and Claude Code. Download `/mcp/connect.py`, run it on
+the assistant's machine, open its link, enter the terminal code, approve, and
+paste the completion code back. The helper configures MCP and checks tool
+discovery without a localhost callback. It needs Python 3.11+, not server access.
+
+This is a Core-specific pairing protocol, separate from OAuth discovery. All
+routes require `MCP_OAUTH_ENABLED`; content scopes require `MCP_APP_TOOLS_ENABLED`.
+`POST /mcp/pair/start` accepts a name, scope and expiry; it returns a terminal-only
+request secret, human pairing code, verification URL and 600-second lifetime.
+Browser `POST /mcp/pair/inspect`, `/approve`, and `/deny` require a Core session and
+exact same Origin. Approval binds the request to that user's authentication
+revision and returns a one-use completion code. `POST /mcp/pair/exchange` requires
+both that completion code and the original terminal secret. It atomically consumes
+the request and creates an ordinary scoped MCP connection token; approval alone
+does not create a credential. Account changes, disabled scopes, expiry, denial,
+or previous redemption prevent issuance. Nothing redirects to the terminal.
+
+All three pairing secrets are stored as hashes. Responses are not cacheable,
+request bodies are capped at 4 KiB, and endpoints have independent rate limits
+(start: one per five seconds, burst 10; others: one per second, burst 20).
+At most 1,000 live pairing requests are retained. Expired requests are removed on
+creation and by the janitor. Credentials share the existing 20-active-token
+account limit, 1/7/30-day lifetimes and disconnect semantics. Core never returns
+the MCP credential to the browser in this flow. The helper refuses HTTP except
+for loopback, never follows HTTP redirects, and saves credentials only in the
+assistant's private config. An unredeemed approval expires with its request.
+
 ## Connection tokens for remote assistants
 
 Account users can create scoped, expiring tokens under **AI connections → Connect

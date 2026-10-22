@@ -197,6 +197,7 @@ func (s *Server) Router() http.Handler {
 	// Separate, narrowly scoped authentication; never inherits AUTH_MODE=none.
 	r.Handle("/mcp", s.mcpHandler())
 	s.mcpOAuthRoutes(r)
+	s.mcpPairingRoutes(r)
 	s.askRoutes(r)
 
 	// OpenID Connect (browser + relying parties).

@@ -19,6 +19,7 @@ import Users from './pages/Users'
 import Settings from './pages/Settings'
 import Links from './pages/Links'
 import AIConnections from './pages/AIConnections'
+import AIPairing from './pages/AIPairing'
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { status, user } = useApp()
@@ -45,6 +46,7 @@ function App() {
         <Route path="/devices" element={<Devices />} />
         <Route path="/users" element={<Users />} />
         <Route path="/ai-connections" element={<AIConnections />} />
+        <Route path="/ai-connections/pair" element={<AIPairing />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

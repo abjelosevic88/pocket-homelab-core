@@ -25,6 +25,79 @@ Child resources such as review comments link to the containing review through
 `source_url`. Apps without individual browser routes provide a page/app link;
 assistants must not claim these links select a specific record or comment.
 
+## Pair from a terminal (recommended)
+
+On the machine running **Codex CLI or Claude Code**, with Python 3.11 or newer:
+
+```sh
+curl -fsS https://core.example.com/mcp/connect.py -o pocket-connect.py
+python3 pocket-connect.py --url https://core.example.com --client codex
+# For Claude Code, use --client claude instead.
+```
+
+You can also run `scripts/pocket-connect.py` from this repository. Replace the
+example origin with your Core URL. No packages need to be installed.
+
+1. The terminal prints a link to `/ai-connections/pair` and a pairing code.
+2. Open the link in a browser on any device, sign in, and enter the terminal code.
+3. Review the account, client name, permissions, and lifetime; approve only a
+   request you started with the same code.
+4. Core shows a completion code. Copy it into the waiting terminal within
+   10 minutes of starting the request.
+5. The helper exchanges the code, saves the MCP connection, and verifies tool
+   discovery. Start a new assistant session. Do **not** run `codex mcp login` or
+   `claude mcp login` for this connection.
+
+The completion code is not your MCP credential. It is single-use and works only
+with the private request secret held by the terminal that started pairing. No
+localhost callback or inbound terminal port is used.
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--client codex` / `--client claude` | Configure the selected assistant |
+| `--access status`, `read`, `write` | Status only, reading, or read/create/update (default `write`) |
+| `--days 1`, `7`, `30` | Connection lifetime (default `30`) |
+| `--name pocket_core` | MCP config name; choose another to keep multiple Core connections |
+| `--label "Work laptop"` | Name shown when approving and in Your connections |
+| `--replace` | Renew/replace this named entry; disconnect the old grant in Core afterward |
+| `--config /absolute/path` | Override the user config destination |
+
+Codex configuration goes to `~/.codex/config.toml` (or the existing `CODEX_HOME`
+directory), using its documented `http_headers` authorization support. The helper
+keeps other settings and comments, and only replaces its own marked block when
+`--replace` is given. An existing entry created another way needs a different
+`--name` or manual removal first. Claude Code configuration goes to
+`~/.claude.json` (or `.claude.json` inside `CLAUDE_CONFIG_DIR`), preserving other
+settings and MCP entries. The config contains a credential and is atomically
+written with mode `0600`; it must not be committed or shared. Concurrent changes
+detected during approval stop the update; disconnect the unused new grant and
+retry. Symlinked configs require `--config` pointing to their real file.
+
+Access follows your Core account and app sharing. Tokens expire after the selected
+lifetime and are revocable under **AI connections → Your connections**. Renew by
+running the helper again with `--replace`; it requires fresh browser approval.
+The old grant is not automatically revoked, so disconnect it after confirming
+the new connection. Deletion and service administration remain excluded.
+
+This configures the assistant running under that OS account, including an SSH
+host, development container, or self-managed cloud VM. A managed web/cloud product
+that does not read these CLI config files needs its own connector/secret settings;
+running this locally does not configure such a product. The browser can be on a
+different device in either case.
+
+If the pairing expires or the page closes before you copy the completion code,
+start the helper again. If the terminal reports an existing MCP name, choose a
+different `--name` or explicitly renew with `--replace`. If your Core only enables
+status tools, use `--access status`. Keep the terminal open until the helper
+confirms connection. You can inspect the downloaded helper before running it.
+
+The configuration formats are documented by [OpenAI](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+and [Claude Code](https://code.claude.com/docs/en/mcp). Claude Code also documents a
+manual callback-URL fallback for native OAuth. Pocket Connect is Core's explicit
+pairing flow; it does not change those clients' built-in OAuth login commands.
+
 ## Connect without a localhost redirect
 
 Use this option when Codex is on a remote machine or a browser callback to

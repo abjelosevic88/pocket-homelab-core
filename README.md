@@ -89,15 +89,38 @@ MCP_APP_TOOLS_ENABLED=true
 
 Rebuild and restart Core with these settings. Existing Core password login or
 upstream SSO works. Publish Core at that HTTPS URL, including its login,
-`/mcp/oauth/*` and `/.well-known/*` routes. A proxy login wall must not intercept
+`/mcp/oauth/*`, `/mcp/pair/*`, `/mcp/connect.py` and `/.well-known/*` routes. A proxy login wall must not intercept
 MCP discovery, registration or token requests. With the repository Compose file,
 put these settings in `.env` and deploy an image built from this source.
 
 **The person connecting only needs the URL and a Core account.** No SSH access,
 server configuration, copied API key or custom sign-in programming is required.
 
-For a remote/cloud Codex instance, or when a localhost callback cannot reach
-Codex, use **Core → AI connections → Connect without redirects**. Choose the
+**Recommended for Codex or Claude Code in a remote terminal:** run Pocket Connect
+on the machine where your assistant runs (Python 3.11+):
+
+```sh
+curl -fsS https://core.example.com/mcp/connect.py -o pocket-connect.py
+python3 pocket-connect.py --url https://core.example.com --client codex
+```
+
+For Claude Code, use `--client claude`. The terminal prints a public link and a
+pairing code. Open the link on any device, sign in to Core, enter the pairing
+code, and review/approve the access. Copy Core's completion code back into the
+waiting terminal. Pocket Connect configures the assistant and checks MCP tool
+discovery. **Start a new assistant session; no separate MCP login or environment
+variable is needed.** Try: “Check the status of all applications I can access.”
+
+The default requests read/create/update access for 30 days. Use `--access read`
+or `--access status` for less access, and `--days 1` or `--days 7` for a shorter
+expiry. Credentials are saved with owner-only permissions in the assistant's
+user config. Keep that file private. Pair again with `--replace` to renew a
+connection created by this helper, then disconnect the old grant in Core.
+See [terminal pairing](docs/mcp-apps.md#pair-from-a-terminal-recommended) for
+configuration locations, cloud limitations, and troubleshooting.
+
+For clients needing a manually managed token, use **Core → AI connections →
+Connect without redirects**. Choose the
 access level and expiry, click **Create token with this access**, and copy the
 token shown once. It uses your account's permissions and can be disconnected there.
 

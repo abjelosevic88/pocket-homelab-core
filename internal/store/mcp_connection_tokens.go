@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"time"
 
@@ -17,6 +18,18 @@ func (s *Store) CreateMCPConnectionToken(ctx context.Context, user *User, name, 
 		return nil, "", err
 	}
 	defer tx.Rollback()
+	grant, token, err := createMCPConnectionTokenTx(ctx, tx, user, name, scope, days, binding)
+	if err != nil {
+		return nil, "", err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, "", err
+	}
+	return grant, token, nil
+}
+
+func createMCPConnectionTokenTx(ctx context.Context, tx *sql.Tx, user *User, name, scope string, days int, binding any) (*MCPGrant, string, error) {
+	var err error
 	var count int
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM mcp_oauth_grants g JOIN mcp_oauth_clients c ON c.client_id=g.client_id WHERE g.user_id=? AND c.kind='token' AND g.expires_at>? AND g.auth_revision=?`, user.ID, Now(), user.AuthRevision).Scan(&count); err != nil {
 		return nil, "", err
@@ -38,9 +51,6 @@ func (s *Store) CreateMCPConnectionToken(ctx context.Context, user *User, name, 
 	}
 	token := crypto.Token("pcma_", 32)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO mcp_oauth_secrets(hash,kind,client_id,user_id,grant_id,data,expires_at) VALUES (?,'access',?,?,?,?,?)`, crypto.Hash(token), clientID, user.ID, grant.ID, string(raw), grant.ExpiresAt); err != nil {
-		return nil, "", err
-	}
-	if err = tx.Commit(); err != nil {
 		return nil, "", err
 	}
 	return grant, token, nil

@@ -12,6 +12,7 @@ web/dist/*
 !web/dist/.gitkeep
 .DS_Store
 *.log
+__pycache__/
 /tmp/
 
 web/test-results/
