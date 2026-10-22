@@ -110,3 +110,14 @@ Every app also lets a person connect **Direct** (a URL and key pasted into the a
 ## Credential cache
 
 `ServiceFor` reuses a person's credential for a minute (`Options.ServiceCache`), so a page of 300 photos asks Core once; a refusal from Core drops it at once, and while Core can't be reached the last answer is used for up to 15 minutes (`Options.ServiceStale`) so a Core restart doesn't stop the apps. A link switch stops future retrieval when the client next contacts Core. Previously returned upstream credentials remain usable until rotated or removed in that service; the cache lifetime does not revoke copied credentials. App links via `ActAs` apply on the next request. `ServiceForFresh` skips the cache (connection tests).
+
+### Pocket AI text generation
+
+The SDK's `InferenceUse()` requests `inference:write` from app `ai`. This grants
+text generation only, not access to agent threads or tools. `SelectAI` implements
+personal `auto`, `pocket`, and `openai` selection; empty preferences mean `auto`.
+Automatic uses an enabled AI link, otherwise the person's direct provider.
+A Core outage fails closed rather than silently changing providers. Each
+`InferenceClient.Complete` call requests a new person-scoped delegation token,
+so background jobs also respect link revocation. Existing app registrations
+need an admin to approve this new permission after upgrading.
