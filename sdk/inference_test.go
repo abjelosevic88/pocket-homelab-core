@@ -65,12 +65,16 @@ func TestInferenceDelegationAndRevocation(t *testing.T) {
 	allowed.Store(true)
 	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.Header.Get("Authorization") != "Bearer pcx_member" || r.URL.Path != "/api/v1/inference" {
+		if r.Header.Get("Authorization") != "Bearer pcx_member" || (r.URL.Path != "/api/v1/inference" && r.URL.Path != "/api/v1/inference/models") {
 			t.Error("wrong credential or path")
+		}
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(InferenceModels{DefaultModel: "sonnet", Models: []InferenceModel{{ID: "opus", Name: "Opus"}}})
+			return
 		}
 		var in InferenceRequest
 		json.NewDecoder(r.Body).Decode(&in)
-		if in.Prompt != "private prompt" || !in.JSON {
+		if in.Prompt != "private prompt" || !in.JSON || in.Model != "opus" {
 			t.Error("prompt lost")
 		}
 		json.NewEncoder(w).Encode(InferenceReply{Text: `{"ok":true}`, Model: "pocket-ai/sonnet"})
@@ -98,14 +102,23 @@ func TestInferenceDelegationAndRevocation(t *testing.T) {
 	}))
 	defer core.Close()
 	c, _ := New(core.URL, Options{Token: "app"}).SelectAI(t.Context(), "member@test", "auto", true)
-	if out, err := c.Complete(t.Context(), "system", "private prompt", true); err != nil || out.Model != "pocket-ai/sonnet" {
+	if out, err := c.WithModel("opus").Complete(t.Context(), "system", "private prompt", true); err != nil || out.Model != "pocket-ai/sonnet" {
 		t.Fatal(out, err)
 	}
+	if c.model != "" {
+		t.Fatal("override mutated default client")
+	}
+	if models, err := c.Models(t.Context()); err != nil || models.DefaultModel != "sonnet" || len(models.Models) != 1 {
+		t.Fatal(models, err)
+	}
 	allowed.Store(false)
-	if _, err := c.Complete(t.Context(), "system", "private prompt", true); err == nil {
+	if _, err := c.WithModel("opus").Complete(t.Context(), "system", "private prompt", true); err == nil {
 		t.Fatal("revoked link reused")
 	}
-	if calls.Load() != 1 {
+	if _, err := c.Models(t.Context()); err == nil {
+		t.Fatal("revoked link fetched models")
+	}
+	if calls.Load() != 2 {
 		t.Fatal("generation ran after revocation")
 	}
 }

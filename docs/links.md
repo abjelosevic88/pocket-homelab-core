@@ -121,3 +121,5 @@ A Core outage fails closed rather than silently changing providers. Each
 `InferenceClient.Complete` call requests a new person-scoped delegation token,
 so background jobs also respect link revocation. Existing app registrations
 need an admin to approve this new permission after upgrading.
+
+The `inference:write` link also permits `GET /api/v1/inference/models`, which returns the caller’s connected Claude model catalog and effective Pocket AI default without exposing credentials or chat data. `InferenceClient.Models` performs fresh delegation; `WithModel(id)` supplies an optional per-app override to generation. An empty model follows the current Pocket AI default. Overrides must match a discovered model for that account.
