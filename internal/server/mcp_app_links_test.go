@@ -14,6 +14,10 @@ import (
 
 func TestMCPAppBrowserLinks(t *testing.T) {
 	cases := []struct{ app, path, input, data, source, item string }{
+		{"tasks", "/dashboard", `{}`, `{"next":[{"id":3,"title":"Task"}]}`, "/today", "/inbox?task=3"},
+		{"collaborator", "/dashboard", `{}`, `{"waiting":[{"review":{"id":7,"participants":[{"id":99}]}}]}`, "/reviews", "/reviews/7"},
+		{"money", "/subscriptions", `{}`, `{"items":[{"id":5}]}`, "/subscriptions", "/subscriptions/5"},
+		{"garage", "/reminders", `{}`, `[{"id":42,"vehicle_id":6}]`, "/reminders", "/vehicles/6/reminders"},
 		{"collaborator", "/reviews", `{}`, `[{"id":7,"title":"Review"}]`, "/reviews", "/reviews/7"},
 		{"collaborator", "/reviews/{id}/", `{"id":7}`, `{"id":7,"live_now":[{"id":99}]}`, "/reviews/7", "/reviews/7"},
 		{"collaborator", "/reviews/{review_id}/comments", `{"review_id":7}`, `[{"id":99,"page":1}]`, "/reviews/7", ""},
