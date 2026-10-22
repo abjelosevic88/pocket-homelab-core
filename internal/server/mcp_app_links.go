@@ -13,6 +13,7 @@ import (
 type mcpBrowserRoute struct{ page, item string }
 
 var mcpBrowserRoutes = map[string]mcpBrowserRoute{
+	"tasks/dashboard": {"/today", ""}, "collaborator/dashboard": {"/reviews", ""}, "money/subscriptions": {"/subscriptions", ""}, "garage/reminders": {"/reminders", ""},
 	"notes/notes": {"/", "/note/{id}"}, "notes/search": {"/", "/note/{id}"},
 	"tasks/tasks": {"/inbox", "/inbox?task={id}"}, "tasks/lists": {"/inbox", "/list/{id}"},
 	"calendar/events": {"/", "/event/{id}"}, "calendar/search": {"/", "/event/{id}"},

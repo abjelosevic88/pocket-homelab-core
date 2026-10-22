@@ -114,6 +114,12 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		return add(app, name, description, method, path, fields, required, "")
 	}
 
+	read("tasks", "summary", "Get task counts, overdue/due work and next tasks in one call.", "/dashboard", "")
+	read("collaborator", "summary", "Get review dashboard counts and pending review work in one call.", "/dashboard", "")
+	read("garage", "summary", "Get a vehicle overview, recorded costs, fuel and active maintenance reminders in one call. Costs can overlap Money: never add app totals without verifying shared transaction IDs. Similar dates/amounts are only possible duplicates.", "/vehicles/{id}/overview", "")
+	read("garage", "reports", "Get a vehicle's cost totals by year, month and category. State the range and currency, and separate maintenance costs from fuel. Avoid double counting linked Money transactions.", "/vehicles/{id}/reports", "months")
+	read("garage", "reminders", "Get maintenance reminders across accessible vehicles.", "/reminders", "")
+	read("money", "bills", "Get your subscriptions and recurring bills; due dates are estimates until confirmed by a transaction.", "/subscriptions", "")
 	read("notes", "list", "List your notes.", "/notes", "category tag sort limit since")
 	read("notes", "search", "Search note titles and content.", "/search", "q limit")
 	read("notes", "get", "Read a note's content and current etag.", "/notes/{id}", "")
@@ -199,6 +205,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 
 	read("garage", "vehicles", "List your vehicles.", "/vehicles", "")
 	read("garage", "get_vehicle", "Read a vehicle's details.", "/vehicles/{id}/", "")
+	read("garage", "fuel", "Read fuel entries and their linked Money transaction IDs. Amounts are minor units; distinguish confirmed links from possible duplicate amounts.", "/vehicles/{vehicle_id}/fuel", "q")
 	read("garage", "records", "Read maintenance records for a vehicle.", "/vehicles/{vehicle_id}/records", "q kind from to limit")
 	read("garage", "notes", "Read a vehicle's notes.", "/vehicles/{vehicle_id}/notes", "")
 	vehicle := textFields("name make model plate vin notes").integers("year").numbers("initial_odometer")
