@@ -54,6 +54,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('https://core.test/ask#' + encodeURIComponent(JSON.stringify({ app: 'money', origin: 'https://core.test' })))
   await page.evaluate(() => window.postMessage({ type: 'pocket-ask-context', source: { app: 'money', url: 'https://core.test/item/42', title: 'Example item' } }, location.origin))
   await page.getByRole('button', { name: 'Example table' }).click()
+  await expect(page.locator('.assistant .markdown')).toBeVisible()
 })
 
 test('renders tables, nested lists, tasks, quotes, links and code; preserves user text', async ({ page }) => {
@@ -106,4 +107,46 @@ test('contains wide tables and code on small phones, desktop panels and both the
     })
     expect(dimensions).toEqual({ page: true, table: true, code: true, separateStatus: true })
   }
+})
+
+test('photo draft previews the image and sends it only with the edited question', async ({ page }) => {
+  const posts: { path: string; body: any }[] = []
+  const thread = { id: 'photo-thread', title: 'Screenshot.png', status: 'idle' }
+  await page.route('**/api/v1/ask/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method() === 'POST') posts.push({ path, body: route.request().postDataJSON() })
+    if (path.endsWith('/status')) return route.fulfill({ json: { connected: true, user_id: 1, name: 'Test', ai_url: 'https://ai.example' } })
+    if (path.endsWith('/threads')) return route.fulfill({ json: route.request().method() === 'POST' ? thread : [] })
+    if (path.endsWith('/messages')) return route.fulfill({ json: {} })
+    return route.fulfill({ json: { thread, items: [] } })
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('about:blank')
+  await page.goto('https://core.test/ask#' + encodeURIComponent(JSON.stringify({ app: 'photos', origin: 'https://core.test' })))
+  const source = { app: 'photos', url: 'https://core.test/photo/42', title: 'Screenshot.png', selection: 'Source: Nextcloud', image: {
+    name: 'Screenshot.png', data_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jN1cAAAAASUVORK5CYII=',
+  } }
+  const sendContext = () => page.evaluate(source => window.postMessage({ type: 'pocket-ask-context', source, prompt: 'Describe this photo and explain any visible text.' }, location.origin), source)
+  await sendContext()
+  await expect(page.getByLabel('Your question')).toHaveValue('Describe this photo and explain any visible text.')
+  await expect(page.locator('#photo-context')).toBeVisible()
+  await expect(page.locator('#photo-preview')).toHaveAttribute('src', source.image.data_url)
+  await expect(page.locator('#context')).toContainText('Photos · Screenshot.png')
+  expect(posts).toHaveLength(0)
+  await page.getByLabel('Your question').fill('What does this error mean?')
+  await sendContext()
+  await expect(page.getByLabel('Your question')).toHaveValue('What does this error mean?')
+  await page.getByRole('button', { name: 'Ask ↗', exact: true }).click()
+  await expect.poll(() => posts.length).toBe(1)
+  expect(posts[0].body).toMatchObject({ text: 'What does this error mean?', image: source.image, model: 'sonnet', source: { app: 'photos', title: 'Screenshot.png' } })
+  expect(posts[0].body.source.image).toBeUndefined()
+  await expect(page.locator('#photo-context')).toBeHidden()
+  await page.getByLabel('Your question').fill('Can you explain it more simply?')
+  await page.getByRole('button', { name: 'Ask ↗', exact: true }).click()
+  await expect.poll(() => posts.length).toBe(2)
+  expect(posts[1].body).toEqual({ text: 'Can you explain it more simply?' })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'New question', exact: true }).click()
+  await expect(page.locator('#photo-context')).toBeVisible()
+  await expect(page.getByLabel('Your question')).toHaveValue('Describe this photo and explain any visible text.')
 })

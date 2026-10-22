@@ -34,7 +34,7 @@ func (s *Server) askRoutes(r chi.Router) {
 				ancestors = append(ancestors, u.Scheme+"://"+u.Host)
 			}
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors "+strings.Join(ancestors, " ")+"; base-uri 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors "+strings.Join(ancestors, " ")+"; base-uri 'none'; form-action 'self'")
 		w.Write(askHTML)
 	})
 	r.Route("/api/v1/ask", func(r chi.Router) {
@@ -87,6 +87,11 @@ func (s *Server) handleAskStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"connected": grant != "", "apps": apps, "ai_url": aiURL, "name": u.Name, "user_id": u.ID})
 }
 func (s *Server) askAI(ctx context.Context, grant, method, path string, body []byte) (int, []byte, error) {
+	return s.askAIRequest(ctx, grant, method, "/api/v1/ask"+path, "application/json", body)
+}
+
+// Paths are supplied by Core handlers, never arbitrary client URLs.
+func (s *Server) askAIRequest(ctx context.Context, grant, method, path, contentType string, body []byte) (int, []byte, error) {
 	app, err := s.store.GetAppBySlug(ctx, "ai")
 	if err != nil {
 		return 0, nil, err
@@ -100,12 +105,12 @@ func (s *Server) askAI(ctx context.Context, grant, method, path string, body []b
 		return 0, nil, err
 	}
 	defer s.store.DeleteMCPAppToken(context.WithoutCancel(ctx), token)
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(app.URL, "/")+"/api/v1/ask"+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(app.URL, "/")+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	client := &http.Client{Timeout: 55 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := client.Do(req)
 	if err != nil {
@@ -172,11 +177,16 @@ func (s *Server) handleAskProxy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 409, "Reconnect Pocket Ask to continue.")
 		return
 	}
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+	limit := int64(64 << 10)
+	if r.Method == "POST" && path == "/threads" {
+		limit = 3 << 20 // one bounded photo preview plus the ordinary text context
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		writeErr(w, 413, "request too large")
 		return
 	}
+	var photoCleanup func()
 	if r.Method == "POST" && path == "/threads" {
 		var in struct {
 			Source struct {
@@ -205,8 +215,17 @@ func (s *Server) handleAskProxy(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "The item must belong to its Pocket application.")
 			return
 		}
+		var status int
+		raw, photoCleanup, status, err = s.prepareAskPhoto(r.Context(), grant, in.Source.App, raw)
+		if err != nil {
+			writeErr(w, status, err.Error())
+			return
+		}
 	}
 	code, out, err := s.askAI(r.Context(), grant, r.Method, path, raw)
+	if photoCleanup != nil && (err != nil || code >= 400) {
+		photoCleanup() // AI refuses to remove a photo already attached to a thread.
+	}
 	if err != nil {
 		writeErr(w, 502, err.Error())
 		return

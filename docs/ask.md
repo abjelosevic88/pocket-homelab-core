@@ -62,8 +62,30 @@ The catalog deliberately covers supported application actions, not every HTTP
 route. Deletion, sharing changes, credential administration, service restarts,
 message delivery and arbitrary HTTP requests are not tools. File reads follow
 format support: Documents supplies OCR text, Files supplies UTF-8 text, and Office
-extracts bounded text from DOCX/XLSX/PPTX/OpenDocument/text files. Images, binary
-formats, formatting and live spreadsheet calculations are not interpreted.
+extracts bounded text from DOCX/XLSX/PPTX/OpenDocument/text files. Binary formats, formatting and live spreadsheet calculations are not interpreted
+by those file tools. Photos can explicitly attach an image preview as described below.
+
+## Ask about a photo
+
+In Photos, open an image from your Immich library or a cloud source and choose
+**Ask AI** (the sparkle button on phones). The panel shows the selected preview
+and an editable question: “Describe this photo and explain any visible text.”
+You can replace it, or choose a description, text-reading or caption suggestion.
+Nothing is sent to the AI service until you press **Ask**. Follow-up questions
+continue the same private conversation; **Open in Pocket AI** opens that thread.
+
+Photos reads the preview with your existing Photos session and prepares a JPEG
+up to 1,600 pixels on its longest side. Only that preview, its title/source/date
+context and your question are attached. The original photo stays unchanged.
+Cloud originals do not need importing first. Videos are not attached.
+
+Core validates the photo (JPEG/PNG, at most 2 MB), checks the Photos and AI app
+access for your Core account, and uploads it to Pocket AI using a short-lived
+credential for that person. The existing AI image attachment path sends the
+pixels to the selected model; this is not just a filename or a private URL the
+model cannot open. Photo content can therefore reach the AI provider used by
+Pocket AI. Failed previews show an error instead of silently sending text alone.
+No remote image URL, cloud password or Photos session is forwarded to the model.
 
 ## Extending and checking
 

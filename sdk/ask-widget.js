@@ -11,7 +11,7 @@ const panel=document.createElement('section');panel.className='panel';panel.hidd
 const close=document.createElement('button');close.className='close';close.type='button';close.textContent='×';close.setAttribute('aria-label','Close Pocket Ask');
 const hint=document.createElement('button');hint.className='hint';hint.hidden=true;hint.type='button';hint.textContent='Choose an item on the page · Esc to cancel';
 root.append(launch,panel,hint);document.body.append(host);
-let frame, source, picking=false, lastFocus;
+let frame, source, prompt, picking=false, lastFocus;
 const coreOrigin=new URL(config.core).origin;
 function pageContext(node) {
  const selected=window.getSelection()?.toString().trim()||'';
@@ -25,19 +25,29 @@ function pageContext(node) {
  for(const key of [...itemURL.searchParams.keys()])if(/token|secret|password|code|key/i.test(key))itemURL.searchParams.delete(key);
  return {app:config.app,url:itemURL.href,title:title.slice(0,300),selection:(selected||(item?.innerText||'')).slice(0,12000)};
 }
-function sendContext(){if(frame?.contentWindow)frame.contentWindow.postMessage({type:'pocket-ask-context',source,dark:document.documentElement.dataset.theme==='dark'||document.documentElement.classList.contains('dark')},coreOrigin)}
-function open(node){
- source=pageContext(node);lastFocus=document.activeElement;panel.hidden=false;launch.hidden=true;
+function sendContext(){if(frame?.contentWindow)frame.contentWindow.postMessage({type:'pocket-ask-context',source,prompt,dark:document.documentElement.dataset.theme==='dark'||document.documentElement.classList.contains('dark')},coreOrigin)}
+function open(node,detail){
+ source=pageContext(node);prompt='';
+ if(detail?.source){
+  const input=detail.source;
+  try{if(new URL(input.url,location.href).origin!==location.origin)return}catch{return}
+  source={app:config.app,url:new URL(input.url,location.href).href,title:String(input.title||'Photo').slice(0,300),selection:String(input.selection||'').slice(0,12000)};
+  if(config.app==='photos'&&typeof input.image?.data_url==='string'&&input.image.data_url.length<=2800000&&/^data:image\/(jpeg|png);base64,/.test(input.image.data_url))source.image={name:String(input.image.name||'photo.jpg').slice(0,240),data_url:input.image.data_url};
+  prompt=String(detail.prompt||'').slice(0,30000);
+  // An explicit photo action starts a fresh draft. Prior threads stay in history.
+  if(frame){frame.remove();frame=null;panel.replaceChildren()}
+ }
+ lastFocus=document.activeElement;panel.hidden=false;launch.hidden=true;host.setAttribute('open','');
  if(!frame){frame=document.createElement('iframe');frame.title='Ask about your Pocket applications';frame.referrerPolicy='no-referrer';frame.src=config.core+'/ask#'+encodeURIComponent(JSON.stringify({app:config.app,origin:location.origin}));frame.addEventListener('load',sendContext);panel.append(frame,close)}else sendContext();
  close.focus();
 }
-function hide(){panel.hidden=true;launch.hidden=false;lastFocus?.focus?.()}
+function hide(){host.removeAttribute('open');panel.hidden=true;launch.hidden=false;lastFocus?.focus?.()}
 function pick(on){picking=on;hint.hidden=!on;launch.hidden=on;document.documentElement.style.cursor=on?'crosshair':''}
 launch.querySelector('.open').onclick=()=>open();launch.querySelector('.pick').onclick=()=>pick(true);close.onclick=hide;hint.onclick=()=>pick(false);
 document.addEventListener('click',e=>{if(!picking||e.composedPath().includes(host))return;e.preventDefault();e.stopImmediatePropagation();pick(false);open(e.target)},true);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(picking)pick(false);else if(!panel.hidden)hide()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(picking){e.stopPropagation();pick(false)}else if(!panel.hidden){e.stopPropagation();hide()}}});
 window.addEventListener('message',e=>{if(e.origin!==coreOrigin||e.source!==frame?.contentWindow)return;if(e.data?.type==='pocket-ask-ready')sendContext();if(e.data?.type==='pocket-ask-close')hide()});
-window.addEventListener('pocket-ask',e=>open(e.detail?.element));
+window.addEventListener('pocket-ask',e=>open(e.detail?.element,e.detail));
 window.addEventListener('pocket-ask-pick',()=>pick(true));
 // App integrations may dispatch pocket-ask with an item element; the picker also
 // works on cards and rows that open drawers without changing the browser URL.
