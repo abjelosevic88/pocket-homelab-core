@@ -13,7 +13,7 @@ import (
 type mcpBrowserRoute struct{ page, item string }
 
 var mcpBrowserRoutes = map[string]mcpBrowserRoute{
-	"tasks/dashboard": {"/today", ""}, "collaborator/dashboard": {"/reviews", ""}, "money/subscriptions": {"/subscriptions", ""}, "garage/reminders": {"/reminders", ""},
+	"tasks/dashboard": {"/today", ""}, "collaborator/dashboard": {"/reviews", ""}, "money/subscriptions": {"/subscriptions", "/subscriptions/{id}"}, "garage/reminders": {"/reminders", ""},
 	"notes/notes": {"/", "/note/{id}"}, "notes/search": {"/", "/note/{id}"},
 	"tasks/tasks": {"/inbox", "/inbox?task={id}"}, "tasks/lists": {"/inbox", "/list/{id}"},
 	"calendar/events": {"/", "/event/{id}"}, "calendar/search": {"/", "/event/{id}"},
@@ -78,6 +78,50 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 	}
 	envelope["source_url"] = source
+	// Dashboard collections have different record kinds; decorate only their
+	// verified item fields, never arbitrary nested author or comment IDs.
+	itemLink := func(record map[string]any, field, route string) {
+		id := mcpScalar(record[field])
+		if mcpLinkID.MatchString(id) {
+			record["item_url"] = link(strings.ReplaceAll(route, "{id}", id))
+		}
+	}
+	if data, ok := envelope["result"].(map[string]any); ok {
+		if op.App == "tasks" && op.Path == "/dashboard" {
+			if rows, ok := data["next"].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/inbox?task={id}")
+					}
+				}
+			}
+		}
+		if op.App == "collaborator" && op.Path == "/dashboard" {
+			for _, key := range []string{"todo", "waiting", "tasks", "live"} {
+				if rows, ok := data[key].([]any); ok {
+					for _, row := range rows {
+						if m, ok := row.(map[string]any); ok {
+							if review, ok := m["review"].(map[string]any); ok {
+								itemLink(review, "id", "/reviews/{id}")
+							} else {
+								itemLink(m, "review_id", "/reviews/{id}")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if op.App == "garage" && op.Path == "/reminders" {
+		if rows, ok := envelope["result"].([]any); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					itemLink(m, "vehicle_id", "/vehicles/{id}/reminders")
+				}
+			}
+		}
+	}
+
 	// Only decorate result records or known pagination wrappers. Do not mistake
 	// nested comment/author IDs for review IDs or invoice line IDs for invoices.
 	childRecords := len(parts) > 2
