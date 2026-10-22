@@ -111,7 +111,7 @@ The three status tools work across all registered, permitted Pocket apps.
 | Files | Spaces, listings, metadata, search, text files | Create folders, create/replace text files |
 | Garage | Vehicles, maintenance records and notes | Create/edit vehicles, add notes |
 | Kitchen | Recipes, shopping lists and pantry | Create/edit recipes, add/edit/check shopping items |
-| Money | Accounts, categories and transactions | Record/edit expense or income bookkeeping |
+| Money | Spending/income summaries, accounts, categories and transactions | Record/edit expense or income bookkeeping |
 | Split | Groups, expenses and balances | Create groups and expense records |
 | Invoicing | Clients and invoices | Create/edit clients, create draft invoices |
 | Collaborator | Reviews, tasks and comments | Create reviews/tasks, edit/complete tasks |

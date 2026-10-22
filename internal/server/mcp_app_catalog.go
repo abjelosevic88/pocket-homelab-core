@@ -117,8 +117,9 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("notes", "list", "List your notes.", "/notes", "category tag sort limit since")
 	read("notes", "search", "Search note titles and content.", "/search", "q limit")
 	read("notes", "get", "Read a note's content and current etag.", "/notes/{id}", "")
-	read("notes", "folders", "List note folders.", "/folders", "")
+	read("notes", "folders", "List existing note folder paths. Use the exact folder name as category when creating or updating a note.", "/folders", "")
 	note := textFields("title content category etag").booleans("favorite pinned")
+	note["category"].(map[string]any)["description"] = "Folder path from pocket_notes_folders, e.g. Quick Notes. This is a name/path, not an ID."
 	write("notes", "create", "Create a personal note.", "POST", "/notes", note, "title content")
 	write("notes", "update", "Update only the supplied note fields; use its current etag to detect conflicting edits.", "PUT", "/notes/{id}", note, "etag")
 	write("notes", "append", "Append text to a note without replacing its existing content.", "POST", "/notes/{id}/append", textFields("text"), "text")
@@ -219,7 +220,8 @@ func buildMCPAppCatalog() []*mcpAppTool {
 
 	read("money", "accounts", "List financial accounts available to you.", "/accounts", "")
 	read("money", "categories", "List transaction categories.", "/categories", "")
-	read("money", "transactions", "Search your financial transactions.", "/transactions", "q account kind from to category limit offset")
+	read("money", "summary", "Get complete spending/income totals, category breakdowns, previous-period comparison and top expenses in ONE call. Prefer this for how much did I spend, monthly summaries and spending by category; do not fetch every transaction or query each category separately. All monetary values are integer minor units of the returned home currency (divide by 100 for EUR). With no dates, uses the current budget month; month=YYYY-MM follows the configured payday. Explicit from/to (inclusive YYYY-MM-DD) select calendar/custom ranges.", "/reports/overview", "from to month year account")
+	read("money", "transactions", "Search individual financial transactions. For aggregate spending/income or category totals, prefer pocket_money_summary. Category filters require numeric IDs, not category names.", "/transactions", "q account kind from to category limit offset")
 	read("money", "get_transaction", "Read one transaction.", "/transactions/{id}", "")
 	tx := textFields("date description payee notes currency").integers("account_id amount category_id").strings("tags").enum("kind", "expense", "income")
 	write("money", "create_transaction", "Record an expense or income. Amount is an integer in minor currency units (for example 1250 = 12.50 EUR). This records bookkeeping; it does not transfer funds.", "POST", "/transactions", tx, "account_id amount kind date description")

@@ -101,3 +101,23 @@ browser regression suite (install Chromium with `npx playwright install chromium
 first, or set `POCKET_ASK_CDP` to an existing Chromium debugging endpoint). Tests
 cover formatting, unsafe content, incomplete streamed replies, stable polling and
 320/390/460-pixel layouts in both themes.
+
+## Direct app access in ordinary Pocket AI threads
+
+After a person enables their Pocket Ask connection, normal Claude and Codex
+threads also receive the per-user proxy when starting or resuming a process.
+Claude receives a private MCP configuration; Codex receives a transient
+`mcp_servers.pocket` thread configuration override. Global CLI configuration and
+the user's model, reasoning effort and coding mode stay unchanged. Disconnected
+users keep coding access and get guidance to reconnect for app-data questions.
+
+These sessions use the same write approval gate as Ask. Switching a coding
+thread to full access never approves a pending Pocket write, and session-wide
+approval is rejected for Pocket operations. Agents receive instructions to use
+app tools directly for data tasks instead of discovering files, credentials or
+database locations. Coding tasks still use their usual development tools.
+
+`pocket_money_summary` exposes Money's existing report overview in one call:
+totals, categories, comparison period and top expenses. The response specifies
+the date range, home currency and integer minor-unit amounts. Notes tools explain
+that `category` is the folder path returned by `pocket_notes_folders`.

@@ -324,3 +324,42 @@ func TestMCPApplicationCatalogBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPMoneySummaryUsesOneAuthorizedReport(t *testing.T) {
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var calls atomic.Int32
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != "GET" || r.URL.Path != "/api/v1/reports/overview" || r.URL.Query().Get("from") != "2026-10-01" || r.URL.Query().Get("to") != "2026-10-31" {
+			t.Errorf("unexpected report request %s %s", r.Method, r.URL.String())
+		}
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer pcu_mcp_") {
+			t.Error("missing delegated identity")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"from":"2026-10-01","to":"2026-10-31","currency":"EUR","expense":1250,"categories":[{"name":"Food","sum":1250,"count":1}]}`))
+	}))
+	defer fake.Close()
+	f.app("money", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read")
+	session := mcpSessionWithToken(t, f.env, access)
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_money_summary", Arguments: map[string]any{"query": map[string]any{"from": "2026-10-01", "to": "2026-10-31"}}})
+	if err != nil || result.IsError || calls.Load() != 1 {
+		t.Fatalf("report failed: %v, calls=%d", err, calls.Load())
+	}
+	raw, _ := json.Marshal(result)
+	if !strings.Contains(string(raw), "categories") || !strings.Contains(string(raw), "1250") {
+		t.Fatal("aggregate results missing")
+	}
+	if _, err := f.st.DB.Exec(`UPDATE services SET audience='admins' WHERE type='money'`); err != nil {
+		t.Fatal(err)
+	}
+	result, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_money_summary", Arguments: map[string]any{}})
+	if err == nil && !result.IsError {
+		t.Fatal("revoked Money access still worked")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("revoked read reached Money")
+	}
+}
