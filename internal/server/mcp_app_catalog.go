@@ -170,6 +170,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 
 	read("bookshelf", "list", "Search books on your shelf.", "/books", "q status tag limit")
 	read("bookshelf", "get", "Read a book, review and reading progress.", "/books/{id}", "")
+	read("bookshelf", "reading", "Read what you are reading now: progress, pages read today, pace, days left and when each book will be finished.", "/reading/today", "")
 	book := textFields("title authors isbn13 isbn10 description tags review").integers("pages current_page").numbers("rating").enum("status", "want", "reading", "read", "abandoned")
 	write("bookshelf", "create", "Add a book to your shelf.", "POST", "/books", book, "title")
 	write("bookshelf", "update", "Update supplied book details, rating or review.", "PUT", "/books/{id}", book, "")
