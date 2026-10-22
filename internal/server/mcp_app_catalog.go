@@ -301,6 +301,31 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("monitoring", "get_server", "Read one accessible server's status.", "/servers/{id}", "")
 	read("monitoring", "snapshot", "Read current metrics for an accessible server.", "/servers/{id}/snapshot", "")
 	read("monitoring", "alerts", "Read monitoring alerts visible to you.", "/alerts", "server_id status limit")
+	read("projects", "summary", "Get your open, overdue and due-soon issues, in-progress counts, current cycles and projects that need attention in one call.", "/dashboard", "")
+	read("projects", "teams", "List the teams you are on with their workflow states, labels and members (use their names/ids when creating or updating issues).", "/teams", "")
+	read("projects", "issues", "Find issues. team = team key (WEB); status = open, done, started, backlog or triage; assignee_id = me or a numeric id; cycle = current or next; due = overdue, today, week or none; q = words or an identifier like WEB-12.", "/issues", "team status assignee_id priority project_id cycle due label_id q sort limit offset")
+	read("projects", "get_issue", "Read one issue by numeric id with its sub-issues, relations, attachments, comments and history.", "/issues/{id}", "")
+	issue := textFields("team title description state assignee due_date cycle parent_id").integers("priority project_id milestone_id").numbers("estimate").strings("labels")
+	issue["team"].(map[string]any)["description"] = "Team key, e.g. WEB (from pocket_projects_teams). Required when you are on several teams."
+	issue["state"].(map[string]any)["description"] = "A workflow state name of the team (e.g. In Progress) or a type: backlog, unstarted, started, completed, canceled."
+	issue["assignee"].(map[string]any)["description"] = "me, none, an email or an @name of a team member."
+	issue["priority"].(map[string]any)["description"] = "0 none, 1 urgent, 2 high, 3 medium, 4 low."
+	issue["cycle"].(map[string]any)["description"] = "current, next or none."
+	issue["labels"].(map[string]any)["description"] = "Label names; missing ones are created on the team."
+	write("projects", "create_issue", "Create an issue in a team (it gets an identifier like WEB-13). Dates are YYYY-MM-DD.", "POST", "/issues", issue, "title")
+	upd := textFields("title description state assignee due_date cycle parent_id").integers("priority project_id milestone_id").numbers("estimate").strings("labels").
+		field("add_label_ids", arraySchema(map[string]any{"type": "integer"})).field("remove_label_ids", arraySchema(map[string]any{"type": "integer"}))
+	write("projects", "update_issue", "Update supplied issue fields (title, description, state, priority, assignee, due date, project, cycle, labels); omitted fields stay as they are.", "PATCH", "/issues/{id}", upd, "")
+	write("projects", "comment", "Comment on an issue in Markdown; @name mentions notify team members.", "POST", "/issues/{id}/comments", textFields("body"), "body")
+	read("projects", "projects", "List projects you can see with status, health, progress, lead, start and target dates.", "/projects", "team_id status q")
+	read("projects", "get_project", "Read a project with milestones, latest status updates, documents, resources and stakeholders.", "/projects/{id}", "")
+	write("projects", "create_project", "Create a project for one or more of your teams.", "POST", "/projects",
+		textFields("name summary content start_date target_date").enum("status", "backlog", "planned", "started", "paused", "completed", "canceled").field("team_ids", arraySchema(map[string]any{"type": "integer"})), "name")
+	write("projects", "post_update", "Post a status update on a project; health is on_track, at_risk or off_track.", "POST", "/projects/{id}/updates", textFields("body").enum("health", "on_track", "at_risk", "off_track"), "body health")
+	read("projects", "cycles", "List the cycles (sprints) of your teams with progress; status = current, upcoming or past.", "/cycles", "team_id status")
+	read("projects", "calendar", "Dated items between from and to (YYYY-MM-DD): issue due dates, milestones, project starts and targets, cycles. scope = mine (default) or all.", "/calendar", "from to scope")
+	read("projects", "search", "Search issues, projects, project documents and comments.", "/search", "q limit")
+	read("projects", "inbox", "Read your Pocket Projects inbox: assignments, mentions, comments, status changes and reminders.", "/notifications", "filter limit")
 	read("ai", "threads", "Find your Pocket AI conversations.", "/threads", "q limit")
 	read("ai", "conversation", "Read the recent messages in one of your Pocket AI conversations.", "/ask-context/{id}", "")
 	return out
