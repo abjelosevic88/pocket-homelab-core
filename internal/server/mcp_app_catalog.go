@@ -114,6 +114,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		return add(app, name, description, method, path, fields, required, "")
 	}
 
+	read("tasks", "activity", "Read recent task activity (newest first), including task IDs and created/updated events. Useful for detecting newly created tasks.", "/activity", "task_id limit")
 	read("tasks", "summary", "Get task counts, overdue/due work and next tasks in one call.", "/dashboard", "")
 	read("collaborator", "summary", "Get review dashboard counts and pending review work in one call.", "/dashboard", "")
 	read("garage", "summary", "Get a vehicle overview, recorded costs, fuel and active maintenance reminders in one call. Costs can overlap Money: never add app totals without verifying shared transaction IDs. Similar dates/amounts are only possible duplicates.", "/vehicles/{id}/overview", "")
@@ -188,7 +189,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("contacts", "create", "Create a contact in an accessible address book.", "POST", "/contacts", mcpFields{}.integers("addressbook_id").field("card", objectSchema(card, "fn")).booleans("starred"), "addressbook_id card")
 	write("contacts", "label", "Star a contact or add categories without replacing its card.", "PATCH", "/contacts/{id}", mcpFields{}.booleans("starred").strings("add_categories"), "")
 
-	read("documents", "list", "Search document metadata and OCR matches.", "/documents", "q created_from created_to correspondent document_type limit offset")
+	read("documents", "list", "Search document metadata and OCR matches.", "/documents", "q created_from created_to correspondent document_type sort limit offset")
 	read("documents", "get", "Read document metadata.", "/documents/{id}", "")
 	read("documents", "text", "Read extracted document text; large documents may exceed the response limit.", "/documents/{id}/text", "").TextResponse = true
 	read("documents", "notes", "Read annotations on a document.", "/documents/{id}/notes", "")
