@@ -12,6 +12,19 @@ token introspection. The gateway uses their existing APIs; no separate MCP serve
 or app deployment is needed. Unsupported third-party services remain outside
 this application catalog.
 
+## Links in tool results
+
+Successful application calls include `app_url` (registered public app address)
+and `source_url` (the relevant page). Records with supported browser routes also
+include `item_url`, including reviews, notes, tasks, documents, transactions,
+recipes, vehicles and trips. Link these directly in assistant answers. Links use
+the public address rather than the internal API host and require normal app
+access; they do not create public shares or carry authorization tokens.
+
+Child resources such as review comments link to the containing review through
+`source_url`. Apps without individual browser routes provide a page/app link;
+assistants must not claim these links select a specific record or comment.
+
 ## Connect without a localhost redirect
 
 Use this option when Codex is on a remote machine or a browser callback to
