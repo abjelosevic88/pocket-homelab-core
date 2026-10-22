@@ -264,7 +264,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"needs_setup": n == 0 && s.cfg.AuthMode == "local", "auth_mode": s.cfg.AuthMode,
 		"authenticated": p != nil, "user": u, "version": Version, "title": st.Title, "box_name": st.BoxName,
-		"sso": s.ssoEnabled() && s.cfg.AuthMode == "local", "sso_name": s.cfg.SSOName, "password_login": s.cfg.PasswordLogin || s.cfg.AuthMode != "local",
+		"sso": s.ssoEnabled() && s.cfg.AuthMode == "local", "sso_name": s.signin().Name, "password_login": s.signin().PasswordLogin || s.cfg.AuthMode != "local",
 		"cookie_warning": s.cookieWarning(r),
 	})
 }
@@ -352,8 +352,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if !s.cfg.PasswordLogin {
-		writeErr(w, http.StatusForbidden, "password sign-in is switched off — use "+s.cfg.SSOName)
+	if !s.signin().PasswordLogin {
+		writeErr(w, http.StatusForbidden, "password sign-in is switched off — use "+s.signin().Name)
 		return
 	}
 	email := strings.TrimSpace(strings.ToLower(in.Email))

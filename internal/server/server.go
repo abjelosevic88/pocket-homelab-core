@@ -35,23 +35,26 @@ var Version = "dev"
 
 // Server holds dependencies.
 type Server struct {
-	cfg       *config.Config
-	store     *store.Store
-	log       *slog.Logger
-	webFS     fs.FS
-	hub       *events.Hub
-	oidc      *oidc.Provider
-	sso       *ssoProvider // upstream provider for signing in to Core itself
-	started   time.Time
-	requests  atomic.Int64
-	errors    atomic.Int64
-	http      *http.Client
-	connHTTP  *http.Client    // connectors talking to third-party apps
-	ctx       context.Context // lives as long as the server; background work hangs off it
-	polling   sync.Map        // service id → struct{}: a poll is running
-	nextPoll  sync.Map        // service id → time.Time: when the scheduler polls next
-	provMu    sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
-	rotations sync.WaitGroup  // background key replacements after a service link was switched off
+	cfg         *config.Config
+	store       *store.Store
+	log         *slog.Logger
+	webFS       fs.FS
+	hub         *events.Hub
+	oidc        *oidc.Provider
+	sso         *ssoProvider // upstream provider for signing in to Core itself (see ssoProv)
+	ssoMu       sync.Mutex
+	signinMu    sync.RWMutex
+	signinCache *signinSettings
+	started     time.Time
+	requests    atomic.Int64
+	errors      atomic.Int64
+	http        *http.Client
+	connHTTP    *http.Client    // connectors talking to third-party apps
+	ctx         context.Context // lives as long as the server; background work hangs off it
+	polling     sync.Map        // service id → struct{}: a poll is running
+	nextPoll    sync.Map        // service id → time.Time: when the scheduler polls next
+	provMu      sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
+	rotations   sync.WaitGroup  // background key replacements after a service link was switched off
 
 	hookMu    sync.Mutex // one subscription sync at a time
 	hookSyncs sync.Map   // service id → hookSyncResult: what the last sync found per person
@@ -69,7 +72,6 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 	ua := "PocketCore/" + Version + " (+https://github.com/abjelosevic88/pocket-homelab-core)"
 	return &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(),
 		hub:        events.New(st, log, cfg.WebhookAttempts, ua),
-		sso:        &ssoProvider{issuerURL: cfg.SSOIssuer},
 		http:       &http.Client{Timeout: 8 * time.Second},
 		connHTTP:   &http.Client{Timeout: 30 * time.Second},
 		ctx:        context.Background(),
@@ -330,6 +332,10 @@ func (s *Server) Router() http.Handler {
 				r.Get("/users/{id}/connectors", s.handleUserConnectors)
 
 				r.Get("/settings", s.handleGetSettings)
+				r.Get("/signin", s.handleGetSignin)
+				r.Put("/signin", s.handlePutSignin)
+				r.Post("/signin/test", s.handleTestSignin)
+				r.Delete("/signin", s.handleResetSignin)
 				r.Put("/settings", s.handlePutSettings)
 				r.Post("/settings/registration-key", s.handleRotateRegistrationKey)
 				r.Get("/backup", s.handleBackup)

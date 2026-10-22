@@ -50,7 +50,10 @@ type ssoDiscovery struct {
 
 var ssoHTTP = &http.Client{Timeout: 15 * time.Second}
 
-func (s *Server) ssoEnabled() bool { return s.cfg.SSOIssuer != "" && s.cfg.SSOClientID != "" }
+func (s *Server) ssoEnabled() bool {
+	c := s.signin()
+	return c.Enabled && c.Issuer != "" && c.ClientID != ""
+}
 
 func (s *Server) ssoCallbackURL() string { return s.cfg.BaseURL + "/api/v1/auth/sso/callback" }
 
@@ -177,7 +180,7 @@ func (s *Server) verifySSOToken(ctx context.Context, d *ssoDiscovery, raw, nonce
 	if json.Unmarshal(hb, &head) != nil || head.Alg != "RS256" {
 		return nil, fmt.Errorf("ID token algorithm %q is not RS256", head.Alg)
 	}
-	key, err := s.sso.key(ctx, d.JWKS, head.Kid)
+	key, err := s.ssoProv().key(ctx, d.JWKS, head.Kid)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +203,7 @@ func (s *Server) verifySSOToken(ctx context.Context, d *ssoDiscovery, raw, nonce
 	switch {
 	case c.Iss != d.Issuer:
 		return nil, errors.New("ID token from another issuer")
-	case !c.hasAudience(s.cfg.SSOClientID):
+	case !c.hasAudience(s.signin().ClientID):
 		return nil, errors.New("ID token for another client")
 	case time.Now().Unix() > c.Exp+60:
 		return nil, errors.New("ID token expired")
@@ -229,10 +232,10 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "single sign-on is not configured")
 		return
 	}
-	d, err := s.sso.discovery(r.Context())
+	d, err := s.ssoProv().discovery(r.Context())
 	if err != nil {
 		s.log.Warn("oidc discovery", "err", err)
-		http.Redirect(w, r, "/login?error="+url.QueryEscape("Cannot reach "+s.cfg.SSOName+" right now"), http.StatusFound)
+		http.Redirect(w, r, "/login?error="+url.QueryEscape("Cannot reach "+s.signin().Name+" right now"), http.StatusFound)
 		return
 	}
 	state, nonce, verifier := pccrypto.Token("", 16), pccrypto.Token("", 16), pccrypto.Token("", 32)
@@ -242,7 +245,7 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		Path: "/api/v1/auth/sso", HttpOnly: true, Secure: s.cfg.SecureCookies, SameSite: http.SameSiteLaxMode, MaxAge: 600,
 	})
 	q := url.Values{
-		"response_type": {"code"}, "client_id": {s.cfg.SSOClientID}, "redirect_uri": {s.ssoCallbackURL()},
+		"response_type": {"code"}, "client_id": {s.signin().ClientID}, "redirect_uri": {s.ssoCallbackURL()},
 		"scope": {"openid email profile"}, "state": {state}, "nonce": {nonce},
 		"code_challenge": {ssoChallenge(verifier)}, "code_challenge_method": {"S256"},
 	}
@@ -289,24 +292,24 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 		fail("The sign-in could not be matched to this browser — try again", nil)
 		return
 	}
-	d, err := s.sso.discovery(ctx)
+	d, err := s.ssoProv().discovery(ctx)
 	if err != nil {
-		fail("Cannot reach "+s.cfg.SSOName, err)
+		fail("Cannot reach "+s.signin().Name, err)
 		return
 	}
 	form := url.Values{
 		"grant_type": {"authorization_code"}, "code": {q.Get("code")}, "redirect_uri": {s.ssoCallbackURL()},
-		"client_id": {s.cfg.SSOClientID}, "code_verifier": {verifier},
+		"client_id": {s.signin().ClientID}, "code_verifier": {verifier},
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, d.Token, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	if s.cfg.SSOClientSecret != "" {
-		req.SetBasicAuth(url.QueryEscape(s.cfg.SSOClientID), url.QueryEscape(s.cfg.SSOClientSecret))
+	if s.signin().ClientSecret != "" {
+		req.SetBasicAuth(url.QueryEscape(s.signin().ClientID), url.QueryEscape(s.signin().ClientSecret))
 	}
 	res, err := ssoHTTP.Do(req)
 	if err != nil {
-		fail("Cannot reach "+s.cfg.SSOName, err)
+		fail("Cannot reach "+s.signin().Name, err)
 		return
 	}
 	var tok struct {
@@ -318,12 +321,12 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&tok)
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || tok.IDToken == "" {
-		fail(s.cfg.SSOName+" refused the sign-in", fmt.Errorf("token endpoint HTTP %d: %s %s", res.StatusCode, tok.Error, tok.Desc))
+		fail(s.signin().Name+" refused the sign-in", fmt.Errorf("token endpoint HTTP %d: %s %s", res.StatusCode, tok.Error, tok.Desc))
 		return
 	}
 	claims, err := s.verifySSOToken(ctx, d, tok.IDToken, nonce)
 	if err != nil {
-		fail("The answer from "+s.cfg.SSOName+" did not check out", err)
+		fail("The answer from "+s.signin().Name+" did not check out", err)
 		return
 	}
 	// some providers keep the email out of the ID token
@@ -344,12 +347,12 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
 	if email == "" || claims.EmailVerified == nil || !*claims.EmailVerified {
-		fail("Your "+s.cfg.SSOName+" account needs a verified email address", nil)
+		fail("Your "+s.signin().Name+" account needs a verified email address", nil)
 		return
 	}
 	u, err := s.store.GetUserByEmail(ctx, email)
 	if err != nil {
-		if !s.cfg.SSOAutoCreate {
+		if !s.signin().AutoCreate {
 			fail("No account on this box for "+email+" — ask the admin to add you under Users", nil)
 			return
 		}

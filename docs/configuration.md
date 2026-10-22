@@ -43,7 +43,29 @@ Everything is read from environment variables; every value has a default so a ba
 
 Core is the OpenID provider for the Pocket apps; it can itself sign people in through another provider. Set `SSO_*` and the login page gets a “Sign in with PocketID” button. When an app sends someone to Core's `/oidc/authorize` without a Core session, they go to Core's login, then to PocketID (passkey), back to Core, and on to the app — one hop each way, with no password stored anywhere. Core checks the upstream ID token's RS256 signature against the provider's keys, and its issuer, audience, expiry and nonce, then matches the person to a Core user by **verified** email (disabled users are refused). Once it works, `PASSWORD_LOGIN=false` turns passwords off; app, device and API tokens are unaffected.
 
-In PocketID: *OIDC Clients → Add*, callback `BASE_URL/api/v1/auth/sso/callback`, PKCE on, group restriction off (or add yourself to an allowed group).
+**Set it up in Settings → Single sign-on → How people sign in to Core** (admins). It takes over from `SSO_*` and
+`PASSWORD_LOGIN` the moment it is saved, without a restart; *Use the server's settings* hands control back to the
+environment. The client secret is stored sealed with the box key and never shown again. Passwords can only be switched
+off while a provider is on and answers its discovery document, and the provider cannot be switched off while passwords
+are off — the box cannot be locked.
+
+In PocketID, step by step:
+
+1. *Settings → OIDC Clients → Add OIDC client*. Name: Pocket Core.
+2. **Callback URLs:** `BASE_URL/api/v1/auth/sso/callback` (e.g. `https://core.example.com/api/v1/auth/sso/callback`;
+   the Settings page shows yours with a Copy button).
+3. **Public client: off** — Core keeps a client secret (a confidential client).
+4. **PKCE: on** — Core always sends a challenge.
+5. **Group restriction: off**, or pick the groups whose members may sign in. PocketID v2 starts new clients restricted
+   to no groups, which refuses everyone with "You are not allowed to access this service".
+6. Save; copy the **Client ID** and the **Client secret** (shown once) into Core.
+7. **Issuer:** PocketID's own address (`https://auth.example.com`). *Test* checks Core can read its configuration.
+8. For each person, the PocketID email must equal their Core email and **Email verified** must be on.
+9. Save, try *Continue with PocketID* in a private window, and only then switch passwords off if you want to.
+
+"New people from PocketID" (`SSO_AUTO_CREATE`) is off by default: only people who already have a Core account can sign in.
+Authentik, Keycloak, Authelia and other OpenID Connect providers work the same way (confidential client, this callback,
+scopes `openid email profile`).
 
 ## Tokens at a glance
 

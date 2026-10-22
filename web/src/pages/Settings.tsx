@@ -9,12 +9,13 @@ import { Icon } from '../components/icons'
 import { CredentialsModal, Tokens } from './Users'
 import { Select } from '../components/Select'
 import { MyLinks } from './Links'
+import { SignInMethods } from './SignInMethods'
 
 type TabId = 'box' | 'sso' | 'profile' | 'links' | 'logins' | 'tokens' | 'about'
 
 const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boolean; member?: boolean }[] = [
   { id: 'box', label: 'Box', icon: 'server', sub: 'The box’s name and title, and the key Pocket apps use to join it.', admin: true },
-  { id: 'sso', label: 'Single sign-on', icon: 'shield', sub: 'Core is an OpenID provider: Pocket apps and other services sign people in with their Core account.', admin: true },
+  { id: 'sso', label: 'Single sign-on', icon: 'shield', sub: 'How people sign in to Core (passwords, PocketID…), and the services that sign people in with their Core account.', admin: true },
   { id: 'profile', label: 'Profile', icon: 'user', sub: 'Your name, password and how Core looks for you.' },
   { id: 'links', label: 'Apps acting for me', icon: 'nodes', sub: 'Pocket apps that can do things in another app as you. Switching one off stops it at once, for you only.' },
   { id: 'logins', label: 'My logins', icon: 'key', sub: 'Your own login for a service, where it differs from the household one.', member: true },
@@ -226,6 +227,7 @@ function OIDCClients() {
   const rotate = async (c: OIDCClient) => { const r = await api.put<{ client: OIDCClient; client_secret: string }>(`${V1}/oidc/clients/${c.id}`, { rotate_secret: true }); setSecret({ id: c.client_id, secret: r.client_secret }) }
   return (
     <div className="stack loose">
+      <SignInMethods />
       <Section title="Clients" icon="shield" sub={<>Point Immich, Nextcloud, Paperless, Audiobookshelf, Kavita, Jellyfin (SSO plugin) or any Pocket app at <code>{issuer}</code> and everyone signs in with their Core account. Pocket apps that ask in their manifest get a client automatically.</>}
         actions={<button type="button" className="btn sm primary" onClick={() => setEdit({ name: '', redirect_uris: '', public: false })}><Icon name="plus" size={14} />Add client</button>}>
         {!data ? <Loading /> : data.length === 0 ? <p className="muted small">No clients yet.</p> : <div className="client-list">{data.map(c => (

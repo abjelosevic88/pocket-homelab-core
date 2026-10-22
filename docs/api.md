@@ -119,3 +119,12 @@ Outside `/api/v1`: `/.well-known/openid-configuration`, `/oidc/authorize`, `/oid
         - { field: services_enabled, label: Services }
         - { field: listeners, label: Listeners }
 ```
+
+### Sign-in methods (admin)
+
+| Route | |
+| --- | --- |
+| `GET /api/v1/signin` | `{enabled, issuer, client_id, has_secret, name, auto_create, password_login, callback_url, source: settings\|env\|none, auth_mode}` |
+| `PUT /api/v1/signin` | same fields plus `client_secret` (empty keeps the stored one); refuses a dead issuer and any lock-out |
+| `POST /api/v1/signin/test` | `{issuer}` → the provider's discovery `issuer` and `authorization_endpoint` |
+| `DELETE /api/v1/signin` | forget the settings; `SSO_*` / `PASSWORD_LOGIN` apply again |

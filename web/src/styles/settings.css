@@ -119,3 +119,12 @@
 .set-nav-item:nth-child(7) { animation-delay: .21s; } .set-nav-item:nth-child(8) { animation-delay: .235s; }
 .set-nav-item:nth-child(9) { animation-delay: .26s; } .set-nav-item:nth-child(n+10) { animation-delay: .285s; }
 .set-inner { animation: set-swap .26s var(--ease) both; }
+
+/* Settings → Single sign-on: how people sign in to Core */
+.signin-row { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.signin-row:last-child { border-bottom: 0; }
+.signin-row b { font-size: 13.5px; }
+.signin-provider { padding: 4px 0 6px; }
+.signin-guide-toggle { align-self: flex-start; justify-self: start; justify-content: flex-start; width: auto; }
+.signin-guide { margin: 0; padding-left: 26px; display: grid; gap: 6px; font-size: 13px; line-height: 1.5; }
+.signin-guide code { overflow-wrap: anywhere; }
