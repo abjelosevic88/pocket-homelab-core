@@ -383,3 +383,30 @@ func TestMCPMoneySummaryUsesOneAuthorizedReport(t *testing.T) {
 		t.Fatal("revoked read reached Money")
 	}
 }
+
+func TestMCPProjectsLinkPR(t *testing.T) {
+	for _, op := range mcpAppCatalog {
+		if op.Name != "pocket_projects_link_pr" {
+			continue
+		}
+		if op.Method != "POST" || op.Path != "/issues/{id}/pull-requests" {
+			t.Fatalf("link_pr: %s %s", op.Method, op.Path)
+		}
+		props := op.Schema["properties"].(mcpFields)
+		if props["id"] == nil {
+			t.Fatal("link_pr lacks the issue id")
+		}
+		data := props["data"].(map[string]any)
+		fields := data["properties"].(mcpFields)
+		for _, f := range []string{"url", "title", "branch", "repo", "number"} {
+			if fields[f] == nil {
+				t.Fatalf("link_pr lacks %s", f)
+			}
+		}
+		if req, _ := data["required"].([]string); len(req) != 1 || req[0] != "url" {
+			t.Fatalf("link_pr required: %v", data["required"])
+		}
+		return
+	}
+	t.Fatal("pocket_projects_link_pr missing")
+}

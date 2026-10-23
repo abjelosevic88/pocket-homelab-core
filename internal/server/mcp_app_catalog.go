@@ -320,6 +320,9 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		field("add_label_ids", arraySchema(map[string]any{"type": "integer"})).field("remove_label_ids", arraySchema(map[string]any{"type": "integer"}))
 	write("projects", "update_issue", "Update supplied issue fields (title, description, state, priority, assignee, due date, project, cycle, labels); omitted fields stay as they are.", "PATCH", "/issues/{id}", upd, "")
 	write("projects", "comment", "Comment on an issue in Markdown; @name mentions notify team members.", "POST", "/issues/{id}/comments", textFields("body"), "body")
+	linkPR := textFields("url title branch repo").integers("number")
+	linkPR["url"].(map[string]any)["description"] = "The pull request's address, e.g. https://github.com/owner/repo/pull/12."
+	write("projects", "link_pr", "Link a pull request you opened to an issue (numeric id); Pocket Projects then tracks whether it is merged and completes the issue when it is.", "POST", "/issues/{id}/pull-requests", linkPR, "url")
 	read("projects", "projects", "List projects you can see with status, health, progress, lead, start and target dates.", "/projects", "team_id status q")
 	read("projects", "get_project", "Read a project with milestones, latest status updates, documents, resources and stakeholders.", "/projects/{id}", "")
 	write("projects", "create_project", "Create a project for one or more of your teams.", "POST", "/projects",
