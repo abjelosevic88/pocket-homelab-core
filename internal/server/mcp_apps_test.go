@@ -318,7 +318,7 @@ func TestMCPApplicationCatalogBoundary(t *testing.T) {
 			}
 		}
 	}
-	for _, app := range strings.Fields("bookshelf calendar clips collaborator contacts day documents files garage habits hub inventory invoicing kitchen money notes office podcasts projects split subtitles tasks travel") {
+	for _, app := range strings.Fields("bookshelf calendar clips collaborator contacts day documents files garage habits hub inventory invoicing kitchen money movement notes office podcasts projects split subtitles tasks travel") {
 		if !reads[app] || !writes[app] {
 			t.Errorf("%s missing read or create/update support", app)
 		}
