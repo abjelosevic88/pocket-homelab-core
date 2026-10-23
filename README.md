@@ -29,6 +29,40 @@ Every Pocket app is a small Go server with its own SQLite file. They already tal
 
 Core runs on your box, next to the apps. You choose which service endpoints, identity providers and webhooks it contacts, and whether to make its authenticated MCP endpoint reachable remotely.
 
+<p align="center"><img src="docs/screenshots/overview.png" width="900" alt="The Overview page: 18 of 18 apps up, 26 services, 4 paired devices, every registered Pocket app with its version and health, and the latest events from the bus"></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/links-diagram.png" alt="The Links diagram: arrows from each Pocket app to the apps it may read or change for a person, labelled with the permission"></td>
+    <td width="50%"><img src="docs/screenshots/pair-device.png" alt="The Pair a device dialog with a QR code and an eight-character pairing code"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>App links: who may see or change what in which app, with a switch on every arrow.</sub></td>
+    <td align="center"><sub>Pair a phone with one QR code; it receives every service on the box.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/events.png" alt="The event log grouped by day, with one Kitchen event opened to show its recipe and servings"></td>
+    <td width="50%"><img src="docs/screenshots/people.png" alt="The People page listing two admins and three members of the household"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Every event on the bus, live, filterable and replayable.</sub></td>
+    <td align="center"><sub>One account per person, signed in to every app on the box.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/apps.png" alt="The Apps registry: a card per Pocket app with its version, description, env prefix and health"></td>
+    <td width="50%"><img src="docs/screenshots/overview-dark.png" alt="The Overview page in dark mode"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Apps register themselves on start; Core checks their health.</sub></td>
+    <td align="center"><sub>Dark mode.</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/screenshots/phone-overview.png" width="240" alt="The Overview on a phone">&nbsp;&nbsp;
+  <img src="docs/screenshots/phone-links-dark.png" width="240" alt="The Links diagram on a phone, dark">
+</p>
+
 ## Run it
 
 ```sh
