@@ -325,6 +325,26 @@ func TestMCPApplicationCatalogBoundary(t *testing.T) {
 	}
 }
 
+func TestMCPProjectsRememberTakesTeamKey(t *testing.T) {
+	for _, op := range mcpAppCatalog {
+		if op.Name != "pocket_projects_remember" {
+			continue
+		}
+		if op.Method != "POST" || op.Path != "/teams/{team}/memory" {
+			t.Fatalf("remember: %s %s", op.Method, op.Path)
+		}
+		team := op.Schema["properties"].(mcpFields)["team"].(map[string]any)
+		re := regexp.MustCompile(team["pattern"].(string))
+		for v, ok := range map[string]bool{"AS": true, "web": true, "12": true, "../x": false, "AS/1": false, "": false} {
+			if re.MatchString(v) != ok {
+				t.Fatalf("team %q accepted=%v", v, !ok)
+			}
+		}
+		return
+	}
+	t.Fatal("pocket_projects_remember missing")
+}
+
 func TestMCPMoneySummaryUsesOneAuthorizedReport(t *testing.T) {
 	f := newOAuthFixture(t)
 	f.s.cfg.MCPAppToolsEnabled = true
