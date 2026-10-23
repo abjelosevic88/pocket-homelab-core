@@ -326,6 +326,24 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("projects", "calendar", "Dated items between from and to (YYYY-MM-DD): issue due dates, milestones, project starts and targets, cycles. scope = mine (default) or all.", "/calendar", "from to scope")
 	read("projects", "search", "Search issues, projects, project documents and comments.", "/search", "q limit")
 	read("projects", "inbox", "Read your Pocket Projects inbox: assignments, mentions, comments, status changes and reminders.", "/notifications", "filter limit")
+	read("movement", "summary", "What a day or a range (at most 92 days) looked like: distance, journeys with transport modes, the places you stopped at in order, countries. date = YYYY-MM-DD, or from and to.", "/summary", "date from to")
+	read("movement", "where", "Where you were at a given time: the visit or journey then and the nearest recorded position. at = local time like 2026-10-20T14:30 (or ISO 8601).", "/where", "at")
+	read("movement", "now", "Your newest position: the place or journey it belongs to, each phone's last report and battery, and today so far.", "/now", "")
+	read("movement", "day", "One day's timeline in order: visits (place, times, confirmed or suggested) and journeys (mode, distance, duration).", "/day/{date}", "")
+	read("movement", "insights", "Report for a year (year = 2026) or a range (from, to as YYYY-MM-DD): distance, days tracked, months, transport modes, countries, cities, top places, records and time at home, work and elsewhere.", "/insights", "year from to")
+	read("movement", "countries", "Every country you have been to, with first and last day and the years.", "/countries", "")
+	read("movement", "places", "Your places with how often and how long you were there. kind = saved or discovered; q filters by name, address or city; sort = visits, time, recent or name.", "/places", "kind q sort visited limit")
+	read("movement", "get_place", "Read one place with its visits and when you usually go there (by hour and weekday).", "/places/{id}", "")
+	read("movement", "visits", "List visits between start_at and end_at (ISO 8601); status = suggested, confirmed or declined.", "/visits", "start_at end_at status place_id limit")
+	read("movement", "search", "Find your places by name, address or city.", "/search", "q limit")
+	visit := textFields("name notes").integers("place_id").enum("status", "suggested", "confirmed", "declined")
+	visit["name"].(map[string]any)["description"] = "Names the visit's place, so every visit there shows it."
+	write("movement", "update_visit", "Confirm, decline or rename a visit, or move it to another of your places (place_id).", "PATCH", "/visits/{id}", visit, "")
+	place := textFields("name category notes address").numbers("lat lng radius").booleans("hidden")
+	place["category"].(map[string]any)["description"] = "home, work, school, family, food, shop, sport, health, travel, leisure, nature or other."
+	place["radius"].(map[string]any)["description"] = "Metres, 15 to 5000 (default 100)."
+	write("movement", "create_place", "Save a place (home, work, the gym…) with a radius: every visit inside it, past ones too, gets its name and is confirmed.", "POST", "/places", place, "lat lng")
+	write("movement", "update_place", "Rename, recategorise, move or resize one of your places; omitted fields stay as they are.", "PUT", "/places/{id}", place, "")
 	read("ai", "threads", "Find your Pocket AI conversations.", "/threads", "q limit")
 	read("ai", "conversation", "Read the recent messages in one of your Pocket AI conversations.", "/ask-context/{id}", "")
 	return out
