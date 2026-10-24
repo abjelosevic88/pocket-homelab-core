@@ -23,6 +23,7 @@ type ChoiceOption struct {
 
 // Choices in the order Core shows them. The Pocket app is always first.
 var Choices = []Choice{
+	{Slot: "audiobooks", Title: "Audiobooks", EnvKey: "AUDIOBOOKS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Audiobooks", "audiobooks"}, {"audiobookshelf", "Audiobookshelf", "audiobookshelf"}}},
 	{Slot: "money", Title: "Money", EnvKey: "MONEY_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Money", "money"}, {"firefly", "Firefly III", "firefly"}}},
 	{Slot: "watch", Title: "Watch", EnvKey: "WATCH_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Watch", "watch"}, {"jellyfin", "Jellyfin", "jellyfin"}}},
 	{Slot: "music", Title: "Music", EnvKey: "MUSIC_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Music", "music"}, {"navidrome", "Navidrome", "navidrome"}}},

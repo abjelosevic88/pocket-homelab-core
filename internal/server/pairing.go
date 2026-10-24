@@ -296,6 +296,7 @@ func (s *Server) buildProfile(r *http.Request, u *store.User, d *store.Device, d
 		types[ps.Type] = true
 	}
 	if stored, err := s.store.ListChoices(ctx, u.ID); err == nil {
+		profileAudiobooks(prof, stored["audiobooks"], types)
 		for _, c := range catalog.Choices {
 			if v, explicit := c.Resolve(stored[c.Slot], types); explicit {
 				core.Env[c.EnvKey] = v
@@ -361,4 +362,37 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.hub.Publish(r.Context(), &store.Event{Topic: "core.device.revoked", Source: "core", Subject: fmt.Sprintf("device:%d", d.ID), Payload: mustJSON(map[string]any{"name": d.Name})})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Pocket Homelab already supports the ABS protocol. Export the selected gateway
+// using its existing ABS_URL/ABS_TOKEN keys so paired clients need no update.
+// Never export the direct backend's credentials alongside the chosen gateway.
+func profileAudiobooks(prof *Profile, stored string, types map[string]bool) {
+	choice, _ := catalog.ChoiceFor("audiobooks")
+	selected, _ := choice.Resolve(stored, types)
+	if selected != "pocket" {
+		return
+	}
+	index := -1
+	for i, service := range prof.Services {
+		if service.Type == "audiobooks" && service.URL != "" && service.Env["AUDIOBOOKS_API_KEY"] != "" {
+			index = i
+			break
+		}
+	}
+	// A browser preview without a device token must not replace a working ABS
+	// account with an empty token. Paired devices receive their own pcd_ token.
+	if index < 0 {
+		return
+	}
+	gateway := &prof.Services[index]
+	gateway.Env["ABS_URL"] = gateway.URL
+	gateway.Env["ABS_TOKEN"] = gateway.Env["AUDIOBOOKS_API_KEY"]
+	out := make([]ProfileService, 0, len(prof.Services))
+	for _, service := range prof.Services {
+		if service.Type != "audiobookshelf" {
+			out = append(out, service)
+		}
+	}
+	prof.Services = out
 }
