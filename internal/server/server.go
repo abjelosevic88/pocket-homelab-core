@@ -250,6 +250,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/system", s.handleSystem)
 			r.Get("/overview", s.handleOverview)
 			r.Get("/me/services", s.handleMyServices)
+			r.Get("/me/choices", s.handleMyChoices)
+			r.Put("/me/choices/{slot}", s.handleSetChoice)
 			r.Get("/me/ai-connections", s.handleMCPConnections)
 			r.Post("/me/ai-connections/token", s.handleMCPConnectionToken)
 			r.Delete("/me/ai-connections/{id}", s.handleMCPDisconnect)
