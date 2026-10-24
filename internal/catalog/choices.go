@@ -1,7 +1,8 @@
 package catalog
 
 // Choice is a place in Pocket Homelab that one of two apps fills: Money is
-// Pocket Money or Firefly III, Music is Pocket Music or Navidrome. When a
+// Pocket Money or Firefly III, Music is Pocket Music or Navidrome, Watch is
+// Pocket Watch or Jellyfin. When a
 // person's profile carries both, the choice they made in Core goes to their
 // devices as EnvKey (MONEY_BACKEND=firefly); without one the client takes the
 // Pocket app.
@@ -24,6 +25,7 @@ type ChoiceOption struct {
 var Choices = []Choice{
 	{Slot: "money", Title: "Money", EnvKey: "MONEY_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Money", "money"}, {"firefly", "Firefly III", "firefly"}}},
 	{Slot: "music", Title: "Music", EnvKey: "MUSIC_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Music", "music"}, {"navidrome", "Navidrome", "navidrome"}}},
+	{Slot: "watch", Title: "Watch", EnvKey: "WATCH_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Watch", "watch"}, {"jellyfin", "Jellyfin", "jellyfin"}}},
 	{Slot: "podcasts", Title: "Podcasts", EnvKey: "PODCASTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Podcasts", "podcasts"}, {"pinepods", "PinePods", "pinepods"}}},
 	{Slot: "documents", Title: "Documents", EnvKey: "DOCUMENTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Documents", "documents"}, {"paperless", "Paperless-ngx", "paperless"}}},
 	{Slot: "notes", Title: "Notes", EnvKey: "NOTES_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Notes", "notes"}, {"nextcloud", "Nextcloud Notes", "nextcloud"}}},
