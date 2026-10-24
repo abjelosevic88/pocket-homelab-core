@@ -91,6 +91,7 @@ var entries = []Entry{
 	{Type: "watch", Name: "Pocket Watch", Prefix: "WATCH", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "audiobooks", Name: "Pocket Audiobooks", Prefix: "AUDIOBOOKS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "backups", Name: "Pocket Backups", Prefix: "BACKUPS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
+	{Type: "library", Name: "Pocket Library", Prefix: "LIBRARY", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "podcasts", Name: "Pocket Podcasts", Prefix: "PODCASTS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "notes", Name: "Pocket Notes", Prefix: "NOTES", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "office", Name: "Pocket Office", Prefix: "OFFICE", Group: "Pocket", Pocket: true, Fields: apiKey("")},
