@@ -44,3 +44,14 @@ Env prefixes and field names match the client's template exactly, e.g. `NEXTCLOU
 ## From the console
 
 `pocket-core pair` prints a code and the QR URL without a browser: useful on a box's first boot or over SSH.
+
+## Audiobook provider
+
+Devices → Apps on your devices → Audiobooks selects Pocket Audiobooks or Audiobookshelf. Automatic prefers
+Pocket Audiobooks when it is visible in the person's profile. Selecting Audiobookshelf keeps the direct connection.
+
+For Pocket Audiobooks, the device profile exports its base URL as `ABS_URL` and its Pocket credential as `ABS_TOKEN`,
+in addition to `AUDIOBOOKS_URL` / `AUDIOBOOKS_API_KEY`. The direct Audiobookshelf service is omitted from that profile
+so it cannot overwrite these keys or deliver unnecessary backend credentials. Pocket Homelab's existing ABS player
+therefore works without an app update. Profiles without a usable Pocket credential retain the direct ABS settings.
+Refresh the Core configuration in the app to apply the selection; manually overridden fields stay manual.
