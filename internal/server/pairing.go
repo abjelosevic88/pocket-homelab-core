@@ -289,6 +289,19 @@ func (s *Server) buildProfile(r *http.Request, u *store.User, d *store.Device, d
 		}
 		prof.Services = append(prof.Services, ps)
 	}
+	// Where the person has both apps of a slot and chose one in Core, say which.
+	// Without a choice nothing is sent and the client takes the Pocket app.
+	types := map[string]bool{}
+	for _, ps := range prof.Services[1:] {
+		types[ps.Type] = true
+	}
+	if stored, err := s.store.ListChoices(ctx, u.ID); err == nil {
+		for _, c := range catalog.Choices {
+			if v, explicit := c.Resolve(stored[c.Slot], types); explicit {
+				core.Env[c.EnvKey] = v
+			}
+		}
+	}
 	sort.SliceStable(prof.Services[1:], func(i, j int) bool {
 		a, b := prof.Services[i+1], prof.Services[j+1]
 		if a.Group != b.Group {
