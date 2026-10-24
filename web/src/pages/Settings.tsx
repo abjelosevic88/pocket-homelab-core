@@ -19,7 +19,7 @@ const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boole
   { id: 'sso', label: 'Single sign-on', icon: 'shield', sub: 'How people sign in to Core (passwords, PocketID…), and the services that sign people in with their Core account.', admin: true },
   { id: 'profile', label: 'Profile', icon: 'user', sub: 'Your name, password and how Core looks for you.' },
   { id: 'links', label: 'Apps acting for me', icon: 'nodes', sub: 'Pocket apps that can do things in another app as you. Switching one off stops it at once, for you only.' },
-  { id: 'logins', label: 'My logins', icon: 'key', sub: 'Your own login for a service, where it differs from the household one.', member: true },
+  { id: 'logins', label: 'My logins', icon: 'key', sub: 'Your own login for each service. Pocket apps only ever use these — the household’s shared key stays in Core.' },
   { id: 'tokens', label: 'API tokens', icon: 'code', sub: 'Personal tokens for scripts, Raycast and Homepage widgets.' },
   { id: 'about', label: 'About', icon: 'info', sub: 'Version, the server and its numbers.' },
 ]
@@ -158,7 +158,7 @@ function MyCredentials() {
   const [open, setOpen] = useState(false)
   if (!user) return null
   return (
-    <Section title="Service logins" icon="key" sub="Your phone receives the household's credentials unless you set your own here, for example your Jellyfin user."
+    <Section title="Service logins" icon="key" sub="Pocket apps reach a service (Navidrome, Immich, Jellyfin…) only with your own login from here — admins included. Your phone receives the household's credentials unless you set your own."
       actions={<button type="button" className="btn sm primary" onClick={() => setOpen(true)}><Icon name="edit" size={14} />Edit my logins</button>}>
       {open && <CredentialsModal user={user} onClose={() => setOpen(false)} />}
     </Section>

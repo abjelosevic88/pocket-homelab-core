@@ -87,7 +87,7 @@ export function CredentialsModal({ user, onClose }: { user: User; onClose: () =>
   const list = (data || []).filter(c => c.visible || c.set)
   return (
     <Modal title={`${user.name || user.email} · credentials`} onClose={onClose} size="lg">
-      <p className="muted small">Services this person receives, with their own login where it differs from the box-wide one. Leave a service alone to hand out the shared credential.</p>
+      <p className="muted small">Services this person receives, with their own login. Their phone gets the shared credential when none is set here; Pocket apps never do — they only use the person's own login.</p>
       {loading ? <Loading /> : list.length === 0 ? <p className="muted">Nothing is visible to this user yet. Set a service's audience under Services.</p> :
         <table className="table compact mt"><tbody>{list.map(c => <tr key={c.service.id}>
           <td><b>{c.service.name || c.service.catalog.name}</b>{c.set && <span className="badge cat" style={{ marginLeft: 6 }} title={c.source === 'connector' ? 'Made by Core through the connector' : 'Set by hand'}>{c.source === 'connector' ? 'own · by Core' : 'own'}</span>}{!c.visible && <span className="badge warn" style={{ marginLeft: 6 }}>hidden</span>}
