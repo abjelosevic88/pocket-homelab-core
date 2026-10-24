@@ -158,8 +158,29 @@ function PairChip({ g, side, apps, onOpen, both }: { g: LinkGroup; side: Side; a
   )
 }
 
-function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll }: {
-  s: Subject; side: Side; apps: App[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void
+// An opened card's link: the other app on top, one switch per permission under it.
+function PairBox({ g, side, apps, onOpen, flip }: { g: LinkGroup; side: Side; apps: App[]; onOpen: () => void; flip: (l: AppLink, on: boolean) => void }) {
+  const slug = side === 'uses' ? g.target : g.app, name = side === 'uses' ? g.targetName : g.appName
+  const st = pairState(g), direct = directCount(g)
+  return (
+    <div className={`lk-box ${st}`}>
+      <button type="button" className="lk-box-head" onClick={onOpen} title={`Details: ${g.appName} → ${g.targetName}`}>
+        <Ico slug={slug} name={name} apps={apps} /><b>{short(name)}</b>
+        {st === 'bad' && <span className="lk-tag bad">{stateWord.bad}</span>}
+        {direct > 0 && <span className="lk-tag direct" title={`${direct} connect directly with a pasted key: these switches don't control that`}>↗{direct}</span>}
+        <Icon name="chevron-right" size={14} className="lk-box-go" />
+      </button>
+      {g.links.map(l => (
+        <div key={l.id} className={`lk-perm${l.enabled ? '' : ' off'}`}>
+          <span className="grow" title={l.scope_description || l.scope}>{isService(g.target) ? 'Use each person’s account' : scopeLabel(l)}</span>
+          <Switch size="sm" on={l.enabled} onChange={on => flip(l, on)} title={l.enabled ? 'On for the box: each person can still switch it off' : 'Off for everyone'} />
+        </div>))}
+    </div>
+  )
+}
+
+function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll, flip }: {
+  s: Subject; side: Side; apps: App[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void; flip: (l: AppLink, on: boolean) => void
 }) {
   const off = s.pairs.filter(g => ['off', 'partial'].includes(pairState(g))).length
   const bad = s.pairs.filter(g => pairState(g) === 'bad').length
@@ -194,7 +215,7 @@ function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll }: {
                   <h4 className="lc-h">{sec.title} <span className="muted">· {sec.pairs.length}</span></h4>
                   {sec.pairs.length > 1 && <button type="button" className="linkish small" onClick={() => setAll(sec.pairs, !allOn, `${sec.title.toLowerCase()} (${s.name})`)}>{allOn ? 'Switch all off' : 'Switch all on'}</button>}
                 </div>
-                <div className="lk-chips">{sec.pairs.map(g => <PairChip key={g.key} g={g} side={side} apps={apps} onOpen={() => onOpen(g)} />)}</div>
+                <div className="lk-boxes">{sec.pairs.map(g => <PairBox key={g.key} g={g} side={side} apps={apps} onOpen={() => onOpen(g)} flip={flip} />)}</div>
               </section>)
           })}
           {open && s.idle.length > 0 && <p className="muted small lk-idle">Offered, no app uses it yet: {s.idle.map(o => o.name || o.scope).join(', ')}</p>}
@@ -251,7 +272,7 @@ export default function Links() {
   const pair = picked ? groups.find(g => g.key === picked) : undefined
   const bad = groups.filter(g => pairState(g) === 'bad')
   const pocketCards = shown.filter(s => !s.service), serviceCards = shown.filter(s => s.service)
-  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} />
+  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} flip={flip} />
   const ico = (slug: string, name: string) => <Ico slug={slug} name={name} apps={apps || []} />
 
   return (
