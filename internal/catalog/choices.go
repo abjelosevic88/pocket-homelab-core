@@ -26,7 +26,6 @@ var Choices = []Choice{
 	{Slot: "money", Title: "Money", EnvKey: "MONEY_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Money", "money"}, {"firefly", "Firefly III", "firefly"}}},
 	{Slot: "watch", Title: "Watch", EnvKey: "WATCH_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Watch", "watch"}, {"jellyfin", "Jellyfin", "jellyfin"}}},
 	{Slot: "music", Title: "Music", EnvKey: "MUSIC_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Music", "music"}, {"navidrome", "Navidrome", "navidrome"}}},
-	{Slot: "watch", Title: "Watch", EnvKey: "WATCH_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Watch", "watch"}, {"jellyfin", "Jellyfin", "jellyfin"}}},
 	{Slot: "podcasts", Title: "Podcasts", EnvKey: "PODCASTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Podcasts", "podcasts"}, {"pinepods", "PinePods", "pinepods"}}},
 	{Slot: "documents", Title: "Documents", EnvKey: "DOCUMENTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Documents", "documents"}, {"paperless", "Paperless-ngx", "paperless"}}},
 	{Slot: "notes", Title: "Notes", EnvKey: "NOTES_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Notes", "notes"}, {"nextcloud", "Nextcloud Notes", "nextcloud"}}},

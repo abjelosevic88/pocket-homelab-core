@@ -36,3 +36,14 @@ func TestCatalogKeysMatchClientTemplate(t *testing.T) {
 		t.Errorf("custom entry: %+v", c)
 	}
 }
+
+// Every slot on Devices → Apps on your devices appears once.
+func TestChoicesUnique(t *testing.T) {
+	seen := map[string]bool{}
+	for _, c := range Choices {
+		if seen[c.Slot] {
+			t.Fatalf("slot %q listed twice", c.Slot)
+		}
+		seen[c.Slot] = true
+	}
+}

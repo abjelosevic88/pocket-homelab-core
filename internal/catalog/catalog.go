@@ -125,6 +125,7 @@ var entries = []Entry{
 	{Type: "jellystat", Name: "Jellystat", Prefix: "JELLYSTAT", Group: "Media", Fields: apiKey("")},
 	{Type: "radarr", Name: "Radarr", Prefix: "RADARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "sonarr", Name: "Sonarr", Prefix: "SONARR", Group: "Media", Fields: apiKey("Settings → General")},
+	{Type: "maintainerr", Name: "Maintainerr", Prefix: "MAINTAINERR", Group: "Media"},
 	{Type: "lidarr", Name: "Lidarr", Prefix: "LIDARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "chaptarr", Name: "Chaptarr / Readarr", Prefix: "CHAPTARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "prowlarr", Name: "Prowlarr", Prefix: "PROWLARR", Group: "Media", Fields: apiKey("Settings → General")},
