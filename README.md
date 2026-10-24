@@ -33,11 +33,11 @@ Core runs on your box, next to the apps. You choose which service endpoints, ide
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/links-diagram.png" alt="The Links diagram: arrows from each Pocket app to the apps it may read or change for a person, labelled with the permission"></td>
+    <td width="50%"><img src="docs/screenshots/links.png" alt="The Links page: a card per Pocket app, one opened to show the apps it changes things in, the apps it only looks at, and the services it signs in to"></td>
     <td width="50%"><img src="docs/screenshots/pair-device.png" alt="The Pair a device dialog with a QR code and an eight-character pairing code"></td>
   </tr>
   <tr>
-    <td align="center"><sub>App links: who may see or change what in which app, with a switch on every arrow.</sub></td>
+    <td align="center"><sub>App links: what each app may change, look at or sign in to, a switch behind every link.</sub></td>
     <td align="center"><sub>Pair a phone with one QR code; it receives every service on the box.</sub></td>
   </tr>
   <tr>
@@ -60,7 +60,7 @@ Core runs on your box, next to the apps. You choose which service endpoints, ide
 
 <p align="center">
   <img src="docs/screenshots/phone-overview.png" width="240" alt="The Overview on a phone">&nbsp;&nbsp;
-  <img src="docs/screenshots/phone-links-dark.png" width="240" alt="The Links diagram on a phone, dark">
+  <img src="docs/screenshots/phone-links-dark.png" width="240" alt="The Links page on a phone, dark, showing which apps can change or look at Pocket Inventory">
 </p>
 
 ## Run it

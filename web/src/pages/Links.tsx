@@ -1,33 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago } from '../lib/format'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
-import { Card, Empty, Loading, Modal, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
-import { appOffers, LinkCanvas, scopeLabel, type CanvasSel, type LinkGroup } from '../components/LinkCanvas'
-import { AccessView, FocusView, LinkSummary, MatrixView } from '../components/LinkViews'
+import { Icon } from '../components/icons'
+import { bundledIcon } from '../lib/icons'
+import { Card, Collapse, Confirm, Empty, Loading, Modal, PageHeader, Segmented, Switch, useAsync, useToast } from '../components/ui'
+import { appOffers, directCount, groupLinks, isService, pairState, scopeLabel, writes, type LinkGroup } from '../components/linkModel'
 import { KeyLine } from '../components/ConnectorPanel'
-
-type View = 'diagram' | 'grid' | 'focus' | 'access' | 'list'
-const VIEWS: { value: View; label: string; title: string }[] = [
-  { value: 'grid', label: 'Grid', title: 'Who acts in whom, one cell per pair' },
-  { value: 'diagram', label: 'Diagram', title: 'Apps and arrows' },
-  { value: 'focus', label: 'Focus', title: 'One app: what it uses and what uses it' },
-  { value: 'access', label: 'Access', title: 'Your data in each app, and who can see or change it' },
-  { value: 'list', label: 'List', title: 'Every link with its switch' },
-]
-
-// Group links by (acting app → target app) so each pair reads as one sentence.
-export function groupLinks(links: AppLink[]) {
-  const groups: LinkGroup[] = []
-  for (const l of links) {
-    const key = `${l.app_slug}→${l.target_slug}`
-    let g = groups.find(x => x.key === key)
-    if (!g) { g = { key, app: l.app_slug, appName: l.app_name, target: l.target_slug, targetName: l.target_name, reason: l.reason, links: [] }; groups.push(g) }
-    g.links.push(l)
-  }
-  return groups
-}
 
 const stateBadge = (l: AppLink) => {
   switch (l.state) {
@@ -98,27 +78,129 @@ function KeyRotationNote({ l }: { l: AppLink }) {
   )
 }
 
-// What a tapped card stands for: what the app may do elsewhere, and what others may do in it.
-function AppDetail({ slug, groups, apps, flip, onPick, hint = true }: { slug: string; groups: LinkGroup[]; apps: App[]; flip: (l: AppLink, on: boolean) => void; onPick: (s: CanvasSel) => void; hint?: boolean }) {
+// One readable list instead of a diagram: a card per app, opened into what it
+// changes, what it only sees, and which services it signs in to (or, read the
+// other way round, who changes, sees or signs in to it).
+type Side = 'uses' | 'reached'
+type Filter = 'all' | 'off' | 'bad' | 'direct'
+type Section = { key: string; title: string; pairs: LinkGroup[] }
+type Subject = { slug: string; name: string; service: boolean; sections: Section[]; pairs: LinkGroup[]; idle: { scope: string; name?: string }[] }
+
+const short = (name: string) => name.replace(/^Pocket /, '')
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+const SIDES: { value: Side; label: string; title: string }[] = [
+  { value: 'uses', label: 'What each app uses', title: 'One card per app: what it may change, see, or sign in to elsewhere' },
+  { value: 'reached', label: 'Who reaches each app', title: 'One card per app or service: which apps may change or see it' },
+]
+
+function Ico({ slug, name, apps }: { slug: string; name: string; apps: App[] }) {
   const a = apps.find(x => x.slug === slug)
-  const out = groups.filter(g => g.app === slug), inn = groups.filter(g => g.target === slug)
-  const used = new Set(inn.flatMap(g => g.links.map(l => l.scope)))
-  const idle = appOffers(a).filter(o => !used.has(o.scope))
+  if (a) return <AppIcon a={a} small />
+  const icon = isService(slug) ? bundledIcon(slug.slice(8)) : ''
+  return <span className="feed-ico">{icon ? <img src={icon} alt="" /> : short(name)[0]}</span>
+}
+
+function matches(f: Filter, g: LinkGroup) {
+  const st = pairState(g)
+  return f === 'all' || (f === 'off' && (st === 'off' || st === 'partial')) || (f === 'bad' && st === 'bad') || (f === 'direct' && directCount(g) > 0)
+}
+
+function subjects(groups: LinkGroup[], side: Side, apps: App[]): Subject[] {
+  const by = new Map<string, LinkGroup[]>()
+  for (const g of groups) { const k = side === 'uses' ? g.app : g.target; by.set(k, [...(by.get(k) || []), g]) }
+  const out: Subject[] = []
+  for (const [slug, pairs] of by) {
+    const name = side === 'uses' ? pairs[0].appName : pairs[0].targetName
+    const service = isService(slug)
+    const other = (g: LinkGroup) => side === 'uses' ? g.targetName : g.appName
+    const sort = (l: LinkGroup[]) => [...l].sort((a, b) => other(a).localeCompare(other(b)))
+    const pocket = pairs.filter(g => !isService(g.target))
+    const sections: Section[] = side === 'uses' ? [
+      { key: 'changes', title: 'Changes things in', pairs: sort(pocket.filter(writes)) },
+      { key: 'sees', title: 'Only looks at', pairs: sort(pocket.filter(g => !writes(g))) },
+      { key: 'signs', title: 'Signs in to, with each person’s own account', pairs: sort(pairs.filter(g => isService(g.target))) },
+    ] : service ? [
+      { key: 'signs', title: 'Apps that sign in to it with each person’s own account', pairs: sort(pairs) },
+    ] : [
+      { key: 'changes', title: 'Apps that can change things in it', pairs: sort(pairs.filter(writes)) },
+      { key: 'sees', title: 'Apps that can only look', pairs: sort(pairs.filter(g => !writes(g))) },
+    ]
+    const used = new Set(pairs.flatMap(g => g.links.map(l => l.scope)))
+    const idle = side === 'reached' ? appOffers(apps.find(a => a.slug === slug)).filter(o => !used.has(o.scope)) : []
+    out.push({ slug, name, service, sections: sections.filter(s => s.pairs.length), pairs, idle })
+  }
+  return out.sort((a, b) => short(a.name).localeCompare(short(b.name)))
+}
+
+// "Changes 3 apps · looks at 12 · signs in to 9 services"
+function summary(s: Subject, side: Side) {
+  const n = (k: string) => s.sections.find(x => x.key === k)?.pairs.length || 0
+  if (side === 'reached') return s.service ? `${plural(n('signs'), 'app signs', 'apps sign')} in to it`
+    : [n('changes') && `${plural(n('changes'), 'app')} can change it`, n('sees') && (n('changes') ? `${n('sees')} can look` : `${plural(n('sees'), 'app')} can look`)].filter(Boolean).join(' · ')
+  return [n('changes') && `Changes ${plural(n('changes'), 'app')}`, n('sees') && `looks at ${n('sees')}`, n('signs') && `signs in to ${plural(n('signs'), 'service')}`]
+    .filter(Boolean).join(' · ').replace(/^l/, 'L').replace(/^s/, 'S')
+}
+
+const stateWord = { on: '', partial: 'Partly off', off: 'Off', bad: "Can't work" } as const
+
+function PairChip({ g, side, apps, onOpen, both }: { g: LinkGroup; side: Side; apps: App[]; onOpen: () => void; both?: boolean }) {
+  const slug = side === 'uses' ? g.target : g.app, name = side === 'uses' ? g.targetName : g.appName
+  const st = pairState(g), direct = directCount(g)
+  const what = isService(g.target) ? '' : g.links.map(scopeLabel).join(', ')
   return (
-    <>
-      <div className="link-pair-head">{a && <AppIcon a={a} small />}<b>{a?.name || slug}</b>{a && <span className="muted small">v{a.version}</span>}</div>
-      {out.length === 0 && inn.length === 0 && idle.length === 0 && <p className="muted small">No links: this app neither uses nor offers anything in another app.</p>}
-      {out.length > 0 && <h4 className="lc-h">Acts in</h4>}
-      {out.map(g => <LinkPair key={g.key} g={g} apps={apps}>{g.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>)}
-      {inn.length > 0 && <h4 className="lc-h">Lets these apps act in it</h4>}
-      {inn.map(g => <LinkPair key={g.key} g={g} apps={apps}>{g.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>)}
-      {idle.length > 0 && <>
-        <h4 className="lc-h">Offers, not used by any app yet</h4>
-        <div className="link-scopes">{idle.map(o => (
-          <div key={o.scope} className="link-scope"><div className="grow"><div><b>{o.name || o.scope}</b> <span className="mono small muted">{o.scope}</span></div>{o.description && <div className="muted small">{o.description}</div>}</div></div>))}</div>
-      </>}
-      {hint && (out.length > 0 || inn.length > 0) && <p className="muted small lc-hint">Tap an arrow in the diagram to see just that pair. <button type="button" className="linkish" onClick={() => onPick(null)}>Clear</button></p>}
-    </>
+    <button type="button" className={`lk-chip ${st}`} onClick={onOpen}
+      title={`${g.appName} → ${g.targetName}${g.reason ? `\n${g.reason}` : ''}\n${g.links.map(l => `${l.enabled ? '✓' : '✕'} ${scopeLabel(l)}`).join('\n')}${direct ? `\n↗ Direct for ${direct}: Core can't switch this` : ''}`}>
+      <Ico slug={slug} name={name} apps={apps} />
+      <span className="lk-chip-text"><b>{both ? `${short(g.appName)} → ${short(g.targetName)}` : short(name)}</b>{what && <span className="lk-chip-what">{what}</span>}</span>
+      {st !== 'on' && <span className={`lk-tag ${st}`}>{stateWord[st]}</span>}
+      {direct > 0 && <span className="lk-tag direct" title={`${direct} connect directly with a pasted key`}>↗{direct}</span>}
+    </button>
+  )
+}
+
+function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll }: {
+  s: Subject; side: Side; apps: App[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void
+}) {
+  const off = s.pairs.filter(g => ['off', 'partial'].includes(pairState(g))).length
+  const bad = s.pairs.filter(g => pairState(g) === 'bad').length
+  const direct = s.pairs.filter(g => directCount(g) > 0).length
+  const a = apps.find(x => x.slug === s.slug)
+  return (
+    <div className={`lk-card${open ? ' open' : ''}`}>
+      <button type="button" className="lk-head" onClick={toggle} aria-expanded={open}>
+        <Ico slug={s.slug} name={s.name} apps={apps} />
+        <span className="lk-head-text">
+          <b>{s.name}</b>{a && <span className="muted small"> v{a.version}</span>}
+          <span className="lk-head-sum">{summary(s, side)}</span>
+        </span>
+        {!open && <span className="lk-stack" aria-hidden="true">
+          {s.pairs.slice(0, 8).map(g => { const o = side === 'uses' ? [g.target, g.targetName] : [g.app, g.appName]; return <Ico key={g.key} slug={o[0]} name={o[1]} apps={apps} /> })}
+          {s.pairs.length > 8 && <span className="lk-stack-more">+{s.pairs.length - 8}</span>}
+        </span>}
+        <span className="lk-head-tags">
+          {bad > 0 && <span className="badge danger" title="Links that can't work">{bad} can't work</span>}
+          {off > 0 && <span className="badge" title="Links switched off for the box">{off} off</span>}
+          {direct > 0 && <span className="badge warn" title="People connected with a pasted URL and key: these switches don't control them">↗ {direct}</span>}
+        </span>
+        <Icon name="chevron-down" size={16} className="lk-chev" />
+      </button>
+      <Collapse open={open}>
+        <div className="lk-body">
+          {s.sections.map(sec => {
+            const allOn = sec.pairs.every(g => g.links.every(l => l.enabled))
+            return (
+              <section key={sec.key} className="lk-sec">
+                <div className="lk-sec-head">
+                  <h4 className="lc-h">{sec.title} <span className="muted">· {sec.pairs.length}</span></h4>
+                  {sec.pairs.length > 1 && <button type="button" className="linkish small" onClick={() => setAll(sec.pairs, !allOn, `${sec.title.toLowerCase()} (${s.name})`)}>{allOn ? 'Switch all off' : 'Switch all on'}</button>}
+                </div>
+                <div className="lk-chips">{sec.pairs.map(g => <PairChip key={g.key} g={g} side={side} apps={apps} onOpen={() => onOpen(g)} />)}</div>
+              </section>)
+          })}
+          {open && s.idle.length > 0 && <p className="muted small lk-idle">Offered, no app uses it yet: {s.idle.map(o => o.name || o.scope).join(', ')}</p>}
+        </div>
+      </Collapse>
+    </div>
   )
 }
 
@@ -126,56 +208,91 @@ export default function Links() {
   const { toast } = useToast()
   const { data, loading, reload } = useAsync(() => api.get<AppLink[]>(`${V1}/links`), [])
   const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`), [])
-  const [mode, setModeState] = useState<View>(() => (VIEWS.find(v => v.value === localStorage.getItem('core.links.view'))?.value || 'grid'))
-  const [sel, setSel] = useState<CanvasSel>(null)
+  const [side, setSideState] = useState<Side>(() => localStorage.getItem('core.links.side') === 'reached' ? 'reached' : 'uses')
+  const [filter, setFilter] = useState<Filter>('all')
+  const [q, setQ] = useState('')
+  const [openSet, setOpenSet] = useState<Set<string>>(new Set())
+  const [closedSet, setClosedSet] = useState<Set<string>>(new Set()) // while searching or filtering, cards start open
+  const [picked, setPicked] = useState<string | null>(null)
+  const [bulk, setBulk] = useState<{ pairs: LinkGroup[]; what: string } | null>(null)
+  const groups = useMemo(() => groupLinks(data || []), [data])
+  const all = useMemo(() => subjects(groups, side, apps || []), [groups, side, apps])
   if (loading && !data) return <Loading />
-  const groups = groupLinks(data || [])
-  const setMode = (m: View) => { localStorage.setItem('core.links.view', m); setModeState(m); setSel(null) }
+
+  const setSide = (s: Side) => { localStorage.setItem('core.links.side', s); setSideState(s); setOpenSet(new Set()) }
   const flip = async (l: AppLink, on: boolean) => { await api.put(`${V1}/links/${l.id}`, { enabled: on }); reload(); toast(on ? 'Link on' : 'Link off for everyone') }
-  const pair = sel?.kind === 'pair' ? groups.find(g => g.key === sel.key) : undefined
-  const detail = pair ? <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
-    : sel?.kind === 'app' ? <AppDetail slug={sel.slug} groups={groups} apps={apps || []} flip={flip} onPick={setSel} /> : null
-  // Grid and Access open what was tapped in a dialog over the page; its title carries the icons.
-  const ico = (slug: string) => { const a = (apps || []).find(x => x.slug === slug); return a ? <AppIcon a={a} small /> : null }
-  const selApp = sel?.kind === 'app' ? (apps || []).find(x => x.slug === sel.slug) : undefined
-  const dialog = pair ? (
-    <Modal className="lv-modal" onClose={() => setSel(null)} title={<span className="lv-modal-title">{ico(pair.app)}{pair.appName}<span className="muted">→</span>{ico(pair.target)}{pair.targetName}</span>}>
-      <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
-    </Modal>)
-    : sel?.kind === 'app' ? (
-    <Modal className="lv-modal" size="lg" onClose={() => setSel(null)} title={<span className="lv-modal-title">{ico(sel.slug)}{selApp?.name || groups.find(g => g.app === sel.slug)?.appName || groups.find(g => g.target === sel.slug)?.targetName || sel.slug}{selApp && <span className="muted small">v{selApp.version}</span>}</span>}>
-      <AppDetail slug={sel.slug} groups={groups} apps={apps || []} flip={flip} onPick={setSel} hint={false} />
-    </Modal>) : null
+  const switchAll = async (pairs: LinkGroup[], on: boolean) => {
+    const todo = pairs.flatMap(g => g.links).filter(l => l.enabled !== on)
+    for (const l of todo) await api.put(`${V1}/links/${l.id}`, { enabled: on })
+    reload(); toast(on ? `${plural(todo.length, 'link')} on` : `${plural(todo.length, 'link')} off for everyone`)
+  }
+  const setAll = (pairs: LinkGroup[], on: boolean, what: string) => on ? switchAll(pairs, true) : setBulk({ pairs, what })
+
+  // A card shows when its own name matches (all its pairs), or only the pairs whose other side or scopes match.
+  const needle = q.trim().toLowerCase()
+  const hit = (g: LinkGroup) => !needle || [side === 'uses' ? g.targetName : g.appName, ...g.links.map(scopeLabel)].some(t => t.toLowerCase().includes(needle))
+  const shown = all.map(s => {
+    const self = !needle || s.name.toLowerCase().includes(needle)
+    const keep = (g: LinkGroup) => matches(filter, g) && (self || hit(g))
+    return { ...s, sections: s.sections.map(sec => ({ ...sec, pairs: sec.pairs.filter(keep) })).filter(sec => sec.pairs.length), pairs: s.pairs.filter(keep) }
+  }).filter(s => s.pairs.length)
+  const narrowed = !!needle || filter !== 'all'
+  const isOpen = (slug: string) => narrowed ? !closedSet.has(slug) : openSet.has(slug)
+  const flipIn = (set: React.Dispatch<React.SetStateAction<Set<string>>>, slug: string) => set(cur => { const n = new Set(cur); if (n.has(slug)) n.delete(slug); else n.add(slug); return n })
+  const toggle = (slug: string) => flipIn(narrowed ? setClosedSet : setOpenSet, slug)
+
+  const count = (f: Filter) => groups.filter(g => matches(f, g)).length
+  const FILTERS: { value: Filter; label: string; n: number; title: string }[] = [
+    { value: 'all', label: 'All', n: groups.length, title: 'Every connection between two apps' },
+    { value: 'off', label: 'Off', n: count('off'), title: 'Switched off for the box, fully or partly' },
+    { value: 'bad', label: "Can't work", n: count('bad'), title: 'The other app is missing or no longer offers this' },
+    { value: 'direct', label: 'Direct', n: count('direct'), title: 'Someone connects with a URL and key pasted into the app: Core can see these but not switch them' },
+  ]
+  const pair = picked ? groups.find(g => g.key === picked) : undefined
+  const bad = groups.filter(g => pairState(g) === 'bad')
+  const pocketCards = shown.filter(s => !s.service), serviceCards = shown.filter(s => s.service)
+  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} />
+  const ico = (slug: string, name: string) => <Ico slug={slug} name={name} apps={apps || []} />
+
   return (
     <>
-      <PageHeader title="Links" sub="What one Pocket app may do in another for a person. Apps ask for these in their manifest; Core hands out a five-minute token for each request, valid only in the target app."
-        actions={<Segmented size="sm" value={mode} onChange={setMode} options={VIEWS} />} />
-      <LinkSummary groups={groups} />
-      {groups.length > 0 && (mode === 'grid' || mode === 'access') ? <>
-        <Card flush={mode === 'grid'}>{mode === 'grid' ? <MatrixView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} /> : <AccessView groups={groups} apps={apps || []} sel={sel} onSelect={setSel} />}</Card>
-        {dialog}
-        <Card className="lv-footer">
-          <p className="muted small lc-hint">{mode === 'grid'
-            ? <>Each cell is what the app on the left may do in the app on top: <b>sees</b> your data there or <b>changes</b> it (and so sees it too). Amber is partly switched off, dashed is off. Tap a cell for its switches, or an app for everything it uses and offers.</>
-            : <>Your data in each app, and which apps may see or change it for you: <span className="lv-mark yes">✓</span> someone holds it, <span className="lv-mark no">✕</span> nobody does. Tap an app to see and switch that link.</>}</p>
-        </Card>
-      </> : groups.length > 0 && mode === 'focus' ? <Card><FocusView groups={groups} apps={apps || []} flip={flip} /></Card>
-      : mode === 'diagram' ? <>
-        <Card flush className="lc-card-wrap"><LinkCanvas groups={groups} apps={apps || []} sel={sel} onSelect={setSel} detail={detail} /></Card>
-        <Card>
-          {detail || <p className="muted small lc-hint">{groups.length === 0
-            ? <>No links yet. An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</>
-            : <>Tap an arrow to see and switch its permissions, or an app to see everything it uses and offers. Drag a card to move it (on a phone, hold it first); drag anywhere else to move around, scroll or pinch to zoom.</>}</p>}
-        </Card>
-      </> : groups.length === 0 ? <Card><Empty icon="nodes" title="No links yet">An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</Empty></Card> :
-        <Card>{groups.map(g => (
-          <LinkPair key={g.key} g={g} apps={apps || []}>
-            {g.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}
-          </LinkPair>))}</Card>}
+      <PageHeader title="Links" sub="What one Pocket app may do in another app, or in a service, on a person’s behalf. Each person can still switch a link off for themselves in Settings." />
+      {groups.length === 0 ? <Card><Empty icon="nodes" title="No links yet">An app that needs another (Garage booking costs in Money, say) lists it under <span className="inline-code">uses</span> in its manifest; the target lists what it allows under <span className="inline-code">offers</span>.</Empty></Card> : <>
+        {bad.length > 0 && filter === 'all' && !needle && (
+          <div className="lk-alert">
+            <b>{plural(bad.length, "link can't", "links can't")} work right now</b>
+            <div className="lk-chips">{bad.map(g => <PairChip key={g.key} g={g} side="uses" both apps={apps || []} onOpen={() => setPicked(g.key)} />)}</div>
+          </div>)}
+        <div className="toolbar lk-toolbar">
+          <Segmented size="sm" value={side} onChange={setSide} options={SIDES} />
+          <div className="search"><Icon name="search" size={15} /><input placeholder="Find an app, service or permission…" value={q} onChange={e => { setQ(e.target.value); setClosedSet(new Set()) }} /></div>
+        </div>
+        <div className="lk-filters">
+          {FILTERS.filter(f => f.value === 'all' || f.n > 0).map(f => (
+            <button key={f.value} type="button" className={`chip lk-filter ${f.value}${filter === f.value ? ' active' : ''}`} title={f.title} onClick={() => { setFilter(f.value); setClosedSet(new Set()) }}>
+              {f.label}<span className="lk-filter-n">{f.n}</span>
+            </button>))}
+          {!narrowed && <button type="button" className="linkish small lk-expand" onClick={() => setOpenSet(openSet.size ? new Set() : new Set(shown.map(s => s.slug)))}>{openSet.size ? 'Collapse all' : 'Expand all'}</button>}
+        </div>
+        {shown.length === 0 ? <Card><Empty title="Nothing matches">No link matches this search and filter.</Empty></Card> : <>
+          {side === 'reached' && pocketCards.length > 0 && serviceCards.length > 0 && <h3 className="lk-group">Pocket apps</h3>}
+          <div className="lk-list">{pocketCards.map(card)}</div>
+          {serviceCards.length > 0 && <><h3 className="lk-group">Services</h3><div className="lk-list">{serviceCards.map(card)}</div></>}
+        </>}
+        <p className="muted small lk-legend">
+          <span className="lk-tag partial">Partly off</span> some permissions are switched off · <span className="lk-tag off">Off</span> switched off for everyone · <span className="lk-tag direct">↗</span> someone connects with a pasted key, which Core can't switch. Tap a link for its switches.
+        </p>
+      </>}
+      {pair && (
+        <Modal className="lv-modal" onClose={() => setPicked(null)} title={<span className="lv-modal-title">{ico(pair.app, pair.appName)}{pair.appName}<span className="muted">→</span>{ico(pair.target, pair.targetName)}{pair.targetName}</span>}>
+          <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
+        </Modal>)}
+      {bulk && <Confirm title="Switch these links off?" confirmLabel="Switch off"
+        message={<>This switches off {plural(bulk.pairs.length, 'connection')} ({bulk.what}) for everyone on the box. Features that rely on them stop working until you switch them back on.</>}
+        onCancel={() => setBulk(null)} onConfirm={() => { const b = bulk; setBulk(null); switchAll(b.pairs, false) }} />}
     </>
   )
 }
-
 /** Everyone's own switches (Settings). */
 export function MyLinks() {
   const { toast } = useToast()

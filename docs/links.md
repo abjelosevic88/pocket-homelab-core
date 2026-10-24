@@ -29,14 +29,13 @@ Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, t
 
 ## The Links page
 
-Admins see every link two ways: a **diagram** (each Pocket app a card, one arrow per acting app → target app labelled with its scopes' names, IDs on hover, coloured on / partly off / off / can't work; apps without links sit as chips in a **Not linked** strip under it, and move onto the diagram once they get a link) and a **list**. Tap an arrow for its switches, or a card for everything that app uses, lets others use, and offers that nobody uses yet. Cards can be dragged; the layout is kept in the browser. **Full screen** gives the diagram the whole window (real full screen where the browser allows, a page-covering view on iPhone), with the tapped arrow or app in a floating panel; Esc leaves.
+Admins see every link as one list, a card per app. A closed card says in a line what the app adds up to ("Changes 3 apps · looks at 1 · signs in to 1 service") with the icons of the apps on the other side; opened, it groups them into **Changes things in** (any scope that writes), **Only looks at** (read scopes only) and **Signs in to** (services, with each person's own account). Each link is a chip carrying the names of its scopes, marked *Off*, *Partly off*, *Can't work* or ↗ *Direct*; tap it for the switches, how each person connects, and key replacement notes. A group with more than one link has **Switch all off / on** (off asks first).
 
-Four more views read the same links differently, all with the same switches:
+- **What each app uses / Who reaches each app** turns the cards around: one card per app or service, with the apps that can change it, the apps that can only look, and the scopes it offers that nobody uses yet. Services get their own section.
+- **Search** matches app and service names and scope names; a card whose own name matches keeps all its links.
+- **Filters**: All, Off (fully or partly), Can't work, Direct, each with its count. Links that can't work are also listed in a red box at the top.
 
-- **Grid**: apps that act down the side, apps they act in across the top; each cell says in one word what the pair adds up to ("changes" when it may change anything there, which includes seeing; else "sees"), with a green ✓ when allowed or a red ✕ when switched off. Best for "who does what" at a glance.
-- **Focus**: one app in the middle, the apps that act in it on one side and the apps it acts in on the other, in plain sentences with a ✓ or ✕ and a switch per scope; tap an app to move the focus to it.
-- **Access**: by data instead of by app: "Your Money: *See your transactions* — Day, Travel; *Book transactions* — Garage", including scopes an app offers that nobody uses yet. Best for "who can see or change my stuff".
-- **List**: every pair with its switches.
+The diagram, grid, focus and access views of 0.13–0.14 are gone: with 26 acting apps and 160 pairs none of them stayed readable.
 
 A line above every view counts the links, how many are on, off or can't work, and the tokens issued.
 
