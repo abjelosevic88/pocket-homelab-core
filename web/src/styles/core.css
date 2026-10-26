@@ -433,6 +433,10 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .lk-list { display: grid; gap: 8px; }
 .lk-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
 .lk-card.open { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+/* Opening a card slides everything below it; the app icons are SVGs with a drop-shadow filter that Chrome
+   re-draws on every frame they move. Own layers for the head icons and skipping off-screen cards keep it smooth. */
+.lk-card { content-visibility: auto; contain-intrinsic-size: auto 66px; }
+.lk-stack, .lk-head > .feed-ico { will-change: transform; }
 .lk-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; font: inherit; text-align: left; background: none; border: 0; border-radius: inherit; color: var(--text); cursor: pointer; }
 .lk-head:hover { background: var(--hover); }
 .lk-head > .feed-ico { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
