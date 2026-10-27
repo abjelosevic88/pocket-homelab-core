@@ -59,6 +59,22 @@ func arraySchema(item any) map[string]any {
 	return map[string]any{"type": "array", "items": item, "maxItems": 100}
 }
 
+// POSTs that act on or overwrite an existing item are changes, not additions;
+// clients may auto-approve additions per app, so this list errs toward "change".
+var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
+	"office_rename": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true}
+
+// mcpOpKind is read, add (creates something new) or change (alters what exists).
+func mcpOpKind(name, method string) string {
+	switch {
+	case method == "GET":
+		return "read"
+	case method == "POST" && !mcpChangePosts[name]:
+		return "add"
+	}
+	return "change"
+}
+
 var mcpPathParams = regexp.MustCompile(`\{([a-z_]+)\}`)
 
 func buildMCPAppCatalog() []*mcpAppTool {
@@ -106,7 +122,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 				root["data"].(map[string]any)["minProperties"] = 1
 			}
 		}
-		op := &mcpAppTool{App: app, Name: "pocket_" + app + "_" + name, Description: description, Method: method, Path: path, Schema: objectSchema(root, strings.Join(req, " "))}
+		op := &mcpAppTool{App: app, Name: "pocket_" + app + "_" + name, Description: description, Method: method, Path: path, Kind: mcpOpKind(app+"_"+name, method), Schema: objectSchema(root, strings.Join(req, " "))}
 		out = append(out, compileMCPAppTool(op))
 		return op
 	}
