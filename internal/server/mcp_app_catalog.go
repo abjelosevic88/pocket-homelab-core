@@ -68,7 +68,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		req := []string{}
 		for _, p := range mcpPathParams.FindAllStringSubmatch(path, -1) {
 			root[p[1]] = map[string]any{"type": "integer", "minimum": 1, "maximum": 9007199254740991}
-			if app == "ai" {
+			if app == "ai" && p[1] == "id" {
 				root[p[1]] = map[string]any{"type": "string", "pattern": `^[a-f0-9-]{36}$`}
 			}
 			if app == "calendar" {
@@ -355,5 +355,11 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("movement", "update_place", "Rename, recategorise, move or resize one of your places; omitted fields stay as they are.", "PUT", "/places/{id}", place, "")
 	read("ai", "threads", "Find your Pocket AI conversations.", "/threads", "q limit")
 	read("ai", "conversation", "Read the recent messages in one of your Pocket AI conversations.", "/ask-context/{id}", "")
+	read("ai", "schedules", "List your Pocket AI scheduled runs: id, name, the full prompt, timing (spec), machine (host_id, 0 = the Pocket AI server), enabled, next and last run, last status and summary.", "/schedules", "")
+	schedule := textFields("name prompt spec").enum("notify", "always", "attention", "never").booleans("enabled")
+	schedule["prompt"].(map[string]any)["description"] = "The complete new prompt; it replaces the old one, so send the whole edited text, not a fragment."
+	schedule["spec"].(map[string]any)["description"] = "every 6h, daily 08:00, weekdays 08:30, weekly mon 09:00 or a cron line like 0 8 * * *."
+	schedule["notify"].(map[string]any)["description"] = "When to notify after a run: always, attention (only when it needs a human) or never."
+	write("ai", "update_schedule", "Edit one of your Pocket AI scheduled runs (schedule = id from pocket_ai_schedules): name, prompt, timing, notify or enabled; omitted fields stay as they are. The agent, model, permission mode, machine and folder cannot be changed here.", "PUT", "/schedules/{schedule}", schedule, "")
 	return out
 }
