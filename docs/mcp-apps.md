@@ -195,7 +195,7 @@ The three status tools work across all registered, permitted Pocket apps.
 | Money | Spending/income summaries, accounts, categories and transactions | Record/edit expense or income bookkeeping |
 | Split | Groups, expenses and balances | Create groups and expense records |
 | Invoicing | Clients and invoices | Create/edit clients, create draft invoices |
-| Collaborator | Reviews, tasks and comments | Create reviews/tasks, edit/complete tasks |
+| Review | Reviews, tasks and comments | Create reviews/tasks, edit/complete tasks |
 | Travel | Trips, journals and checklists | Create/edit trips, append journal entries |
 | Office | Sources, directory listings and recent documents | Create blank DOCX/XLSX/PPTX documents, rename |
 | Podcasts | Subscriptions, episodes, show notes and queue | Subscribe, favorite, save/queue episodes |

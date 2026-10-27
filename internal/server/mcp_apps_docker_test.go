@@ -36,7 +36,7 @@ func TestMCPApplicationDockerCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	slugs := []string{"notes", "tasks", "calendar", "habits", "day", "inventory", "bookshelf", "clips", "contacts", "documents", "files", "garage", "kitchen", "money", "split", "invoicing", "collaborator", "travel", "office", "podcasts", "subtitles", "hub"}
+	slugs := []string{"notes", "tasks", "calendar", "habits", "day", "inventory", "bookshelf", "clips", "contacts", "documents", "files", "garage", "kitchen", "money", "split", "invoicing", "review", "travel", "office", "podcasts", "subtitles", "hub"}
 	ctx := context.WithValue(context.Background(), mcpAccountKey{}, mcpAccount{UserID: f.user.ID, GrantID: secret.GrantID, Scope: "status:read apps:read apps:write"})
 	ctx = context.WithValue(ctx, mcpClientKey{}, config.MCPClient{ID: "compatibility-test", Apps: slugs})
 	for _, slug := range slugs {
@@ -288,8 +288,8 @@ func TestMCPApplicationDockerCompatibility(t *testing.T) {
 				n := write("create_client", map[string]any{"name": "MCP test"})
 				call("update_client", map[string]any{"id": id(n), "data": map[string]any{"notes": "Updated"}})
 				write("create_draft", map[string]any{"client_id": id(n), "issue_date": "2026-10-21", "due_date": "2026-11-21", "items": []any{map[string]any{"description": "Test", "quantity": 1, "unit_price": 10}}})
-			case "collaborator":
-				n := write("create_review", map[string]any{"title": "MCP test"})
+			case "review":
+				n := write("create", map[string]any{"title": "MCP test"})
 				task := call("create_task", map[string]any{"review_id": id(n), "data": map[string]any{"title": "Test"}})
 				call("update_task", map[string]any{"review_id": id(n), "task_id": id(task), "data": map[string]any{"status": "done"}})
 			case "travel":

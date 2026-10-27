@@ -13,7 +13,7 @@ import (
 type mcpBrowserRoute struct{ page, item string }
 
 var mcpBrowserRoutes = map[string]mcpBrowserRoute{
-	"tasks/dashboard": {"/today", ""}, "collaborator/dashboard": {"/reviews", ""}, "money/subscriptions": {"/subscriptions", "/subscriptions/{id}"}, "garage/reminders": {"/reminders", ""},
+	"tasks/dashboard": {"/today", ""}, "review/dashboard": {"/reviews", ""}, "money/subscriptions": {"/subscriptions", "/subscriptions/{id}"}, "garage/reminders": {"/reminders", ""},
 	"notes/notes": {"/", "/note/{id}"}, "notes/search": {"/", "/note/{id}"},
 	"tasks/tasks": {"/inbox", "/inbox?task={id}"}, "tasks/lists": {"/inbox", "/list/{id}"},
 	"calendar/events": {"/", "/event/{id}"}, "calendar/search": {"/", "/event/{id}"},
@@ -29,7 +29,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"money/categories": {"/transactions", ""}, "money/reports": {"/reports", ""},
 	"split/groups":      {"/groups", "/groups/{id}"},
 	"invoicing/clients": {"/clients", "/clients/{id}"}, "invoicing/invoices": {"/invoices", "/invoices/{id}"},
-	"collaborator/reviews": {"/reviews", "/reviews/{id}"},
+	"review/reviews": {"/reviews", "/reviews/{id}"},
 	"travel/trips":         {"/trips", "/trips/{id}"},
 	"podcasts/podcasts":    {"/podcasts", "/podcasts/{id}"}, "podcasts/episodes": {"/episodes", "/episodes/{id}"}, "podcasts/queue": {"/queue", "/episodes/{id}"},
 	"subtitles/library": {"/library", ""}, "subtitles/files": {"/library", "/files/{id}"},
@@ -105,7 +105,7 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 				}
 			}
 		}
-		if op.App == "collaborator" && op.Path == "/dashboard" {
+		if op.App == "review" && op.Path == "/dashboard" {
 			for _, key := range []string{"todo", "waiting", "tasks", "live"} {
 				if rows, ok := data[key].([]any); ok {
 					for _, row := range rows {
