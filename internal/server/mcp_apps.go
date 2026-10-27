@@ -21,6 +21,7 @@ import (
 
 type mcpAppTool struct {
 	App, Name, Description, Method, Path string
+	Kind                                 string // read, add or change (see mcpOpKind)
 	Schema                               map[string]any
 	resolved                             *jsonschema.Resolved
 	TextResponse                         bool
@@ -44,7 +45,7 @@ func (s *Server) addMCPAppTools(ms *mcp.Server, ctx context.Context) {
 		if !read {
 			description += " Supply a new request_id for each intended change; reuse it only to retry the identical change. Do not retry an unknown outcome with a new ID."
 		}
-		ms.AddTool(&mcp.Tool{Name: op.Name, Description: description, InputSchema: op.Schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: read, DestructiveHint: &destructive, IdempotentHint: read}}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		ms.AddTool(&mcp.Tool{Meta: mcp.Meta{"pocket/app": op.App, "pocket/kind": op.Kind}, Name: op.Name, Description: description, InputSchema: op.Schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: read, DestructiveHint: &destructive, IdempotentHint: read}}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return s.callMCPApp(ctx, op, req.Params.Arguments), nil
 		})
 	}
