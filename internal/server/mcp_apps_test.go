@@ -410,3 +410,46 @@ func TestMCPProjectsLinkPR(t *testing.T) {
 	}
 	t.Fatal("pocket_projects_link_pr missing")
 }
+
+func TestMCPAIScheduleTools(t *testing.T) {
+	var list, update *mcpAppTool
+	for _, op := range mcpAppCatalog {
+		switch op.Name {
+		case "pocket_ai_schedules":
+			list = op
+		case "pocket_ai_update_schedule":
+			update = op
+		}
+	}
+	if list == nil || list.Method != "GET" || list.Path != "/schedules" {
+		t.Fatalf("schedules list: %+v", list)
+	}
+	if update == nil || update.Method != "PUT" || update.Path != "/schedules/{schedule}" {
+		t.Fatalf("update_schedule: %+v", update)
+	}
+	props := update.Schema["properties"].(mcpFields)
+	if id := props["schedule"].(map[string]any); id["type"] != "integer" {
+		t.Fatalf("schedule id must be an integer, got %v", id)
+	}
+	fields := props["data"].(map[string]any)["properties"].(mcpFields)
+	for _, f := range []string{"name", "prompt", "spec", "notify", "enabled"} {
+		if fields[f] == nil {
+			t.Fatalf("update_schedule lacks %s", f)
+		}
+	}
+	// Only what the schedule does and when; never how it runs or where.
+	for _, f := range []string{"provider", "model", "effort", "mode", "speed", "cwd", "host_id"} {
+		if fields[f] != nil {
+			t.Fatalf("update_schedule must not change %s", f)
+		}
+	}
+	if err := update.resolved.Validate(map[string]any{"schedule": 2, "request_id": "0123456789abcdef", "data": map[string]any{"mode": "bypassPermissions"}}); err == nil {
+		t.Fatal("update_schedule accepted a permission-mode change")
+	}
+	// Conversation ids stay UUIDs.
+	for _, op := range mcpAppCatalog {
+		if op.Name == "pocket_ai_conversation" && op.Schema["properties"].(mcpFields)["id"].(map[string]any)["pattern"] == nil {
+			t.Fatal("conversation id lost its UUID pattern")
+		}
+	}
+}
