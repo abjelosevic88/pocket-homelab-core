@@ -135,7 +135,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 
 	read("tasks", "activity", "Read recent task activity (newest first), including task IDs and created/updated events. Useful for detecting newly created tasks.", "/activity", "task_id limit")
 	read("tasks", "summary", "Get task counts, overdue/due work and next tasks in one call.", "/dashboard", "")
-	read("collaborator", "summary", "Get review dashboard counts and pending review work in one call.", "/dashboard", "")
+	read("review", "summary", "Get review dashboard counts and pending review work in one call.", "/dashboard", "")
 	read("garage", "summary", "Get a vehicle overview, recorded costs, fuel and active maintenance reminders in one call. Costs can overlap Money: never add app totals without verifying shared transaction IDs. Similar dates/amounts are only possible duplicates.", "/vehicles/{id}/overview", "")
 	read("garage", "reports", "Get a vehicle's cost totals by year, month and category. State the range and currency, and separate maintenance costs from fuel. Avoid double counting linked Money transactions.", "/vehicles/{id}/reports", "months")
 	read("garage", "reminders", "Get maintenance reminders across accessible vehicles.", "/reminders", "")
@@ -271,14 +271,14 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	line := objectSchema(textFields("description unit").numbers("quantity unit_price tax_rate"), "description quantity unit_price")
 	write("invoicing", "create_draft", "Create a draft invoice without sending it. Line prices use major currency units, for example 12.50 EUR.", "POST", "/invoices", textFields("issue_date due_date currency notes terms").integers("client_id").field("items", arraySchema(line)), "client_id issue_date due_date items")
 
-	read("collaborator", "reviews", "List reviews you participate in.", "/reviews", "q status role")
-	read("collaborator", "get_review", "Read a review and your role.", "/reviews/{id}/", "")
-	read("collaborator", "tasks", "Read tasks on a review.", "/reviews/{review_id}/tasks", "")
-	read("collaborator", "comments", "Read review comments.", "/reviews/{review_id}/comments", "")
-	write("collaborator", "create_review", "Create a review workspace without inviting participants.", "POST", "/reviews", textFields("title description due_date"), "title")
-	write("collaborator", "create_task", "Create a review task without assigning or messaging another person.", "POST", "/reviews/{review_id}/tasks", textFields("title notes due_date"), "title")
+	read("review", "list", "List reviews you participate in.", "/reviews", "q status role")
+	read("review", "get", "Read a review and your role.", "/reviews/{id}/", "")
+	read("review", "tasks", "Read tasks on a review.", "/reviews/{review_id}/tasks", "")
+	read("review", "comments", "Read review comments.", "/reviews/{review_id}/comments", "")
+	write("review", "create", "Create a review workspace without inviting participants.", "POST", "/reviews", textFields("title description due_date"), "title")
+	write("review", "create_task", "Create a review task without assigning or messaging another person.", "POST", "/reviews/{review_id}/tasks", textFields("title notes due_date"), "title")
 
-	write("collaborator", "update_task", "Update a review task or mark it done, preserving omitted fields.", "PUT", "/reviews/{review_id}/tasks/{task_id}", textFields("title notes due_date").enum("status", "open", "done"), "")
+	write("review", "update_task", "Update a review task or mark it done, preserving omitted fields.", "PUT", "/reviews/{review_id}/tasks/{task_id}", textFields("title notes due_date").enum("status", "open", "done"), "")
 
 	read("travel", "trips", "List trips you can access.", "/trips", "q archived")
 	read("travel", "get_trip", "Read a trip's details.", "/trips/{id}/", "")

@@ -47,7 +47,7 @@ const FILES: Record<string, string> = {
   // Pocket apps: their own favicons, for when the app isn't running yet
   "bookshelf": "pocket-bookshelf.svg",
   "clips": "pocket-clips.svg",
-  "collaborator": "pocket-collaborator.svg",
+  "review": "pocket-review.svg",
   "day": "pocket-day.svg",
   "garage": "pocket-garage.svg",
   "habits": "pocket-habits.svg",

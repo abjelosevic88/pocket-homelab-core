@@ -15,12 +15,12 @@ import (
 func TestMCPAppBrowserLinks(t *testing.T) {
 	cases := []struct{ app, path, input, data, source, item string }{
 		{"tasks", "/dashboard", `{}`, `{"next":[{"id":3,"title":"Task"}]}`, "/today", "/inbox?task=3"},
-		{"collaborator", "/dashboard", `{}`, `{"waiting":[{"review":{"id":7,"participants":[{"id":99}]}}]}`, "/reviews", "/reviews/7"},
+		{"review", "/dashboard", `{}`, `{"waiting":[{"review":{"id":7,"participants":[{"id":99}]}}]}`, "/reviews", "/reviews/7"},
 		{"money", "/subscriptions", `{}`, `{"items":[{"id":5}]}`, "/subscriptions", "/subscriptions/5"},
 		{"garage", "/reminders", `{}`, `[{"id":42,"vehicle_id":6}]`, "/reminders", "/vehicles/6/reminders"},
-		{"collaborator", "/reviews", `{}`, `[{"id":7,"title":"Review"}]`, "/reviews", "/reviews/7"},
-		{"collaborator", "/reviews/{id}/", `{"id":7}`, `{"id":7,"live_now":[{"id":99}]}`, "/reviews/7", "/reviews/7"},
-		{"collaborator", "/reviews/{review_id}/comments", `{"review_id":7}`, `[{"id":99,"page":1}]`, "/reviews/7", ""},
+		{"review", "/reviews", `{}`, `[{"id":7,"title":"Review"}]`, "/reviews", "/reviews/7"},
+		{"review", "/reviews/{id}/", `{"id":7}`, `{"id":7,"live_now":[{"id":99}]}`, "/reviews/7", "/reviews/7"},
+		{"review", "/reviews/{review_id}/comments", `{"review_id":7}`, `[{"id":99,"page":1}]`, "/reviews/7", ""},
 		{"invoicing", "/invoices/{id}", `{"id":7}`, `{"id":7,"items":[{"id":99}]}`, "/invoices/7", "/invoices/7"},
 		{"notes", "/notes", `{}`, `{"id":8,"title":"New note"}`, "/note/8", "/note/8"},
 		{"documents", "/documents", `{}`, `{"results":[{"id":9}],"count":1}`, "/documents", "/documents/9"},
@@ -77,7 +77,7 @@ func TestMCPReviewLinksUsePublicURLAndRespectAccess(t *testing.T) {
 		}
 	}))
 	defer fake.Close()
-	a, _ := f.app("collaborator", fake.URL, "all")
+	a, _ := f.app("review", fake.URL, "all")
 	if _, err := f.st.DB.Exec(`UPDATE apps SET public_url=? WHERE id=?`, "https://collaborate.example", a.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +88,8 @@ func TestMCPReviewLinksUsePublicURLAndRespectAccess(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{"pocket_collaborator_reviews", map[string]any{}, `"item_url":"https://collaborate.example/reviews/7"`},
-		{"pocket_collaborator_comments", map[string]any{"review_id": 7}, `"source_url":"https://collaborate.example/reviews/7"`},
+		{"pocket_review_list", map[string]any{}, `"item_url":"https://collaborate.example/reviews/7"`},
+		{"pocket_review_comments", map[string]any{"review_id": 7}, `"source_url":"https://collaborate.example/reviews/7"`},
 	} {
 		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
 		if err != nil {
@@ -100,10 +100,10 @@ func TestMCPReviewLinksUsePublicURLAndRespectAccess(t *testing.T) {
 			t.Fatalf("wrong public links: %s", body)
 		}
 	}
-	if _, err := f.st.DB.Exec(`UPDATE services SET audience='admins' WHERE type='collaborator'`); err != nil {
+	if _, err := f.st.DB.Exec(`UPDATE services SET audience='admins' WHERE type='review'`); err != nil {
 		t.Fatal(err)
 	}
-	r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_collaborator_reviews", Arguments: map[string]any{}})
+	r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_review_list", Arguments: map[string]any{}})
 	if err == nil && !r.IsError {
 		t.Fatal("revoked review access accepted")
 	}

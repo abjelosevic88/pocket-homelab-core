@@ -274,7 +274,7 @@ Example requests after connecting:
 - “List my calendars, then add a 30-minute planning event tomorrow at 09:00 in my timezone.”
 - “Show low-stock inventory and add the missing ingredients to my Kitchen shopping list.”
 - “Record a 12.50 EUR expense in my selected Money account.”
-- “Show the tasks in this Collaborator review and mark this one done.”
+- “Show the tasks in this Pocket Review review and mark this one done.”
 
 For example, `pocket_notes_create` accepts:
 
