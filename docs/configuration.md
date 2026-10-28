@@ -14,6 +14,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `DATA_DIR` | `./data` (`/data` in the image) | SQLite database, secret key, backups |
 | `DB_PATH` / `SECRET_PATH` | `$DATA_DIR/pocket-core.db` / `$DATA_DIR/secret.key` | Override locations. The secret key encrypts stored service credentials; back it up with the database. |
 | `SERVICES_FILE` | — | A JSON list of third-party services a Pocket Box runs, applied at every start (see below). |
+| `BOX_AGENT` | — | The Pocket Box agent's unix socket. Set on a Pocket Box only: adds Settings → System and the first-run box wizard (see below). |
 | `TZ` | – | Container timezone |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `text` | `debug`, `warn`, `error`; `json` |
 | `TRUST_PROXY` | `true` | Honour `X-Forwarded-For` |
@@ -140,3 +141,18 @@ A Pocket Box makes the third-party services it ships with ready before anyone si
 | `connector` | only when Core creates the connector; an admin's later switches stand. A new connector set to make accounts provisions everyone already in Core |
 
 A type a registered Pocket app owns is skipped. An entry without a type stops Core from starting. The first account made on Core's setup screen gets its accounts in every connector set to make them, like people added later under Users.
+
+## The box itself (`BOX_AGENT`)
+
+On a Pocket Box, Core also sets up the machine it runs on. Core runs unprivileged, so a small root service, the **box agent**, makes the changes. It answers JSON on a unix socket that only Core's group can open. Core passes an admin's requests through and checks nothing but who is asking; the agent checks the values.
+
+| Core (admins) | Agent | What |
+|---|---|---|
+| `GET /api/v1/box/system/status` | `GET /v1/status` | name, time zone, addresses, Wi-Fi, Tailscale, console password set, disk encryption |
+| `GET …/timezones` · `PUT …/timezone {timezone}` | same | the zone; the Pocket apps restart a moment later to pick it up |
+| `GET …/wifi` · `POST …/wifi {ssid, password}` | same | nearby networks (`available: false` without a Wi-Fi card), join one |
+| `POST …/tailscale {auth_key?}` · `DELETE …/tailscale` | same | join the tailnet (without a key the answer carries `auth_url`), leave it |
+| `PUT …/password {password}` | same | the console account `pocket`, locked until set here |
+| `POST …/wizard` | same | the setup wizard is finished |
+
+`GET /api/v1/auth/status` carries `box_system` (there is an agent) and `box_wizard`. `box_wizard` is true after the first account exists and until the wizard is finished. While it's true, an admin who opens Core lands on **/welcome**, which walks through time zone, network, Tailscale, the console password and the disk; *Do this later* finishes it too. An agent that doesn't answer never traps anyone in the wizard. Without `BOX_AGENT` none of this exists: the routes answer 404 and Settings has no System tab.

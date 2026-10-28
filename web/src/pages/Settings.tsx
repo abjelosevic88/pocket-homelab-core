@@ -11,11 +11,13 @@ import { CredentialsModal, Tokens } from './Users'
 import { Select } from '../components/Select'
 import { MyLinks } from './Links'
 import { SignInMethods } from './SignInMethods'
+import { BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, useBoxStatus } from '../components/BoxSystem'
 
-type TabId = 'box' | 'sso' | 'profile' | 'links' | 'logins' | 'tokens' | 'about'
+type TabId = 'box' | 'system' | 'sso' | 'profile' | 'links' | 'logins' | 'tokens' | 'about'
 
-const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boolean; member?: boolean }[] = [
+const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boolean; member?: boolean; box?: boolean }[] = [
   { id: 'box', label: 'Box', icon: 'server', sub: 'The box’s name and title, and the key Pocket apps use to join it.', admin: true },
+  { id: 'system', label: 'System', icon: 'settings', sub: 'The Pocket Box itself: time zone, network, remote access, the console password and the disk.', admin: true, box: true },
   { id: 'sso', label: 'Single sign-on', icon: 'shield', sub: 'How people sign in to Core (passwords, PocketID…), and the services that sign people in with their Core account.', admin: true },
   { id: 'profile', label: 'Profile', icon: 'user', sub: 'Your name, password and how Core looks for you.' },
   { id: 'links', label: 'Apps acting for me', icon: 'nodes', sub: 'Pocket apps that can do things in another app as you. Switching one off stops it at once, for you only.' },
@@ -26,11 +28,11 @@ const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boole
 
 export default function Settings() {
   const { tab: raw } = useParams()
-  const { user } = useApp()
+  const { user, status } = useApp()
   const navigate = useNavigate()
   const mobile = useIsMobile()
   const admin = user?.role === 'admin'
-  const tabs = TABS.filter(t => (!t.admin || admin) && (!t.member || !admin))
+  const tabs = TABS.filter(t => (!t.admin || admin) && (!t.member || !admin) && (!t.box || status?.box_system))
   const tab: TabId = tabs.find(t => t.id === raw)?.id || tabs[0].id
   const current = tabs.find(t => t.id === tab)!
   const go = (id: TabId) => navigate(`/settings/${id}`, { replace: true })
@@ -69,6 +71,7 @@ export default function Settings() {
               <p>{current.sub}</p>
             </div>
             {tab === 'box' && <Box />}
+            {tab === 'system' && <BoxSystemSettings />}
             {tab === 'sso' && <OIDCClients />}
             {tab === 'profile' && <Profile />}
             {tab === 'links' && <MyLinks />}
@@ -119,6 +122,20 @@ function Box() {
         <p className="muted small mt-s">A Pocket app needs <code>CORE_URL={window.location.origin}</code> and <code>CORE_REGISTRATION_KEY</code> with this value.</p>
       </Section>
       {rot && <Confirm title="Rotate registration key" message="Apps that have not registered yet will need the new key. Registered apps keep working." onConfirm={async () => { await api.post(`${V1}/settings/registration-key`); setRot(false); reload(); toast('Rotated') }} onCancel={() => setRot(false)} danger={false} confirmLabel="Rotate" />}
+    </div>
+  )
+}
+
+function BoxSystemSettings() {
+  const { st, err, reload } = useBoxStatus()
+  if (!st) return <BoxLoading err={err} />
+  return (
+    <div className="stack loose">
+      <Section title="Time zone" icon="clock" sub="Reminders, schedules and “today” in every app follow it."><TimezonePanel current={st.timezone} onSaved={reload} /></Section>
+      <Section title="Network" icon="wifi" sub={`The box answers at ${st.domain} on this network.`}><NetworkPanel st={st} onChanged={reload} /></Section>
+      <Section title="Away from home" icon="globe" sub="Reach the box from anywhere through Tailscale."><TailscalePanel st={st} onChanged={reload} /></Section>
+      <Section title="Console password" icon="terminal" sub="Repairs at the box's own screen and keyboard."><PasswordPanel st={st} onSaved={reload} /></Section>
+      <Section title="Disk" icon="disk"><DiskPanel st={st} /></Section>
     </div>
   )
 }

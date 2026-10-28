@@ -51,6 +51,7 @@ type Server struct {
 	http        *http.Client
 	connHTTP    *http.Client    // connectors talking to third-party apps
 	ctx         context.Context // lives as long as the server; background work hangs off it
+	box         *boxAgent       // the Pocket Box agent (BOX_AGENT); nil off a box
 	polling     sync.Map        // service id → struct{}: a poll is running
 	nextPoll    sync.Map        // service id → time.Time: when the scheduler polls next
 	provMu      sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
@@ -76,7 +77,8 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		connHTTP:   &http.Client{Timeout: 30 * time.Second},
 		ctx:        context.Background(),
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute),
-		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute)}
+		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute),
+		box: newBoxAgent(cfg.BoxAgent)}
 }
 
 // warnStaleAdminEnv logs when ADMIN_* no longer describe a working sign-in. The
@@ -301,6 +303,7 @@ func (s *Server) Router() http.Handler {
 
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAdmin)
+				r.HandleFunc("/box/system/*", s.handleBoxSystem)
 				r.Put("/apps/{slug}", s.handleUpdateApp)
 				r.Delete("/apps/{slug}", s.handleDeleteApp)
 				r.Post("/apps/{slug}/rotate", s.handleRotateApp)
