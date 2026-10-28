@@ -2,8 +2,8 @@
 // box agent. The setup wizard shows these one at a time, Settings → System all together.
 import { useEffect, useMemo, useState } from 'react'
 import { api, V1 } from '../lib/api'
-import type { BoxSystem, WifiNetwork } from '../lib/types'
-import { errMsg, Loading, Spinner, useToast } from './ui'
+import type { BoxSystem, BoxUpdates, WifiNetwork } from '../lib/types'
+import { Confirm, errMsg, Loading, Spinner, Switch, useToast } from './ui'
 import { Icon } from './icons'
 import { Select } from './Select'
 
@@ -205,4 +205,50 @@ export function DiskPanel({ st }: { st: BoxSystem }) {
 
 export function BoxLoading({ err }: { err: string }) {
   return err ? <Problem text={err} /> : <Loading />
+}
+
+const RESULT: Record<string, string> = {
+  'up-to-date': 'Up to date', updated: 'Updated', 'rolled-back': 'Went back', skipped: 'Skipped a release', error: 'Problem',
+  paused: 'Paused', checking: 'Checking…', installing: 'Installing…',
+}
+
+/** Nightly updates with rollback: this release, the last run, check now, on/off, restart to finish. */
+export function UpdatesPanel() {
+  const { toast } = useToast()
+  const [u, setU] = useState<BoxUpdates | null>(null)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [restart, setRestart] = useState(false)
+  const load = async () => { try { setU(await api.get<BoxUpdates>(`${BOX}/updates`)); setErr('') } catch (e) { setErr(errMsg(e)) } }
+  useEffect(() => { load() }, [])
+  // While an update runs, follow it.
+  useEffect(() => {
+    if (!u?.running) return
+    const id = window.setInterval(load, 4000)
+    return () => window.clearInterval(id)
+  }, [u?.running])
+  if (!u) return err ? <Problem text={err} /> : <Loading />
+  const check = async () => { setBusy(true); setErr(''); try { setU(await api.post<BoxUpdates>(`${BOX}/updates`)); toast('Looking for a new release') } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) } }
+  const auto = async (on: boolean) => { try { setU(await api.put<BoxUpdates>(`${BOX}/updates`, { auto: on })) } catch (e) { setErr(errMsg(e)) } }
+  const last = u.last || {}
+  const when = last.checked_at ? new Date(last.checked_at).toLocaleString() : ''
+  return (
+    <div className="stack tight">
+      <div className="row wrap">
+        <span className="grow">This box runs <b>Pocket Box {u.release.version || '?'}</b>{u.release.rev ? <span className="muted"> ({u.release.rev})</span> : null}</span>
+        <button type="button" className="btn sm" onClick={check} disabled={busy || u.running}>{u.running || busy ? <Spinner /> : <Icon name="refresh" size={14} />}{u.running ? 'Updating…' : 'Check now'}</button>
+      </div>
+      {last.result && <div className={`callout ${last.result === 'rolled-back' || last.result === 'error' ? 'danger' : ''}`}>
+        <Icon name={last.result === 'rolled-back' || last.result === 'error' ? 'alert' : 'check'} size={15} />
+        <span><b>{RESULT[last.result] || last.result}.</b> {last.message}{when ? <span className="muted"> {when}</span> : null}
+          {last.failing?.length ? <><br /><span className="small">Did not come up: {last.failing.join(', ')}</span></> : null}</span>
+      </div>}
+      {u.restart_needed && <div className="callout"><Icon name="info" size={15} /><span>A new system kernel is installed; it takes over at the next restart. The nightly update restarts the box by itself.</span>
+        <button type="button" className="btn sm" onClick={() => setRestart(true)}>Restart now</button></div>}
+      <div className="row"><span className="grow">Update every night and go back automatically if something does not start</span><Switch on={u.auto} onChange={auto} label="Automatic updates" /></div>
+      <Problem text={err} />
+      {restart && <Confirm title="Restart the box" message="Every app is unavailable for a minute or two while the box restarts." confirmLabel="Restart"
+        onConfirm={async () => { setRestart(false); try { await api.post(`${BOX}/restart`); toast('Restarting…') } catch (e) { setErr(errMsg(e)) } }} onCancel={() => setRestart(false)} />}
+    </div>
+  )
 }

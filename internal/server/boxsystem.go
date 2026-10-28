@@ -97,6 +97,10 @@ var boxSystemRoutes = map[string]string{
 	"DELETE /tailscale": "DELETE /v1/tailscale",
 	"PUT /password":     "PUT /v1/password",
 	"POST /wizard":      "POST /v1/wizard",
+	"GET /updates":      "GET /v1/updates",
+	"POST /updates":     "POST /v1/updates",
+	"PUT /updates":      "PUT /v1/updates",
+	"POST /restart":     "POST /v1/restart",
 }
 
 // handleBoxSystem passes an admin's request on to the agent and its answer
