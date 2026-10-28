@@ -22,9 +22,12 @@ type Config struct {
 	DataDir    string
 	DBPath     string
 	SecretPath string
-	LogLevel   string
-	LogFormat  string // text | json
-	TrustProxy bool
+	// ServicesFile: JSON list of third-party services a Pocket Box runs; Core
+	// creates them (and their connectors) at start. See docs/configuration.md.
+	ServicesFile string
+	LogLevel     string
+	LogFormat    string // text | json
+	TrustProxy   bool
 
 	AuthMode             string // local | proxy | none
 	AuthProxyHeader      string
@@ -103,15 +106,16 @@ func envDuration(key string, def time.Duration) time.Duration {
 func Load() (*Config, error) {
 	dataDir := env("DATA_DIR", "./data")
 	c := &Config{
-		Host:       env("HOST", "0.0.0.0"),
-		Port:       envInt("PORT", 8080),
-		BaseURL:    strings.TrimRight(env("BASE_URL", ""), "/"),
-		DataDir:    dataDir,
-		DBPath:     env("DB_PATH", dataDir+"/pocket-core.db"),
-		SecretPath: env("SECRET_PATH", dataDir+"/secret.key"),
-		LogLevel:   strings.ToLower(env("LOG_LEVEL", "info")),
-		LogFormat:  strings.ToLower(env("LOG_FORMAT", "text")),
-		TrustProxy: envBool("TRUST_PROXY", true),
+		Host:         env("HOST", "0.0.0.0"),
+		Port:         envInt("PORT", 8080),
+		BaseURL:      strings.TrimRight(env("BASE_URL", ""), "/"),
+		DataDir:      dataDir,
+		DBPath:       env("DB_PATH", dataDir+"/pocket-core.db"),
+		SecretPath:   env("SECRET_PATH", dataDir+"/secret.key"),
+		ServicesFile: env("SERVICES_FILE", ""),
+		LogLevel:     strings.ToLower(env("LOG_LEVEL", "info")),
+		LogFormat:    strings.ToLower(env("LOG_FORMAT", "text")),
+		TrustProxy:   envBool("TRUST_PROXY", true),
 
 		AuthMode:             strings.ToLower(env("AUTH_MODE", "local")),
 		AuthProxyHeader:      env("AUTH_PROXY_HEADER", "Remote-User"),

@@ -149,6 +149,9 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	}
 	_ = s.store.PurgeExpired(ctx)
 	s.ctx = ctx
+	if err := s.applyServicesFile(ctx); err != nil {
+		return err
+	}
 	s.hub.Allow = s.appCanReadEvent
 	go s.hub.Run(ctx)
 	go s.janitor(ctx)

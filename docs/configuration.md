@@ -13,6 +13,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `PASSWORD_LOGIN` | `true` | `false` = only the upstream provider. Stays on without `SSO_ISSUER`, so nobody gets locked out |
 | `DATA_DIR` | `./data` (`/data` in the image) | SQLite database, secret key, backups |
 | `DB_PATH` / `SECRET_PATH` | `$DATA_DIR/pocket-core.db` / `$DATA_DIR/secret.key` | Override locations. The secret key encrypts stored service credentials; back it up with the database. |
+| `SERVICES_FILE` | — | A JSON list of third-party services a Pocket Box runs, applied at every start (see below). |
 | `TZ` | – | Container timezone |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `text` | `debug`, `warn`, `error`; `json` |
 | `TRUST_PROXY` | `true` | Honour `X-Forwarded-For` |
@@ -113,3 +114,29 @@ Inside the container: `docker exec pocket-core pocket-core pair`. `connector` ta
 ## What to back up
 
 `DATA_DIR` as a whole: the database, `secret.key` (without it stored credentials cannot be decrypted) and `backups/`. `GET /api/v1/backup` or `pocket-core backup` produce a consistent copy of the database while it runs.
+
+## Services a box sets up (`SERVICES_FILE`)
+
+A Pocket Box makes the third-party services it ships with ready before anyone signs in. It creates an admin account and key in each, then hands them to Core in a file:
+
+```json
+[
+  {
+    "type": "navidrome",
+    "name": "Navidrome",
+    "url": "http://127.0.0.1:4533",
+    "public_url": "https://navidrome.pocket.local",
+    "fields": { "USER": "pocket-box", "PASSWORD": "…" },
+    "audience": "all",
+    "connector": { "enabled": true, "provision_on_create": true }
+  }
+]
+```
+
+| Part | Applied |
+|---|---|
+| `url`, `public_url`, `fields` | at every start. The box owns these and may have replaced a key |
+| `name`, `audience` | only when Core creates the service; an admin's later edits stand |
+| `connector` | only when Core creates the connector; an admin's later switches stand. A new connector set to make accounts provisions everyone already in Core |
+
+A type a registered Pocket app owns is skipped. An entry without a type stops Core from starting. The first account made on Core's setup screen gets its accounts in every connector set to make them, like people added later under Users.
