@@ -11,13 +11,13 @@ import { CredentialsModal, Tokens } from './Users'
 import { Select } from '../components/Select'
 import { MyLinks } from './Links'
 import { SignInMethods } from './SignInMethods'
-import { BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, useBoxStatus } from '../components/BoxSystem'
+import { BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, UpdatesPanel, useBoxStatus } from '../components/BoxSystem'
 
 type TabId = 'box' | 'system' | 'sso' | 'profile' | 'links' | 'logins' | 'tokens' | 'about'
 
 const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boolean; member?: boolean; box?: boolean }[] = [
   { id: 'box', label: 'Box', icon: 'server', sub: 'The box’s name and title, and the key Pocket apps use to join it.', admin: true },
-  { id: 'system', label: 'System', icon: 'settings', sub: 'The Pocket Box itself: time zone, network, remote access, the console password and the disk.', admin: true, box: true },
+  { id: 'system', label: 'System', icon: 'settings', sub: 'The Pocket Box itself: updates, time zone, network, remote access, the console password and the disk.', admin: true, box: true },
   { id: 'sso', label: 'Single sign-on', icon: 'shield', sub: 'How people sign in to Core (passwords, PocketID…), and the services that sign people in with their Core account.', admin: true },
   { id: 'profile', label: 'Profile', icon: 'user', sub: 'Your name, password and how Core looks for you.' },
   { id: 'links', label: 'Apps acting for me', icon: 'nodes', sub: 'Pocket apps that can do things in another app as you. Switching one off stops it at once, for you only.' },
@@ -131,6 +131,7 @@ function BoxSystemSettings() {
   if (!st) return <BoxLoading err={err} />
   return (
     <div className="stack loose">
+      <Section title="Updates" icon="refresh" sub="New releases install at night, and the box goes back by itself if an app does not start afterwards."><UpdatesPanel /></Section>
       <Section title="Time zone" icon="clock" sub="Reminders, schedules and “today” in every app follow it."><TimezonePanel current={st.timezone} onSaved={reload} /></Section>
       <Section title="Network" icon="wifi" sub={`The box answers at ${st.domain} on this network.`}><NetworkPanel st={st} onChanged={reload} /></Section>
       <Section title="Away from home" icon="globe" sub="Reach the box from anywhere through Tailscale."><TailscalePanel st={st} onChanged={reload} /></Section>

@@ -100,5 +100,11 @@ export interface BoxSystem {
   network: { addresses: { interface: string; address: string }[]; wifi: { available: boolean; connected: string } }
   tailscale: { state: string; auth_url?: string; name?: string; addresses?: string[]; tailnet?: string }
   encryption: { encrypted: boolean; tpm: boolean; recovery_key: boolean }
+  updates?: BoxUpdates
+}
+export interface BoxRelease { version?: string; rev?: string; variant?: string }
+export interface BoxUpdates {
+  release: BoxRelease; auto: boolean; running: boolean; restart_needed: boolean
+  last: { result?: string; message?: string; checked_at?: string; available?: BoxRelease; previous?: BoxRelease; failing?: string[]; detail?: string }
 }
 export interface WifiNetwork { ssid: string; signal: number; secure: boolean; active: boolean }

@@ -154,5 +154,7 @@ On a Pocket Box, Core also sets up the machine it runs on. Core runs unprivilege
 | `POST …/tailscale {auth_key?}` · `DELETE …/tailscale` | same | join the tailnet (without a key the answer carries `auth_url`), leave it |
 | `PUT …/password {password}` | same | the console account `pocket`, locked until set here |
 | `POST …/wizard` | same | the setup wizard is finished |
+| `GET …/updates` · `POST …/updates` · `PUT …/updates {auto}` | same | this release, the last update run (updated, rolled back, …), check now, nightly updates on or off |
+| `POST …/restart` | same | restart the box (to finish a kernel update) |
 
 `GET /api/v1/auth/status` carries `box_system` (there is an agent) and `box_wizard`. `box_wizard` is true after the first account exists and until the wizard is finished. While it's true, an admin who opens Core lands on **/welcome**, which walks through time zone, network, Tailscale, the console password and the disk; *Do this later* finishes it too. An agent that doesn't answer never traps anyone in the wizard. Without `BOX_AGENT` none of this exists: the routes answer 404 and Settings has no System tab.

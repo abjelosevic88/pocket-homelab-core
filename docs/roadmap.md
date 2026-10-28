@@ -44,6 +44,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.22** — **setting up the box itself.** On a Pocket Box (`BOX_AGENT`) the first admin goes through a short wizard: time zone, network and Wi-Fi, Tailscale (login link or auth key), the console password and how the disk is protected. All of it stays under Settings → System, through the box's root agent.
 
+**0.23** — **updates on a Pocket Box.** Settings → System shows the release the box runs and what the last nightly update did (updated, went back because an app did not start, skipped a release that failed before), with *Check now*, an on/off switch and *Restart now* when a new kernel waits.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.
