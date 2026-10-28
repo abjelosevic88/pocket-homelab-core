@@ -20,6 +20,7 @@ import Settings from './pages/Settings'
 import Links from './pages/Links'
 import AIConnections from './pages/AIConnections'
 import AIPairing from './pages/AIPairing'
+import BoxWizard from './pages/BoxWizard'
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { status, user } = useApp()
@@ -27,6 +28,8 @@ function Gate({ children }: { children: React.ReactNode }) {
   if (!status) return <div className="boot"><img src="/favicon.svg" alt="" /><Loading /></div>
   if (status.needs_setup) return <Navigate to="/setup" replace />
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />
+  // A new Pocket Box: the admin sets up the box itself once, right after the first account.
+  if (status.box_wizard && user.role === 'admin' && loc.pathname !== '/welcome') return <Navigate to="/welcome" replace />
   return <>{children}</>
 }
 
@@ -36,6 +39,7 @@ function App() {
       <Route path="/login" element={<Login mode="login" />} />
       <Route path="/setup" element={<Login mode="setup" />} />
       <Route path="/connect" element={<Navigate to="/ai-connections" replace />} />
+      <Route path="/welcome" element={<Gate><ErrorBoundary where="welcome"><BoxWizard /></ErrorBoundary></Gate>} />
       <Route path="/settings/:tab?" element={<Gate><ErrorBoundary where="settings"><Settings /></ErrorBoundary></Gate>} />
       <Route element={<Gate><ErrorBoundary where="core"><Layout /></ErrorBoundary></Gate>}>
         <Route path="/" element={<Home />} />

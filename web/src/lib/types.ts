@@ -1,6 +1,6 @@
 export interface User { id: number; email: string; name: string; role: 'admin' | 'member'; disabled: boolean; created_at: string; updated_at: string }
 export interface Principal { kind: 'user' | 'app' | 'device'; user?: User | null; app?: App | null; device?: Device | null; scope?: string }
-export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string }
+export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string; box_system?: boolean; box_wizard?: boolean }
 export interface Settings { title: string; box_name: string; registration_key: string; setup_complete: boolean }
 export interface App {
   id: number; slug: string; name: string; description: string; icon: string; version: string; url: string; public_url: string
@@ -94,3 +94,11 @@ export interface AppLink {
   key_rotation?: KeyRotation
   key_replacements?: KeyReplacement[]
 }
+/** The Pocket Box itself, from its agent (Settings → System, the setup wizard). */
+export interface BoxSystem {
+  hostname: string; domain: string; timezone: string; password_set: boolean; wizard_done: boolean
+  network: { addresses: { interface: string; address: string }[]; wifi: { available: boolean; connected: string } }
+  tailscale: { state: string; auth_url?: string; name?: string; addresses?: string[]; tailnet?: string }
+  encryption: { encrypted: boolean; tpm: boolean; recovery_key: boolean }
+}
+export interface WifiNetwork { ssid: string; signal: number; secure: boolean; active: boolean }

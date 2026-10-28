@@ -266,6 +266,9 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"authenticated": p != nil, "user": u, "version": Version, "title": st.Title, "box_name": st.BoxName,
 		"sso": s.ssoEnabled() && s.cfg.AuthMode == "local", "sso_name": s.signin().Name, "password_login": s.signin().PasswordLogin || s.cfg.AuthMode != "local",
 		"cookie_warning": s.cookieWarning(r),
+		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
+		"box_system": s.box != nil,
+		"box_wizard": s.box != nil && n > 0 && s.box.wizardPending(r.Context()),
 	})
 }
 

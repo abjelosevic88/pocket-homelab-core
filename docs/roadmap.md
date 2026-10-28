@@ -42,6 +42,8 @@ Pocket Core is the first piece of a **Pocket Box**: a PC that ships with NixOS, 
 
 **0.21** — **services a box sets up.** `SERVICES_FILE` lists the third-party services a Pocket Box ships (with the admin account and key the box made at first boot); Core creates them and their connectors at start, and a new connector set to make accounts provisions everyone already there. The first account from the setup screen now gets its accounts in every such connector. New **Navidrome** connector: accounts with their own username and password, matched by email. 0.21.1: the secret key is written atomically and flushed, so a power cut right after the first start cannot leave an empty key that keeps Core from starting.
 
+**0.22** — **setting up the box itself.** On a Pocket Box (`BOX_AGENT`) the first admin goes through a short wizard: time zone, network and Wi-Fi, Tailscale (login link or auth key), the console password and how the disk is protected. All of it stays under Settings → System, through the box's root agent.
+
 **Next**
 - Move the hand-pasted cross-app tokens to links: Kitchen → Inventory / Split / Habits, Garage → Travel / Inventory, Day's Pocket sources.
 - More connectors, same shape: Navidrome. Push events (hooks) for every app that can call a URL.

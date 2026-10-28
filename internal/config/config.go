@@ -25,9 +25,12 @@ type Config struct {
 	// ServicesFile: JSON list of third-party services a Pocket Box runs; Core
 	// creates them (and their connectors) at start. See docs/configuration.md.
 	ServicesFile string
-	LogLevel     string
-	LogFormat    string // text | json
-	TrustProxy   bool
+	// BoxAgent: the Pocket Box agent's unix socket (time zone, Wi-Fi,
+	// Tailscale, console password). Empty off a Pocket Box.
+	BoxAgent   string
+	LogLevel   string
+	LogFormat  string // text | json
+	TrustProxy bool
 
 	AuthMode             string // local | proxy | none
 	AuthProxyHeader      string
@@ -113,6 +116,7 @@ func Load() (*Config, error) {
 		DBPath:       env("DB_PATH", dataDir+"/pocket-core.db"),
 		SecretPath:   env("SECRET_PATH", dataDir+"/secret.key"),
 		ServicesFile: env("SERVICES_FILE", ""),
+		BoxAgent:     env("BOX_AGENT", ""),
 		LogLevel:     strings.ToLower(env("LOG_LEVEL", "info")),
 		LogFormat:    strings.ToLower(env("LOG_FORMAT", "text")),
 		TrustProxy:   envBool("TRUST_PROXY", true),
