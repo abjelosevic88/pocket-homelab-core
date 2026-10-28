@@ -340,6 +340,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setSessionCookie(w, id, s.cfg.SessionTTL)
 	s.log.Info("initial setup completed", "email", u.Email)
+	s.provisionNewUser(u.ID) // services a box set up before anyone existed
 	writeJSON(w, http.StatusOK, u)
 }
 

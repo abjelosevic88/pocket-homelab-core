@@ -388,6 +388,18 @@ Someone Core has not linked to a Jellyfin account gets an error asking for that 
 
 **Events are polled** ([topics](events.md#jellyseerr-source-connectorjellyseerr)), not pushed. Jellyseerr has a single webhook slot, often already used (for example by a Jellyfin plugin), and Core does not take it over. Each check reads the 100 most recently changed requests and issues and compares them with the previous check. Each event belongs to whoever made the request or reported the issue. A request Core sees for the first time with an id at or below the highest one it already knew (an old request edited) produces no event, because there is nothing to compare it with.
 
+## Navidrome
+
+Needs: the Navidrome service in Core with its internal URL and `USER` / `PASSWORD` of a **Navidrome administrator**. Navidrome has no API keys: Core signs in for a session token on every call.
+
+| Navidrome call | Used by | Writes? |
+|---|---|---|
+| `POST /auth/login` | Test, Provision: an admin session | – (opens a session) |
+| `GET /api/user` | Test, Provision | – |
+| `POST /api/user` | Provision: a missing person — `userName` from the email's local part (a number added when taken), name, email, a 32-character random password, `isAdmin: false` | **yes** |
+
+Accounts carry emails: a person whose email already has an account is **linked** (its password is unknown to Core, so nothing is minted; an administrator's account is never touched). A new account gets the libraries Navidrome gives new users by default, and the person's credential is their `USER` and `PASSWORD`, what Pocket Music and Subsonic clients sign in with. A person who keeps their own credential gets no account made for them. No sign-in, no events, no key replacement.
+
 ## From the console
 
 Everything above is also available without a browser, through the running server (so locking and the bus behave the same):
