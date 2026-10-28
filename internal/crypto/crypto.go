@@ -68,7 +68,7 @@ func LoadBox(path string) (*Box, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(path, key, 0o600); err != nil {
+		if err := writeSynced(path, key, 0o600); err != nil {
 			return nil, fmt.Errorf("write secret key: %w", err)
 		}
 	} else if err != nil {
@@ -121,4 +121,34 @@ func (b *Box) Open(v string) (string, error) {
 		return "", err
 	}
 	return string(pt), nil
+}
+
+// writeSynced writes the file under a temporary name, flushes it to disk and
+// renames it into place: a power cut leaves either no key or the whole key,
+// never an empty file that would keep Core from starting.
+func writeSynced(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
