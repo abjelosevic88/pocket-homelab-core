@@ -1,20 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
-import type { CatalogEntry, ConnectorCaps, ConnectorListItem, Service, User } from '../lib/types'
+import type { CatalogEntry, ConnectorListItem, Service, User } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Empty, Field, Loading, MenuButton, Modal, PageHeader, Segmented, Switch, useAsync } from '../components/ui'
 import { Icon } from '../components/icons'
 import { ConnectorModal } from '../components/ConnectorPanel'
 import { Select } from '../components/Select'
-import { bundledIcon, iconCandidates } from '../lib/icons'
+import { iconCandidates } from '../lib/icons'
 
 type TestResult = { ok: boolean; status?: number; ms?: number; error?: string; busy?: boolean }
-
-// Missing: a Pocket app that hasn't registered, or a service Core has a
-// connector for that nobody added yet. Shown greyed out so a fresh box isn't
-// an empty page; nothing is stored and devices never see it.
-type Missing = { entry: CatalogEntry; kind: 'pocket' | 'connector'; caps?: ConnectorCaps }
 
 export default function Services() {
   const { user } = useApp()
@@ -25,7 +20,6 @@ export default function Services() {
   const [conn, setConn] = useState<Service | null>(null)
   const connFor = (s: Service) => (conns || []).find(c => c.type === s.type && c.service_id === s.id)
   const [adding, setAdding] = useState<boolean | CatalogEntry>(false)
-  const [howTo, setHowTo] = useState<CatalogEntry | null>(null)
   const [edit, setEdit] = useState<Service | null>(null)
   const [del, setDel] = useState<Service | null>(null)
   const [q, setQ] = useState('')
@@ -36,33 +30,17 @@ export default function Services() {
   useEffect(() => { if (admin && sp.get('add')) { setAdding(true); sp.delete('add'); setSp(sp, { replace: true }) } }, [admin, sp, setSp])
   const list = data || []
   const pocketBases = list.filter(s => s.catalog.pocket || s.app_id).map(s => s.public_url || s.url)
-  const missing = useMemo<Missing[]>(() => {
-    if (!admin || !catalog) return []
-    const have = new Set(list.map(s => s.type))
-    const out: Missing[] = []
-    for (const c of catalog) {
-      if (have.has(c.type) || c.type === 'core') continue
-      const k = (conns || []).find(x => x.type === c.type)
-      if (c.pocket) out.push({ entry: c, kind: 'pocket' })
-      else if (k) out.push({ entry: c, kind: 'connector', caps: k.capabilities })
-    }
-    return out
-  }, [admin, catalog, list, conns])
   const groups = useMemo(() => {
-    const g = new Map<string, { svcs: Service[]; missing: Missing[] }>()
-    const at = (k: string) => { if (!g.has(k)) g.set(k, { svcs: [], missing: [] }); return g.get(k)! }
+    const g = new Map<string, Service[]>()
+    const at = (k: string) => { if (!g.has(k)) g.set(k, []); return g.get(k)! }
     const match = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase())
     for (const s of list) {
       if (!match(s.name + s.type + s.url + s.public_url)) continue
       if ((show === 'on' && !s.enabled) || (show === 'off' && s.enabled) || (show === 'conn' && !connFor(s))) continue
-      at(s.catalog.group).svcs.push(s)
-    }
-    for (const m of missing) {
-      if (show === 'on' || show === 'off' || (show === 'conn' && m.kind !== 'connector') || !match(m.entry.name + m.entry.type)) continue
-      at(m.entry.group).missing.push(m)
+      at(s.catalog.group).push(s)
     }
     return [...g.entries()]
-  }, [list, missing, q, show, conns]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [list, q, show, conns]) // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = async (s: Service, on: boolean) => { await api.put(`${V1}/services/${s.id}`, { enabled: on }); await reload() }
   const test = async (s: Service) => {
     setTests(t => ({ ...t, [s.id]: { ok: false, busy: true } }))
@@ -78,14 +56,14 @@ export default function Services() {
         actions={<><a className="btn" href={`${V1}/pair/profile?format=env`} download><Icon name="download" size={15} />Download env</a>{admin && <button type="button" className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={15} />Add service</button>}</>} />
       <div className="toolbar">
         <div className="search"><Icon name="search" size={15} /><input placeholder="Search services…" value={q} onChange={e => setQ(e.target.value)} /></div>
-        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length + missing.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length + missing.filter(m => m.kind === 'connector').length}` }] : [])]} />
+        <Segmented size="sm" value={show} onChange={setShow} options={[{ value: 'all', label: `All ${list.length}` }, { value: 'on', label: `In profile ${list.filter(s => s.enabled).length}` }, { value: 'off', label: `Hidden ${list.filter(s => !s.enabled).length}` }, ...(admin && (conns || []).length ? [{ value: 'conn' as const, label: `Connectors ${list.filter(s => connFor(s)).length}` }] : [])]} />
         <button type="button" className="btn sm" onClick={testAll} title="Check every service in the profile"><Icon name="activity" size={14} />Test all</button>
       </div>
-      {admin && (conns || []).length > 0 && <ConnectorsOverview conns={conns || []} services={list} pocketBases={pocketBases} onOpen={setConn} onAdd={type => { const e = catalog?.find(c => c.type === type); if (e) setAdding(e) }} />}
-      {list.length === 0 && missing.length === 0 ? <Card><Empty icon="server" title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
+      {admin && <ConnectorsOverview conns={conns || []} services={list} pocketBases={pocketBases} onOpen={setConn} />}
+      {list.length === 0 ? <Card><Empty icon="server" title="Nothing yet">Registered Pocket apps appear here automatically. Add Jellyfin, Immich, Nextcloud… with their API keys and every paired phone gets them.</Empty></Card> :
         groups.length === 0 ? <Card><Empty title="No match">Nothing matches this search.</Empty></Card> :
-        groups.map(([g, { svcs: items, missing: absent }]) => <section key={g} className="svc-group">
-          <div className="svc-group-head"><span>{g}</span><span className="count">{items.length}</span>{absent.length > 0 && <span className="count muted">+{absent.length} not set up</span>}</div>
+        groups.map(([g, items]) => <section key={g} className="svc-group">
+          <div className="svc-group-head"><span>{g}</span><span className="count">{items.length}</span></div>
           <div className="svc-list">{items.map(s => {
             const c = connFor(s)?.connector
             const href = s.public_url || s.url
@@ -128,10 +106,9 @@ export default function Services() {
                 <Switch on={s.enabled} onChange={v => toggle(s, v)} title={s.enabled ? 'In the profile' : 'Hidden from devices'} />
               </div>
             )
-          })}{absent.map(m => <MissingRow key={m.entry.type} m={m} onAdd={() => setAdding(m.entry)} onHowTo={() => setHowTo(m.entry)} />)}</div>
+          })}</div>
         </section>)}
       {adding && catalog && <AddService catalog={catalog.filter(c => !list.some(s => s.type === c.type))} initial={adding === true ? undefined : adding} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
-      {howTo && <PocketHowTo entry={howTo} onClose={() => setHowTo(null)} />}
       {conn && <ConnectorModal service={conn} onClose={() => { setConn(null); reloadConns() }} />}
       {edit && <EditService s={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}
       {del && <Confirm title="Remove service" message={<>Remove <b>{del.name}</b>? Paired devices lose it on their next profile refresh.</>} onConfirm={remove} onCancel={() => setDel(null)} />}
@@ -151,66 +128,29 @@ function ConnectorLine({ c, onOpen }: { c?: ConnectorListItem['connector']; onOp
   )
 }
 
-// MissingRow: a greyed-out row for something not set up yet. The tooltip
-// says what's missing; the visible line says the same for phones.
-function MissingRow({ m, onAdd, onHowTo }: { m: Missing; onAdd: () => void; onHowTo: () => void }) {
-  const pocket = m.kind === 'pocket'
-  const name = m.entry.name
-  const caps = m.caps ? [m.caps.provision && 'accounts', m.caps.sso && 'sign-in with Core', m.caps.events && 'events'].filter(Boolean).join(', ') : ''
-  const tip = pocket
-    ? `${name} isn't running on this box. Start it with CORE_URL and the registration key from Settings; it registers itself and this row comes alive.`
-    : `${name} isn't added yet. Add its address and an admin API key to use its connector${caps ? ` (${caps})` : ''}.`
-  const icon = bundledIcon(m.entry.type)
-  return (
-    <div className="svc-row off missing" title={tip}>
-      {icon ? <span className="svc-icon"><img src={icon} alt="" /></span> : <span className="svc-icon letter" style={{ background: `hsl(${hue(name)} 70% 92%)`, color: `hsl(${hue(name)} 55% 35%)` }}>{name[0]}</span>}
-      <div className="svc-main">
-        <div className="svc-name"><b>{name}</b><span className="badge cat">{pocket ? 'Pocket app' : 'Connector'}</span></div>
-        <div className="svc-sub"><span>{pocket ? 'Registers itself once it runs with CORE_URL' : `Add it to use ${caps || 'its connector'}`}</span></div>
-      </div>
-      <div className="svc-foot">
-        <div className="svc-status"><span className="pill">{pocket ? 'Not installed' : 'Not added'}</span></div>
-        <div className="svc-actions">{pocket ? <button type="button" className="btn sm ghost" onClick={onHowTo}>How to</button> : <button type="button" className="btn sm" onClick={onAdd}>Add</button>}</div>
-      </div>
-      <Switch on={false} onChange={() => {}} disabled title={pocket ? 'Install it first' : 'Add it first'} />
-    </div>
-  )
-}
-
-// PocketHowTo: the two lines a Pocket app needs to find this box.
-function PocketHowTo({ entry, onClose }: { entry: CatalogEntry; onClose: () => void }) {
-  const { data: st } = useAsync(() => api.get<{ registration_key: string }>(`${V1}/settings`), [])
-  return (
-    <Modal title={`Connect ${entry.name}`} onClose={onClose}>
-      <p className="muted small">Add these to {entry.name}'s environment and restart it. It registers with Core, shows up here by itself, and paired phones get it with their device token.</p>
-      {st ? <pre>{`CORE_URL=${window.location.origin}\nCORE_REGISTRATION_KEY=${st.registration_key}`}</pre> : <Loading />}
-      <div className="form-actions"><button type="button" className="btn" onClick={onClose}>Close</button></div>
-    </Modal>
-  )
-}
-
-// ConnectorsOverview: every connector Core ships, at the top of the page.
-function ConnectorsOverview({ conns, services, pocketBases, onOpen, onAdd }: { conns: ConnectorListItem[]; services: Service[]; pocketBases: string[]; onOpen: (s: Service) => void; onAdd: (type: string) => void }) {
+// ConnectorsOverview: the connectors of services that are added, at the top of the page.
+function ConnectorsOverview({ conns, services, pocketBases, onOpen }: { conns: ConnectorListItem[]; services: Service[]; pocketBases: string[]; onOpen: (s: Service) => void }) {
+  const added = conns.flatMap(k => { const svc = services.find(s => s.id === k.service_id && s.type === k.type); return svc ? [{ k, svc }] : [] })
+  if (!added.length) return null
   return (
     <section className="svc-group">
-      <div className="svc-group-head"><span>Connectors</span><span className="count">{conns.length}</span><span className="muted" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>create accounts, sign people in with Core, listen to events</span></div>
-      <div className="conn-cards">{conns.map(k => {
-        const svc = services.find(s => s.id === k.service_id && s.type === k.type)
+      <div className="svc-group-head"><span>Connectors</span><span className="count">{added.length}</span><span className="muted" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>create accounts, sign people in with Core, listen to events</span></div>
+      <div className="conn-cards">{added.map(({ k, svc }) => {
         const c = k.connector
-        const state = !svc ? 'missing' : !c || !c.enabled ? 'off' : c.last_error ? 'err' : 'on'
+        const state = !c || !c.enabled ? 'off' : c.last_error ? 'err' : 'on'
         return (
           <div key={k.type} className={`conn-card ${state}`}>
             <div className="conn-card-head">
-              {svc ? <ServiceIcon s={svc} pocketBases={pocketBases} /> : bundledIcon(k.type) ? <span className="svc-icon"><img src={bundledIcon(k.type)} alt="" /></span> : <span className="svc-icon letter" style={{ background: `hsl(${hue(k.name)} 70% 92%)`, color: `hsl(${hue(k.name)} 55% 35%)` }}>{k.name[0]}</span>}
-              <div className="grow"><b>{k.name}</b><div className="muted small">{state === 'missing' ? 'Add the service first' : state === 'off' ? 'Available, switched off' : state === 'err' ? (c?.last_error || 'Error') : c?.last_poll_at ? `Last check ${new Date(c.last_poll_at).toLocaleTimeString()}` : 'On'}</div></div>
-              <span className={`pill ${state === 'on' ? 'ok' : state === 'err' ? 'err' : ''}`}>{state === 'on' ? 'On' : state === 'err' ? 'Error' : state === 'off' ? 'Off' : 'Not added'}</span>
+              <ServiceIcon s={svc} pocketBases={pocketBases} />
+              <div className="grow"><b>{k.name}</b><div className="muted small">{state === 'off' ? 'Available, switched off' : state === 'err' ? (c?.last_error || 'Error') : c?.last_poll_at ? `Last check ${new Date(c.last_poll_at).toLocaleTimeString()}` : 'On'}</div></div>
+              <span className={`pill ${state === 'on' ? 'ok' : state === 'err' ? 'err' : ''}`}>{state === 'on' ? 'On' : state === 'err' ? 'Error' : 'Off'}</span>
             </div>
             <div className="conn-caps">
               {k.capabilities.provision && <span className={`conn-part ${c?.enabled && c.provision_on_create ? 'on' : ''}`}>Accounts</span>}
               {k.capabilities.sso && <span className={`conn-part ${c?.enabled && c.sso_enabled ? 'on' : ''}`}>Sign-in</span>}
               {k.capabilities.events && <span className={`conn-part ${c?.enabled && c.events_enabled ? 'on' : ''}`}>Events</span>}
               <span className="grow" />
-              {svc ? <button type="button" className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button> : <button type="button" className="btn sm" onClick={() => onAdd(k.type)} title={`Add ${k.name}'s address and API key first`}>Add</button>}
+              <button type="button" className="btn sm" onClick={() => onOpen(svc)}>{state === 'off' ? 'Set up' : 'Manage'}</button>
             </div>
           </div>
         )
