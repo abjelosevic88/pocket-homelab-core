@@ -266,7 +266,7 @@ export default function Links() {
   const FILTERS: { value: Filter; label: string; n: number; title: string }[] = [
     { value: 'all', label: 'All', n: groups.length, title: 'Every connection between two apps' },
     { value: 'off', label: 'Off', n: count('off'), title: 'Switched off for the box, fully or partly' },
-    { value: 'bad', label: "Can't work", n: count('bad'), title: 'The other app is missing or no longer offers this' },
+    { value: 'bad', label: "Can't work", n: count('bad'), title: 'The other app no longer offers this' },
     { value: 'direct', label: 'Direct', n: count('direct'), title: 'Someone connects with a URL and key pasted into the app: Core can see these but not switch them' },
   ]
   const pair = picked ? groups.find(g => g.key === picked) : undefined

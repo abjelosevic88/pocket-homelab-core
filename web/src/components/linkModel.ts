@@ -4,9 +4,12 @@ import type { App, AppLink } from '../lib/types'
 export interface LinkGroup { key: string; app: string; appName: string; target: string; targetName: string; reason: string; links: AppLink[] }
 
 // Group links by (acting app → target app) so each pair reads as one sentence.
+// Links to an app or service that isn't on this box are left out: they come
+// back by themselves once the target registers or is added.
 export function groupLinks(links: AppLink[]) {
   const byKey = new Map<string, LinkGroup>()
   for (const l of links) {
+    if (l.state === 'target_missing') continue
     const key = `${l.app_slug}→${l.target_slug}`
     let g = byKey.get(key)
     if (!g) { g = { key, app: l.app_slug, appName: l.app_name, target: l.target_slug, targetName: l.target_name, reason: l.reason, links: [] }; byKey.set(key, g) }
