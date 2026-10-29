@@ -143,7 +143,7 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 	app, _ = s.store.GetApp(ctx, app.ID)
 
 	// Mirror as a service so paired devices receive it.
-	entry := catalog.Resolve(app.Slug, app.Name, app.EnvPrefix, true)
+	entry := catalog.Resolve(app.Slug, app.AppName, app.EnvPrefix, true)
 	sv, serr := s.store.GetServiceByApp(ctx, app.ID)
 	if serr != nil {
 		sv = &store.Service{Type: entry.Type, Enabled: true, Fields: map[string]string{}}
@@ -298,7 +298,6 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			*dst = strings.TrimSpace(*v)
 		}
 	}
-	set(&a.Name, in.Name)
 	set(&a.Description, in.Description)
 	set(&a.Icon, in.Icon)
 	set(&a.URL, in.URL)
@@ -306,16 +305,43 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	set(&a.HealthPath, in.HealthPath)
 	set(&a.EnvPrefix, in.EnvPrefix)
 	a.URL, a.PublicURL, a.EnvPrefix = strings.TrimRight(a.URL, "/"), strings.TrimRight(a.PublicURL, "/"), strings.ToUpper(a.EnvPrefix)
+	if in.Name != nil {
+		// The app re-registers its own name on every start, so an admin's name is kept apart.
+		custom := strings.TrimSpace(*in.Name)
+		st, _ := s.store.GetSettings(r.Context())
+		if custom == a.AppName || custom == store.DisplayName(a.AppName, "", st.FamilyName) {
+			custom = ""
+		}
+		a.CustomName = custom
+	}
+	custom := a.CustomName
+	a.Name = a.AppName
 	if err := s.store.UpdateApp(r.Context(), a); err != nil {
 		s.fail(w, err, "update app")
 		return
 	}
-	if sv, err := s.store.GetServiceByApp(r.Context(), a.ID); err == nil {
-		sv.Name, sv.URL, sv.PublicURL = a.Name, a.URL, a.PublicURL
-		entry := catalog.Resolve(a.Slug, a.Name, a.EnvPrefix, true)
-		_ = s.store.SaveService(r.Context(), sv, entry.IsSecret)
+	if err := s.store.SetAppCustomName(r.Context(), a.ID, custom); err != nil {
+		s.fail(w, err, "rename app")
+		return
 	}
+	if na, err := s.store.GetApp(r.Context(), a.ID); err == nil {
+		a = na
+	}
+	s.mirrorApp(r.Context(), a)
 	writeJSON(w, http.StatusOK, a)
+}
+
+// mirrorApp copies an app's display name and URLs to its service entry (what phones see) and its SSO client.
+func (s *Server) mirrorApp(ctx context.Context, a *store.App) {
+	if sv, err := s.store.GetServiceByApp(ctx, a.ID); err == nil {
+		sv.Name, sv.URL, sv.PublicURL = a.Name, a.URL, a.PublicURL
+		entry := catalog.Resolve(a.Slug, a.AppName, a.EnvPrefix, true)
+		_ = s.store.SaveService(ctx, sv, entry.IsSecret)
+	}
+	if cl, err := s.store.GetOIDCClient(ctx, "pocket-"+a.Slug); err == nil && cl.AppID == a.ID && cl.Name != a.Name {
+		cl.Name = a.Name
+		_, _ = s.store.SaveOIDCClient(ctx, cl, false)
+	}
 }
 
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {

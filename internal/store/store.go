@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -37,6 +38,8 @@ type Store struct {
 	DB  *sql.DB
 	Box *crypto.Box
 	log *slog.Logger
+
+	family atomic.Pointer[string] // cached family_name setting
 }
 
 // Open opens (and creates if needed) the SQLite database and runs migrations.
@@ -176,13 +179,14 @@ func boolInt(b bool) int {
 type Settings struct {
 	Title           string `json:"title"`
 	BoxName         string `json:"box_name"`
+	FamilyName      string `json:"family_name"` // replaces "Pocket" in app names ("Pocket Notes" → "Home Notes")
 	RegistrationKey string `json:"registration_key"`
 	SetupComplete   bool   `json:"setup_complete"`
 }
 
 // GetSettings loads the settings with defaults.
 func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
-	st := Settings{Title: "Pocket Core", BoxName: "Pocket Box"}
+	st := Settings{Title: "Pocket Core", BoxName: "Pocket Box", FamilyName: DefaultFamily}
 	rows, err := s.DB.QueryContext(ctx, `SELECT key, value FROM settings`)
 	if err != nil {
 		return st, err
@@ -202,6 +206,10 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 			if v != "" {
 				st.BoxName = v
 			}
+		case "family_name":
+			if v != "" {
+				st.FamilyName = v
+			}
 		case "registration_key":
 			st.RegistrationKey = v
 		case "setup_complete":
@@ -216,6 +224,7 @@ func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
 	kv := map[string]string{
 		"title":            st.Title,
 		"box_name":         st.BoxName,
+		"family_name":      st.FamilyName,
 		"registration_key": st.RegistrationKey,
 		"setup_complete":   fmt.Sprint(boolInt(st.SetupComplete)),
 	}
@@ -229,7 +238,11 @@ func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.family.Store(&st.FamilyName)
+	return nil
 }
 
 // KVGet reads a raw setting (used for the OIDC key and cache values).

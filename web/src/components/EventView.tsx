@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, V1 } from '../lib/api'
 import type { App, Event, Service, User } from '../lib/types'
+import { shortName } from '../lib/format'
 import { useAsync } from './ui'
 import { AppIcon, humanTopic } from './AppIcon'
 import { iconCandidates } from '../lib/icons'
@@ -26,7 +27,7 @@ export function sourceInfo(src: string, ctx: EventCtx): SourceInfo {
     return { kind: 'connector', label: service?.name || type.charAt(0).toUpperCase() + type.slice(1), service }
   }
   const app = ctx.apps.find(a => a.slug === src)
-  return app ? { kind: 'app', label: app.name.replace(/^Pocket /, ''), app } : { kind: 'other', label: src }
+  return app ? { kind: 'app', label: shortName(app.name), app } : { kind: 'other', label: src }
 }
 
 export function SourceIcon({ info, small = true }: { info: SourceInfo; small?: boolean }) {

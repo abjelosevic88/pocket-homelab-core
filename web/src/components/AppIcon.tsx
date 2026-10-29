@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { App } from '../lib/types'
+import { shortName } from '../lib/format'
 
 // "clips.clip_created" → "Clip created", "core.app.registered" → "App registered"
 export function humanTopic(t: string) {
@@ -11,6 +12,6 @@ export function AppIcon({ a, small = false }: { a: App; small?: boolean }) {
   const [ok, setOk] = useState(true)
   const base = (a.public_url || a.url).replace(/\/$/, '')
   const src = a.icon ? (a.icon.startsWith('http') ? a.icon : base + (a.icon.startsWith('/') ? '' : '/') + a.icon) : ''
-  return <span className={small ? 'feed-ico' : 'mini-ico'}>{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : a.name.replace(/^Pocket /, '')[0]}</span>
+  return <span className={small ? 'feed-ico' : 'mini-ico'}>{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : shortName(a.name)[0]}</span>
 }
 

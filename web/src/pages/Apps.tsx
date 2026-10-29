@@ -97,6 +97,7 @@ function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
       <div className="two-col">
         <Card title="Registration">
           <dl className="kv">
+            {a.custom_name && <><dt>App's own name</dt><dd>{a.app_name}</dd></>}
             <dt>Status</dt><dd>{a.status}{a.last_error && <span className="bad"> — {a.last_error}</span>}</dd>
             <dt>Version</dt><dd>{a.version || '—'}</dd>
             <dt>URL</dt><dd className="mono">{a.url}</dd>
@@ -127,7 +128,7 @@ function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
       <Card title="Manifest" className="mt"><pre>{JSON.stringify(a.manifest, null, 2)}</pre></Card>
       {edit && <Modal title="Edit app" onClose={() => setEdit(false)}>
         <form onSubmit={save} className="grid" style={{ gap: 12 }}>
-          <Field label="Name"><input value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></Field>
+          <Field label="Name" help={`Shown everywhere in Pocket Core and on paired phones; empty = the app's own name (${a.app_name})`}><input value={form.name || ''} placeholder={a.app_name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></Field>
           <Field label="Description"><input value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></Field>
           <Field label="URL" help="How Core and sibling apps reach it"><input value={form.url || ''} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} /></Field>
           <Field label="Public URL" help="What paired phones open; empty = same as URL"><input value={form.public_url || ''} onChange={e => setForm(f => ({ ...f, public_url: e.target.value }))} /></Field>

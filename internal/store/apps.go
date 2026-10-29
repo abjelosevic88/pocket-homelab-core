@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"sort"
+	"strings"
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/crypto"
 )
@@ -12,7 +14,9 @@ import (
 type App struct {
 	ID          int64           `json:"id"`
 	Slug        string          `json:"slug"`
-	Name        string          `json:"name"`
+	Name        string          `json:"name"`        // custom_name when an admin set one, else the app's own
+	AppName     string          `json:"app_name"`    // what the app registers itself as
+	CustomName  string          `json:"custom_name"` // admin override, survives re-registration
 	Description string          `json:"description"`
 	Icon        string          `json:"icon"`
 	Version     string          `json:"version"`
@@ -38,18 +42,56 @@ func (a *App) EffectivePublicURL() string {
 	return a.URL
 }
 
-const appCols = `id, slug, name, description, icon, version, url, public_url, health_path, env_prefix, manifest, token_prefix, status, last_seen_at, last_check_at, last_error, created_at, updated_at`
+const appCols = `id, slug, name, description, icon, version, url, public_url, health_path, env_prefix, manifest, token_prefix, status, last_seen_at, last_check_at, last_error, created_at, updated_at, custom_name`
 
 func scanApp(sc interface{ Scan(...any) error }) (*App, error) {
 	var a App
 	var m string
 	var seen, check sql.NullString
-	if err := sc.Scan(&a.ID, &a.Slug, &a.Name, &a.Description, &a.Icon, &a.Version, &a.URL, &a.PublicURL, &a.HealthPath, &a.EnvPrefix, &m, &a.TokenPrefix, &a.Status, &seen, &check, &a.LastError, &a.CreatedAt, &a.UpdatedAt); err != nil {
+	if err := sc.Scan(&a.ID, &a.Slug, &a.Name, &a.Description, &a.Icon, &a.Version, &a.URL, &a.PublicURL, &a.HealthPath, &a.EnvPrefix, &m, &a.TokenPrefix, &a.Status, &seen, &check, &a.LastError, &a.CreatedAt, &a.UpdatedAt, &a.CustomName); err != nil {
 		return nil, notFound(err)
 	}
 	a.Manifest = json.RawMessage(m)
 	a.LastSeenAt, a.LastCheckAt = nullStr(seen), nullStr(check)
+	a.AppName = a.Name
 	return &a, nil
+}
+
+// DefaultFamily is the word Pocket apps' own names start with.
+const DefaultFamily = "Pocket"
+
+// DisplayName is what an app is called on this box: the admin's own name for it, else its
+// registered name with the family word swapped ("Pocket Notes" → "Home Notes").
+func DisplayName(own, custom, family string) string {
+	if custom != "" {
+		return custom
+	}
+	if family != "" && family != DefaultFamily && strings.HasPrefix(own, DefaultFamily+" ") {
+		return family + own[len(DefaultFamily):]
+	}
+	return own
+}
+
+func (s *Store) familyName(ctx context.Context) string {
+	if f := s.family.Load(); f != nil {
+		return *f
+	}
+	f := DefaultFamily
+	if v, ok := s.KVGet(ctx, "family_name"); ok && v != "" {
+		f = v
+	}
+	s.family.Store(&f)
+	return f
+}
+
+// named fills in an app's display name: s.named(ctx)(scanApp(row)).
+func (s *Store) named(ctx context.Context) func(*App, error) (*App, error) {
+	return func(a *App, err error) (*App, error) {
+		if err == nil {
+			a.Name = DisplayName(a.AppName, a.CustomName, s.familyName(ctx))
+		}
+		return a, err
+	}
 }
 
 // ListApps returns every registered app.
@@ -67,22 +109,30 @@ func (s *Store) ListApps(ctx context.Context) ([]App, error) {
 		}
 		out = append(out, *a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	family := s.familyName(ctx)
+	for i := range out {
+		out[i].Name = DisplayName(out[i].AppName, out[i].CustomName, family)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	return out, nil
 }
 
 // GetApp loads by id.
 func (s *Store) GetApp(ctx context.Context, id int64) (*App, error) {
-	return scanApp(s.DB.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE id = ?`, id))
+	return s.named(ctx)(scanApp(s.DB.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE id = ?`, id)))
 }
 
 // GetAppBySlug loads by slug.
 func (s *Store) GetAppBySlug(ctx context.Context, slug string) (*App, error) {
-	return scanApp(s.DB.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE slug = ?`, slug))
+	return s.named(ctx)(scanApp(s.DB.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE slug = ?`, slug)))
 }
 
 // GetAppByToken resolves a pca_ token and touches last_seen.
 func (s *Store) GetAppByToken(ctx context.Context, token string) (*App, error) {
-	a, err := scanApp(s.DB.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE token_hash = ?`, crypto.Hash(token)))
+	a, err := s.named(ctx)(scanApp(s.DB.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE token_hash = ?`, crypto.Hash(token))))
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +162,13 @@ func (s *Store) CreateApp(ctx context.Context, a *App) (string, error) {
 	return plain, nil
 }
 
-// UpdateApp saves the descriptive fields (a re-registration or an admin edit).
+// SetAppCustomName stores (or with "" clears) the admin's name for an app.
+func (s *Store) SetAppCustomName(ctx context.Context, id int64, name string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE apps SET custom_name = ?, updated_at = ? WHERE id = ?`, name, Now(), id)
+	return err
+}
+
+// UpdateApp saves the descriptive fields (a re-registration or an admin edit); a.Name must be the app's own name.
 func (s *Store) UpdateApp(ctx context.Context, a *App) error {
 	if a.HealthPath == "" {
 		a.HealthPath = "/healthz"

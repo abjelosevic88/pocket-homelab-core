@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
-import { ago, when } from '../lib/format'
+import { ago, familyName, when } from '../lib/format'
 import type { CatalogEntry, Delivery, Event, Topic, Webhook } from '../lib/types'
 import { SourceIcon, describeEvent, sourceInfo, useEventCtx, type SourceInfo, type SourceKind } from '../components/EventView'
 import { Select } from '../components/Select'
@@ -90,7 +90,7 @@ function Log() {
   for (const c of counts || []) add(c.source, sourceInfo(c.source, ctx))
   for (const e of items) add(e.source, sourceInfo(e.source, ctx))
   const sources = [...known].map(([src, info]) => ({ src, info, n: stored.get(src) ?? items.filter(e => e.source === src).length }))
-  const groups: [SourceKind, string][] = [['app', 'Pocket apps'], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
+  const groups: [SourceKind, string][] = [['app', `${familyName()} apps`], ['connector', 'Connectors'], ['core', 'Core'], ['other', 'Other']]
   const shown = items.filter(e => e.topic !== excludeTopic && (!source || (source.startsWith('kind:') ? sourceInfo(e.source, ctx).kind === source.slice(5) : e.source === source)))
   const days: [string, Event[]][] = []
   for (const e of shown) { const k = dayLabel(e.created_at); const last = days[days.length - 1]; if (last && last[0] === k) last[1].push(e); else days.push([k, [e]]) }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { api, V1 } from '../lib/api'
-import { ago, formatVersion } from '../lib/format'
+import { ago, formatVersion, shortName } from '../lib/format'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
 import { Icon } from '../components/icons'
@@ -86,7 +86,7 @@ type Filter = 'all' | 'off' | 'bad' | 'direct'
 type Section = { key: string; title: string; pairs: LinkGroup[] }
 type Subject = { slug: string; name: string; service: boolean; sections: Section[]; pairs: LinkGroup[]; idle: { scope: string; name?: string }[] }
 
-const short = (name: string) => name.replace(/^Pocket /, '')
+const short = shortName
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const SIDES: { value: Side; label: string; title: string }[] = [
   { value: 'uses', label: 'What each app uses', title: 'One card per app: what it may change, see, or sign in to elsewhere' },

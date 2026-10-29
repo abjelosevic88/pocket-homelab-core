@@ -263,7 +263,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"needs_setup": n == 0 && s.cfg.AuthMode == "local", "auth_mode": s.cfg.AuthMode,
-		"authenticated": p != nil, "user": u, "version": Version, "title": st.Title, "box_name": st.BoxName,
+		"authenticated": p != nil, "user": u, "version": Version, "title": st.Title, "box_name": st.BoxName, "family_name": st.FamilyName,
 		"sso": s.ssoEnabled() && s.cfg.AuthMode == "local", "sso_name": s.signin().Name, "password_login": s.signin().PasswordLogin || s.cfg.AuthMode != "local",
 		"cookie_warning": s.cookieWarning(r),
 		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
@@ -722,8 +722,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title   *string `json:"title"`
-		BoxName *string `json:"box_name"`
+		Title      *string `json:"title"`
+		BoxName    *string `json:"box_name"`
+		FamilyName *string `json:"family_name"`
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -735,9 +736,24 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if in.BoxName != nil && strings.TrimSpace(*in.BoxName) != "" {
 		st.BoxName = strings.TrimSpace(*in.BoxName)
 	}
+	oldFamily := st.FamilyName
+	if in.FamilyName != nil {
+		// Empty = back to "Pocket".
+		st.FamilyName = strings.TrimSpace(*in.FamilyName)
+		if st.FamilyName == "" {
+			st.FamilyName = store.DefaultFamily
+		}
+	}
 	if err := s.store.SaveSettings(r.Context(), st); err != nil {
 		s.fail(w, err, "save settings")
 		return
+	}
+	if st.FamilyName != oldFamily {
+		if apps, err := s.store.ListApps(r.Context()); err == nil {
+			for i := range apps {
+				s.mirrorApp(r.Context(), &apps[i])
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, st)
 }

@@ -24,16 +24,18 @@ type AppLink struct {
 	LastUsedAt string `json:"last_used_at,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	OptOuts    int    `json:"opt_outs"`
+
+	customName string
 }
 
-const linkCols = `l.id, l.app_id, a.slug, a.name, l.target_slug, l.scope, l.reason, l.declared, l.enabled, l.uses, l.last_used_at, l.created_at,
+const linkCols = `l.id, l.app_id, a.slug, a.name, a.custom_name, l.target_slug, l.scope, l.reason, l.declared, l.enabled, l.uses, l.last_used_at, l.created_at,
 	(SELECT COUNT(*) FROM app_link_optouts o WHERE o.link_id = l.id)`
 
 func scanLink(sc interface{ Scan(...any) error }) (*AppLink, error) {
 	var l AppLink
 	var en int
 	var used sql.NullString
-	if err := sc.Scan(&l.ID, &l.AppID, &l.AppSlug, &l.AppName, &l.TargetSlug, &l.Scope, &l.Reason, &l.Declared, &en, &l.Uses, &used, &l.CreatedAt, &l.OptOuts); err != nil {
+	if err := sc.Scan(&l.ID, &l.AppID, &l.AppSlug, &l.AppName, &l.customName, &l.TargetSlug, &l.Scope, &l.Reason, &l.Declared, &en, &l.Uses, &used, &l.CreatedAt, &l.OptOuts); err != nil {
 		return nil, notFound(err)
 	}
 	l.Enabled, l.LastUsedAt = en == 1, nullStr(used)
@@ -57,6 +59,7 @@ func (s *Store) queryLinks(ctx context.Context, where string, args ...any) ([]Ap
 		if err != nil {
 			return nil, err
 		}
+		l.AppName = DisplayName(l.AppName, l.customName, s.familyName(ctx))
 		out = append(out, *l)
 	}
 	return out, rows.Err()
@@ -72,12 +75,21 @@ func (s *Store) ListAppLinks(ctx context.Context, appID int64) ([]AppLink, error
 
 // GetLink loads one link.
 func (s *Store) GetLink(ctx context.Context, id int64) (*AppLink, error) {
-	return scanLink(s.DB.QueryRowContext(ctx, `SELECT `+linkCols+` FROM app_links l JOIN apps a ON a.id = l.app_id WHERE l.id = ?`, id))
+	return s.namedLink(ctx)(scanLink(s.DB.QueryRowContext(ctx, `SELECT `+linkCols+` FROM app_links l JOIN apps a ON a.id = l.app_id WHERE l.id = ?`, id)))
 }
 
 // FindLink loads the link for (app, target, scope).
 func (s *Store) FindLink(ctx context.Context, appID int64, target, scope string) (*AppLink, error) {
-	return scanLink(s.DB.QueryRowContext(ctx, `SELECT `+linkCols+` FROM app_links l JOIN apps a ON a.id = l.app_id WHERE l.app_id = ? AND l.target_slug = ? AND l.scope = ?`, appID, target, scope))
+	return s.namedLink(ctx)(scanLink(s.DB.QueryRowContext(ctx, `SELECT `+linkCols+` FROM app_links l JOIN apps a ON a.id = l.app_id WHERE l.app_id = ? AND l.target_slug = ? AND l.scope = ?`, appID, target, scope)))
+}
+
+func (s *Store) namedLink(ctx context.Context) func(*AppLink, error) (*AppLink, error) {
+	return func(l *AppLink, err error) (*AppLink, error) {
+		if err == nil {
+			l.AppName = DisplayName(l.AppName, l.customName, s.familyName(ctx))
+		}
+		return l, err
+	}
 }
 
 // LinkWant is one (target, scope) an app's manifest asks for.

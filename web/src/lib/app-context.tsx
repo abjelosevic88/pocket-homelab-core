@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, V1 } from './api'
 import type { AuthStatus, User } from './types'
+import { setFamily } from './format'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 // The old key was written on every visit, so it can't tell "chosen" from "whatever the system was": a new key.
@@ -39,6 +40,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (status?.title) document.title = status.title }, [status?.title])
   const refresh = useCallback(async () => {
     const st = await api.get<AuthStatus>(`${V1}/auth/status`)
+    setFamily(st.family_name)
     setStatus(st)
     setUser(st.user)
     return st
