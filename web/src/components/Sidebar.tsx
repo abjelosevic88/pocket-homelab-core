@@ -4,7 +4,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../lib/app-context'
 import type { App, MyService } from '../lib/types'
 import { bundledIcon, iconCandidates } from '../lib/icons'
-import { formatVersion } from '../lib/format'
+import { familyName, formatVersion, shortName } from '../lib/format'
 import { Icon } from './icons'
 import type { ShellData } from './Layout'
 import { type Anchor, type MenuItem, Menu, rectOf } from './ui'
@@ -70,7 +70,7 @@ export function Sidebar({ data, onPair, onNavigate }: { data: ShellData; onPair:
       </nav>
 
       {admin
-        ? <AppGroup title="Pocket apps" apps={apps} onNavigate={onNavigate} />
+        ? <AppGroup title={`${familyName()} apps`} apps={apps} onNavigate={onNavigate} />
         : pocket.length > 0 && <ServiceGroup title="Your apps" list={pocket} />}
 
       <div className="sb-foot">
@@ -109,7 +109,7 @@ const appIconSrc = (a: App) => {
   const bundled = bundledIcon(a.slug)
   return bundled ? [...own, bundled] : own
 }
-const short = (name: string) => name.replace(/^Pocket /, '')
+const short = shortName
 
 function AppGroup({ title, apps, onNavigate }: { title: string; apps: App[]; onNavigate: () => void }) {
   const sorted = [...apps].sort((a, b) => a.name.localeCompare(b.name))

@@ -23,3 +23,13 @@ export function uptime(s: number): string {
 export function formatVersion(v?: string): string {
   return v ? 'v' + v.replace(/^v/i, '') : ''
 }
+
+// The family word in app names ("Pocket" unless an admin renamed it under Settings → Box).
+let family = 'Pocket'
+export function setFamily(f?: string) { family = f || 'Pocket' }
+export function familyName(): string { return family }
+// "Pocket Notes" → "Notes" (also "Pocket Notes" when the family is renamed and the app kept its own name).
+export function shortName(name: string): string {
+  for (const f of [family, 'Pocket']) if (name.startsWith(f + ' ')) return name.slice(f.length + 1)
+  return name
+}

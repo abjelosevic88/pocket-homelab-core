@@ -103,7 +103,7 @@ function Box() {
   const { refresh } = useApp()
   const { toast } = useToast()
   const { data: st, reload } = useAsync(() => api.get<S>(`${V1}/settings`), [])
-  const [form, setForm] = useState<{ title?: string; box_name?: string }>({})
+  const [form, setForm] = useState<{ title?: string; box_name?: string; family_name?: string }>({})
   const [rot, setRot] = useState(false)
   if (!st) return <Loading />
   const save = async (e: React.FormEvent) => { e.preventDefault(); await api.put(`${V1}/settings`, form); await reload(); await refresh(); toast('Saved') }
@@ -112,6 +112,7 @@ function Box() {
       <Section title="This box" icon="server">
         <form onSubmit={save}>
           <SettingRow title="Box name" help="Shown to paired devices and on the login page."><input defaultValue={st.box_name} onChange={e => setForm(f => ({ ...f, box_name: e.target.value }))} style={{ width: 240 }} /></SettingRow>
+          <SettingRow title="App family name" help={<>Replaces “Pocket” in every app’s name, here and on paired phones: “Home” turns Pocket Notes into Home Notes and the sidebar heading into Home apps. A name set on an app’s Edit still wins. Empty = Pocket.</>}><input defaultValue={st.family_name} placeholder="Pocket" onChange={e => setForm(f => ({ ...f, family_name: e.target.value }))} style={{ width: 240 }} /></SettingRow>
           <SettingRow title="Title" help="The name in the sidebar and the browser tab."><input defaultValue={st.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} style={{ width: 240 }} /></SettingRow>
           <div className="form-actions"><button className="btn primary">Save changes</button></div>
         </form>
