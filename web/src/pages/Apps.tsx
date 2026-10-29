@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
-import { ago, when } from '../lib/format'
+import { ago, formatVersion, when } from '../lib/format'
 import type { App, OIDCClient, Settings, Webhook } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
@@ -53,7 +53,7 @@ function AppTile({ a }: { a: App }) {
         <span className="app-tile-icon">{icon && iconOk ? <img src={icon} alt="" onError={() => setIconOk(false)} /> : a.name[0]}</span>
         <div className="grow">
           <div className="app-tile-name">{a.name}</div>
-          <div className="app-tile-meta">{a.version ? `v${a.version}` : 'no version'}</div>
+          <div className="app-tile-meta">{a.version ? formatVersion(a.version) : 'no version'}</div>
         </div>
         <span className={`pill ${state}`} title={a.status === 'down' ? a.last_error : when(a.last_seen_at)}>{a.status === 'ok' ? 'Up' : a.status === 'down' ? 'Down' : 'Unknown'}</span>
       </div>

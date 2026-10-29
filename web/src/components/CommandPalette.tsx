@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Icon } from './icons'
+import { formatVersion } from '../lib/format'
 import type { ShellData } from './Layout'
 
 export interface PaletteCommand { id: string; label: string; icon: string; hint?: string; keywords?: string; run: () => void }
@@ -21,7 +22,7 @@ export function CommandPalette({ onClose, commands, data }: { onClose: () => voi
     const hit = (text: string) => words.every(w => text.toLowerCase().includes(w))
     for (const a of data.overview?.apps || []) {
       if (n && !hit(`${a.name} ${a.slug} ${a.description}`)) continue
-      out.push({ key: `a${a.id}`, group: 'Apps', icon: <span className={`status-dot ${a.status}`} />, label: a.name, sub: [a.version && `v${a.version}`, a.status === 'down' ? 'down' : a.status === 'ok' ? 'up' : 'unknown'].filter(Boolean).join(' · '), run: () => navigate(`/apps/${a.slug}`) })
+      out.push({ key: `a${a.id}`, group: 'Apps', icon: <span className={`status-dot ${a.status}`} />, label: a.name, sub: [formatVersion(a.version), a.status === 'down' ? 'down' : a.status === 'ok' ? 'up' : 'unknown'].filter(Boolean).join(' · '), run: () => navigate(`/apps/${a.slug}`) })
     }
     for (const s of data.services) {
       if (n && !hit(`${s.name} ${s.type} ${s.group}`)) continue

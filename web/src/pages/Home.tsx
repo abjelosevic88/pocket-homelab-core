@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
-import { ago } from '../lib/format'
+import { ago, formatVersion } from '../lib/format'
 import type { MyService, Overview } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
 import { SourceIcon, describeEvent, sourceInfo, useEventCtx } from '../components/EventView'
@@ -43,7 +43,7 @@ export default function Home() {
             <div className="mini-apps">{d.apps.map(a => (
               <Link key={a.id} to={`/apps/${a.slug}`} className="mini-app" title={a.status === 'down' ? a.last_error || 'down' : `seen ${ago(a.last_seen_at || a.last_check_at)}`}>
                 <AppIcon a={a} />
-                <span className="grow"><span className="name">{a.name.replace(/^Pocket /, '')}</span><span className="meta">{a.version ? `v${a.version}` : ''}{a.status === 'down' ? ' · down' : ` · ${ago(a.last_seen_at || a.last_check_at)}`}</span></span>
+                <span className="grow"><span className="name">{a.name.replace(/^Pocket /, '')}</span><span className="meta">{formatVersion(a.version)}{a.status === 'down' ? ' · down' : ` · ${ago(a.last_seen_at || a.last_check_at)}`}</span></span>
                 <span className={`status-dot ${a.status}`} />
               </Link>))}</div>}
         </Card>

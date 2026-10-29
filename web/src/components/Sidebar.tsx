@@ -4,6 +4,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../lib/app-context'
 import type { App, MyService } from '../lib/types'
 import { bundledIcon, iconCandidates } from '../lib/icons'
+import { formatVersion } from '../lib/format'
 import { Icon } from './icons'
 import type { ShellData } from './Layout'
 import { type Anchor, type MenuItem, Menu, rectOf } from './ui'
@@ -129,7 +130,7 @@ function AppRow({ a, onNavigate }: { a: App; onNavigate: () => void }) {
   ]
   return (
     <li className={`cal-row app-row ${a.status === 'down' ? 'off' : ''}`}>
-      <NavLink to={`/apps/${a.slug}`} onClick={onNavigate} className={({ isActive }) => `cal-check ${isActive ? 'is-active' : ''}`} title={a.status === 'down' ? `${a.name}: down${a.last_error ? ` — ${a.last_error}` : ''}` : `${a.name}${a.version ? ` v${a.version}` : ''}`}>
+      <NavLink to={`/apps/${a.slug}`} onClick={onNavigate} className={({ isActive }) => `cal-check ${isActive ? 'is-active' : ''}`} title={a.status === 'down' ? `${a.name}: down${a.last_error ? ` — ${a.last_error}` : ''}` : `${a.name}${a.version ? ` ${formatVersion(a.version)}` : ''}`}>
         <SbIcon srcs={appIconSrc(a)} letter={short(a.name)[0]} />
         <span className="cal-name ellipsis">{short(a.name)}</span>
         <span className={`status-dot ${a.status}`} />

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { api, V1 } from '../lib/api'
-import { ago } from '../lib/format'
+import { ago, formatVersion } from '../lib/format'
 import type { App, AppLink } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
 import { Icon } from '../components/icons'
@@ -191,7 +191,7 @@ function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll, flip }: {
       <button type="button" className="lk-head" onClick={toggle} aria-expanded={open}>
         <Ico slug={s.slug} name={s.name} apps={apps} />
         <span className="lk-head-text">
-          <b>{s.name}</b>{a && <span className="muted small"> v{a.version}</span>}
+          <b>{s.name}</b>{a && <span className="muted small"> {formatVersion(a.version)}</span>}
           <span className="lk-head-sum">{summary(s, side)}</span>
         </span>
         {!open && <span className="lk-stack" aria-hidden="true">
