@@ -83,7 +83,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		root := mcpFields{}
 		req := []string{}
 		for _, p := range mcpPathParams.FindAllStringSubmatch(path, -1) {
-			root[p[1]] = map[string]any{"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+			root[p[1]] = map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991)}
 			if app == "ai" && p[1] == "id" {
 				root[p[1]] = map[string]any{"type": "string", "pattern": `^[a-f0-9-]{36}$`}
 			}
