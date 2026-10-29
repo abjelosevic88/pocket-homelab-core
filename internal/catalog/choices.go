@@ -2,7 +2,7 @@ package catalog
 
 // Choice is a place in Pocket Homelab that one of two apps fills: Money is
 // Pocket Money or Firefly III, Music is Pocket Music or Navidrome, Watch is
-// Pocket Watch or Jellyfin. When a
+// Pocket Watch or Jellyfin, Requests is Pocket Requests or Jellyseerr. When a
 // person's profile carries both, the choice they made in Core goes to their
 // devices as EnvKey (MONEY_BACKEND=firefly); without one the client takes the
 // Pocket app.
@@ -31,6 +31,7 @@ var Choices = []Choice{
 	{Slot: "documents", Title: "Documents", EnvKey: "DOCUMENTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Documents", "documents"}, {"paperless", "Paperless-ngx", "paperless"}}},
 	{Slot: "notes", Title: "Notes", EnvKey: "NOTES_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Notes", "notes"}, {"nextcloud", "Nextcloud Notes", "nextcloud"}}},
 	{Slot: "garage", Title: "Garage", EnvKey: "GARAGE_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Garage", "garage"}, {"lubelogger", "LubeLogger", "lubelogger"}}},
+	{Slot: "requests", Title: "Requests", EnvKey: "REQUESTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Requests", "requests"}, {"jellyseerr", "Jellyseerr", "jellyseerr"}}},
 }
 
 // ChoiceFor returns a slot's choice.
