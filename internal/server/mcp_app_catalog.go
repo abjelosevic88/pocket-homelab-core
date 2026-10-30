@@ -332,6 +332,8 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("monitoring", "get_server", "Read one accessible server's status.", "/servers/{id}", "")
 	read("monitoring", "snapshot", "Read current metrics for an accessible server.", "/servers/{id}/snapshot", "")
 	read("monitoring", "alerts", "Read monitoring alerts visible to you.", "/alerts", "server_id status limit")
+	read("backups", "status", "Backup health of the box in one call: healthy or warning, when the last good backup finished, failing jobs, stored size, and (for admins) the attention list with each problem in words.", "/widget", "")
+	read("backups", "coverage", "Which apps (running Docker containers, grouped by compose project) are covered by a backup, skipped on purpose (with the reason) or not covered at all; status = uncovered, skipped or covered narrows the list. Admins only. Apps outside Docker are not checked.", "/coverage/summary", "status")
 	read("projects", "summary", "Get your open, overdue and due-soon issues, in-progress counts, current cycles and projects that need attention in one call.", "/dashboard", "")
 	read("projects", "teams", "List the teams you are on with their workflow states, labels and members (use their names/ids when creating or updating issues).", "/teams", "")
 	read("projects", "issues", "Find issues. team = team key (WEB); status = open, done, started, backlog or triage; assignee_id = me or a numeric id; cycle = current or next; due = overdue, today, week or none; q = words or an identifier like WEB-12.", "/issues", "team status assignee_id priority project_id cycle due label_id q sort limit offset")

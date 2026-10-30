@@ -54,7 +54,8 @@ their owner's Today and On this server views.
 Core's reviewed catalog covers Notes, Tasks, Calendar, Habits, Day, Inventory,
 Bookshelf, Clips, Contacts, Documents, Files, Garage, Kitchen, Money, Split,
 Invoicing, Review, Projects, Movement, Travel, Office, Podcasts, Subtitles and Hub. Monitoring
-adds accessible server summaries, snapshots and alerts. Pocket AI adds a bounded
+adds accessible server summaries, snapshots and alerts. Backups adds the box's backup
+health and which apps no backup covers. Pocket AI adds a bounded
 reader for the person's own conversations. Core's app/status tools cover registry
 and service health. The shared launcher is installed in all 26 applications.
 
