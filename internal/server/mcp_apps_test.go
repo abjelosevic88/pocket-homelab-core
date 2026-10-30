@@ -487,29 +487,26 @@ func TestMCPProjectsConnectedWorkspace(t *testing.T) {
 		}
 		return r.StructuredContent.(map[string]any)
 	}
-	got := call("pocket_projects_get_issue", map[string]any{"id": 5, "workspace": 3})
-	if !strings.HasSuffix(got["source_url"].(string), "/r/3/issue/5") || !strings.HasSuffix(got["app_url"].(string), "/r/3/") {
+	there := "projects.athena.example"
+	got := call("pocket_projects_get_issue", map[string]any{"id": "ATH-5", "workspace": there})
+	if !strings.HasSuffix(got["source_url"].(string), "/r/"+there+"/issue/ATH-5") || !strings.HasSuffix(got["app_url"].(string), "/r/"+there+"/") {
 		t.Fatalf("workspace links: %v %v", got["source_url"], got["app_url"])
 	}
-	call("pocket_projects_comment", map[string]any{"id": 5, "workspace": 3, "request_id": "operation-ws-000001", "data": map[string]any{"body": "Done"}})
-	call("pocket_projects_create_issue", map[string]any{"workspace": 3, "request_id": "operation-ws-000002", "data": map[string]any{"title": "Follow-up", "team": "ATH"}})
-	call("pocket_projects_remember", map[string]any{"team": "ATH", "workspace": 3, "request_id": "operation-ws-000003", "data": map[string]any{"text": "make test"}})
+	call("pocket_projects_comment", map[string]any{"id": "ATH-5", "workspace": there, "request_id": "operation-ws-000001", "data": map[string]any{"body": "Done"}})
+	call("pocket_projects_create_issue", map[string]any{"workspace": "Projects.Athena.Example", "request_id": "operation-ws-000002", "data": map[string]any{"title": "Follow-up", "team": "ATH"}})
+	call("pocket_projects_create_project", map[string]any{"workspace": there, "request_id": "operation-ws-000003", "data": map[string]any{"name": "Pilot", "teams": []any{"ATH"}}})
+	call("pocket_projects_post_update", map[string]any{"id": 4, "workspace": there, "request_id": "operation-ws-000004", "data": map[string]any{"body": "Fine", "health": "on_track", "project": "Pilot"}})
 	own := call("pocket_projects_get_issue", map[string]any{"id": 5})
 	call("pocket_projects_workspaces", map[string]any{})
-	byName := call("pocket_projects_comment", map[string]any{"id": "WEB-7", "request_id": "operation-ws-000004", "data": map[string]any{"body": "By name"}})
-	if !strings.HasSuffix(byName["source_url"].(string), "/issue/WEB-7") {
-		t.Fatalf("identifier link: %v", byName["source_url"])
-	}
-	call("pocket_projects_update_issue", map[string]any{"id": 5, "workspace": 0, "request_id": "operation-ws-000005", "data": map[string]any{"title": "Own"}})
-	want := []string{"GET /r/3/api/v1/issues/5 ws=3", "POST /r/3/api/v1/issues/5/comments ws=3", "POST /r/3/api/v1/issues ws=3", "POST /r/3/api/v1/teams/ATH/memory ws=3", "GET /api/v1/issues/5 ws=", "GET /api/v1/remotes ws=",
-		"POST /api/v1/issues/WEB-7/comments ws=", "PATCH /api/v1/issues/5 ws=0"}
+	want := []string{"GET /api/v1/issues/ATH-5 ws=" + there, "POST /api/v1/issues/ATH-5/comments ws=" + there, "POST /api/v1/issues ws=" + there,
+		"POST /api/v1/projects ws=" + there, "POST /api/v1/projects/4/updates ws=" + there, "GET /api/v1/issues/5 ws=", "GET /api/v1/workspaces ws="}
 	if strings.Join(paths, "|") != strings.Join(want, "|") {
-		t.Fatalf("paths: %v", paths)
+		t.Fatalf("paths:\n%s", strings.Join(paths, "\n"))
 	}
 	if strings.Contains(own["source_url"].(string), "/r/") {
 		t.Fatalf("own instance link: %v", own["source_url"])
 	}
-	for _, bad := range []any{-1, "3/../x", 1.5} {
+	for _, bad := range []any{0, 3, "a/b", "../x", "x y", "host:99999999"} {
 		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_projects_get_issue", Arguments: map[string]any{"id": 5, "workspace": bad}})
 		if err == nil && !r.IsError {
 			t.Fatalf("workspace %v accepted", bad)
@@ -522,7 +519,7 @@ func TestMCPProjectsConnectedWorkspace(t *testing.T) {
 		}
 	}
 	if len(paths) != len(want) {
-		t.Fatal("an invalid workspace reached Projects")
+		t.Fatal("an invalid workspace or id reached Projects")
 	}
 	for _, op := range mcpAppCatalog {
 		if op.App != "projects" && op.Schema["properties"].(mcpFields)["workspace"] != nil {
@@ -561,7 +558,7 @@ func TestMCPProjectsSharedNotes(t *testing.T) {
 		{"pocket_projects_get_shared_note", map[string]any{"id": 5, "note": 9}},
 		{"pocket_projects_create_shared_note", map[string]any{"id": 5, "request_id": "operation-sn-000001", "data": map[string]any{"title": "Plan", "body": "Steps"}}},
 		{"pocket_projects_update_shared_note", map[string]any{"id": 5, "note": 9, "request_id": "operation-sn-000002", "data": map[string]any{"body": "More", "base": "2026-10-30 01:00:00"}}},
-		{"pocket_projects_share_note", map[string]any{"id": 5, "note": 401, "workspace": 2, "request_id": "operation-sn-000003", "data": map[string]any{}}},
+		{"pocket_projects_share_note", map[string]any{"id": 5, "note": 401, "workspace": "projects.athena.example", "request_id": "operation-sn-000003", "data": map[string]any{}}},
 	} {
 		if r := call(c.name, c.args); r.IsError {
 			t.Fatalf("%s: %v", c.name, r.Content)
@@ -572,7 +569,7 @@ func TestMCPProjectsSharedNotes(t *testing.T) {
 		"GET /api/v1/issues/5/shared-notes/9 ",
 		`POST /api/v1/issues/5/shared-notes {"body":"Steps","title":"Plan"}`,
 		`PATCH /api/v1/issues/5/shared-notes/9 {"base":"2026-10-30 01:00:00","body":"More"}`,
-		"POST /r/2/api/v1/issues/5/notes/401/share {}",
+		"POST /api/v1/issues/5/notes/401/share {}",
 	}
 	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))

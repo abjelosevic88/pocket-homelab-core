@@ -119,8 +119,8 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		}
 		if app == "projects" {
 			// a Pocket Projects instance the person connected (Settings → Connected instances), reached through theirs
-			root["workspace"] = map[string]any{"type": "integer", "minimum": 0, "maximum": int64(9007199254740991),
-				"description": "0 = your own instance; an id from pocket_projects_workspaces = that connected Pocket Projects instance, as you there. Once workspaces are connected, every change needs this; without it nothing is changed."}
+			root["workspace"] = map[string]any{"type": "string", "pattern": `^[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$`,
+				"description": "The address of the Pocket Projects instance the call is for, as pocket_projects_workspaces lists them (e.g. projects.example.com): your own or one you connected, as you there. Once workspaces are connected every change needs it, and only the workspace the person has open in Pocket Projects is reachable."}
 		}
 		if method != "GET" {
 			root["request_id"] = map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_-]{16,80}$`, "description": "A unique operation ID (for example a UUID). Reuse only for an identical retry."}
@@ -353,9 +353,13 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("projects", "link_pr", "Link a pull request you opened to an issue (numeric id); Pocket Projects then tracks whether it is merged and completes the issue when it is.", "POST", "/issues/{id}/pull-requests", linkPR, "url")
 	read("projects", "projects", "List projects you can see with status, health, progress, lead, start and target dates.", "/projects", "team_id status q")
 	read("projects", "get_project", "Read a project with milestones, latest status updates, documents, resources and stakeholders.", "/projects/{id}", "")
-	write("projects", "create_project", "Create a project for one or more of your teams.", "POST", "/projects",
-		textFields("name summary content start_date target_date").enum("status", "backlog", "planned", "started", "paused", "completed", "canceled").field("team_ids", arraySchema(map[string]any{"type": "integer"})), "name")
-	write("projects", "post_update", "Post a status update on a project; health is on_track, at_risk or off_track.", "POST", "/projects/{id}/updates", textFields("body").enum("health", "on_track", "at_risk", "off_track"), "body health")
+	newProject := textFields("name summary content start_date target_date").enum("status", "backlog", "planned", "started", "paused", "completed", "canceled").
+		field("team_ids", arraySchema(map[string]any{"type": "integer"})).strings("teams")
+	newProject["teams"].(map[string]any)["description"] = "Team keys like [\"WEB\"]; required instead of team_ids once workspaces are connected."
+	write("projects", "create_project", "Create a project for one or more of your teams.", "POST", "/projects", newProject, "name")
+	update := textFields("body project").enum("health", "on_track", "at_risk", "off_track")
+	update["project"].(map[string]any)["description"] = "The project's exact name; required once workspaces are connected (checked against the project in the workspace)."
+	write("projects", "post_update", "Post a status update on a project; health is on_track, at_risk or off_track.", "POST", "/projects/{id}/updates", update, "body health")
 	read("projects", "cycles", "List the cycles (sprints) of your teams with progress; status = current, upcoming or past.", "/cycles", "team_id status")
 	read("projects", "calendar", "Dated items between from and to (YYYY-MM-DD): issue due dates, milestones, project starts and targets, cycles. scope = mine (default) or all.", "/calendar", "from to scope")
 	read("projects", "search", "Search issues, projects, project documents and comments.", "/search", "q limit")
@@ -369,7 +373,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	sharedEdit["base"].(map[string]any)["description"] = "The note's updated_at as you last read it. If a teammate saved since, nothing is written and the error says so: read it again and merge."
 	write("projects", "update_shared_note", "Change a shared note's title or text (issue id, note id); the text replaces the whole note.", "PATCH", "/issues/{id}/shared-notes/{note}", sharedEdit, "base")
 	write("projects", "share_note", "Copy one of your own Pocket Notes (note = its id in Pocket Notes) onto the issue (numeric id) as a shared note for the team; sharing the same note again replaces that copy. The note itself stays private and unchanged.", "POST", "/issues/{id}/notes/{note}/share", nil, "")
-	read("projects", "workspaces", "List the other Pocket Projects instances you connected (Settings → Connected instances): id, name, url, unread. Pass the id as workspace to the other pocket_projects_* tools to read and change issues there; workspace 0 is your own instance.", "/remotes", "")
+	read("projects", "workspaces", "List your Pocket Projects workspaces (your own and the instances you connected) by address, with active = the one open to Pocket AI now (the person picks it by opening it in Pocket Projects; the others refuse every call). Pass the address as workspace to the other pocket_projects_* tools.", "/workspaces", "")
 	read("projects", "inbox", "Read your Pocket Projects inbox: assignments, mentions, comments, status changes and reminders.", "/notifications", "filter limit")
 	read("movement", "summary", "What a day or a range (at most 92 days) looked like: distance, journeys with transport modes, the places you stopped at in order, countries. date = YYYY-MM-DD, or from and to.", "/summary", "date from to")
 	read("movement", "where", "Where you were at a given time: the visit or journey then and the nearest recorded position. at = local time like 2026-10-20T14:30 (or ISO 8601).", "/where", "at")

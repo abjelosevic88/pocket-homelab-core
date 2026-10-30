@@ -60,7 +60,11 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		return result
 	}
 	// Preserve registered path prefixes; never derive an origin from item content.
-	ws := mcpWorkspacePrefix(op, input) // a connected workspace's pages live under /r/{id} too
+	// a connected workspace's pages: /r/<its address>/… (Projects sends that to the person's /r/{id}/…)
+	ws := ""
+	if addr := mcpWorkspaceSaid(op, input); addr != "" && addr != strings.ToLower(base.Host) {
+		ws = "/r/" + addr
+	}
 	link := func(path string) string { return strings.TrimRight(base.String(), "/") + ws + path }
 	envelope["app_url"] = link("/")
 	parts := strings.Split(strings.Trim(op.Path, "/"), "/")
