@@ -34,6 +34,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"podcasts/podcasts": {"/podcasts", "/podcasts/{id}"}, "podcasts/episodes": {"/episodes", "/episodes/{id}"}, "podcasts/queue": {"/queue", "/episodes/{id}"},
 	"subtitles/library": {"/library", ""}, "subtitles/files": {"/library", "/files/{id}"},
 	"monitoring/servers": {"/", "/server/{id}"}, "monitoring/alerts": {"/alerts", ""},
+	"backups/widget": {"/", ""}, "backups/coverage": {"/coverage", ""},
 	"ai/threads": {"/", "/t/{id}"}, "ai/ask-context": {"/", "/t/{id}"},
 	"projects/dashboard": {"/my-issues", ""}, "projects/issues": {"/my-issues", "/issue/{id}"}, "projects/projects": {"/projects", "/project/{id}"},
 	"projects/teams": {"/teams", ""}, "projects/cycles": {"/projects", ""}, "projects/calendar": {"/calendar", ""}, "projects/search": {"/search", ""},
