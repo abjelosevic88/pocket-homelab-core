@@ -110,6 +110,11 @@ func buildMCPAppCatalog() []*mcpAppTool {
 			}
 			root["query"] = objectSchema(q, "")
 		}
+		if app == "projects" {
+			// a Pocket Projects instance the person connected (Settings → Connected instances), reached through theirs
+			root["workspace"] = map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991),
+				"description": "Connected workspace id from pocket_projects_workspaces: the call then goes to that other Pocket Projects instance, as you there. Omit for your own instance."}
+		}
 		if method != "GET" {
 			root["request_id"] = map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_-]{16,80}$`, "description": "A unique operation ID (for example a UUID). Reuse only for an identical retry."}
 			req = append(req, "request_id")
@@ -350,6 +355,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	remember := textFields("text")
 	remember["text"].(map[string]any)["description"] = "One short factual line, e.g. \"Tests run with make test; the web app is in web/\"."
 	write("projects", "remember", "Save one short durable fact about a team's code, conventions or environment to the team's AI memory (shown to future Pocket AI conversations for that team). Team = key like AS. No secrets.", "POST", "/teams/{team}/memory", remember, "text")
+	read("projects", "workspaces", "List the other Pocket Projects instances you connected (Settings → Connected instances): id, name, url. Pass the id as workspace to the other pocket_projects_* tools to read and change issues there.", "/remotes", "")
 	read("projects", "inbox", "Read your Pocket Projects inbox: assignments, mentions, comments, status changes and reminders.", "/notifications", "filter limit")
 	read("movement", "summary", "What a day or a range (at most 92 days) looked like: distance, journeys with transport modes, the places you stopped at in order, countries. date = YYYY-MM-DD, or from and to.", "/summary", "date from to")
 	read("movement", "where", "Where you were at a given time: the visit or journey then and the nearest recorded position. at = local time like 2026-10-20T14:30 (or ISO 8601).", "/where", "at")
