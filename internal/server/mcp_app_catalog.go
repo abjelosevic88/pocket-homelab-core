@@ -120,7 +120,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		if app == "projects" {
 			// a Pocket Projects instance the person connected (Settings → Connected instances), reached through theirs
 			root["workspace"] = map[string]any{"type": "integer", "minimum": 0, "maximum": int64(9007199254740991),
-				"description": "0 = your own instance; an id from pocket_projects_workspaces = that connected Pocket Projects instance, as you there. Once workspaces are connected, a change by numeric id needs this (or name the issue by identifier)."}
+				"description": "0 = your own instance; an id from pocket_projects_workspaces = that connected Pocket Projects instance, as you there. Once workspaces are connected, every change needs this; without it nothing is changed."}
 		}
 		if method != "GET" {
 			root["request_id"] = map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_-]{16,80}$`, "description": "A unique operation ID (for example a UUID). Reuse only for an identical retry."}
@@ -369,7 +369,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	sharedEdit["base"].(map[string]any)["description"] = "The note's updated_at as you last read it. If a teammate saved since, nothing is written and the error says so: read it again and merge."
 	write("projects", "update_shared_note", "Change a shared note's title or text (issue id, note id); the text replaces the whole note.", "PATCH", "/issues/{id}/shared-notes/{note}", sharedEdit, "base")
 	write("projects", "share_note", "Copy one of your own Pocket Notes (note = its id in Pocket Notes) onto the issue (numeric id) as a shared note for the team; sharing the same note again replaces that copy. The note itself stays private and unchanged.", "POST", "/issues/{id}/notes/{note}/share", nil, "")
-	read("projects", "workspaces", "List the other Pocket Projects instances you connected (Settings → Connected instances): id, name, url. Pass the id as workspace to the other pocket_projects_* tools to read and change issues there.", "/remotes", "")
+	read("projects", "workspaces", "List the other Pocket Projects instances you connected (Settings → Connected instances): id, name, url, unread. Pass the id as workspace to the other pocket_projects_* tools to read and change issues there; workspace 0 is your own instance.", "/remotes", "")
 	read("projects", "inbox", "Read your Pocket Projects inbox: assignments, mentions, comments, status changes and reminders.", "/notifications", "filter limit")
 	read("movement", "summary", "What a day or a range (at most 92 days) looked like: distance, journeys with transport modes, the places you stopped at in order, countries. date = YYYY-MM-DD, or from and to.", "/summary", "date from to")
 	read("movement", "where", "Where you were at a given time: the visit or journey then and the nearest recorded position. at = local time like 2026-10-20T14:30 (or ISO 8601).", "/where", "at")
