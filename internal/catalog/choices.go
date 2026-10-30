@@ -30,6 +30,7 @@ var Choices = []Choice{
 	{Slot: "podcasts", Title: "Podcasts", EnvKey: "PODCASTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Podcasts", "podcasts"}, {"pinepods", "PinePods", "pinepods"}}},
 	{Slot: "documents", Title: "Documents", EnvKey: "DOCUMENTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Documents", "documents"}, {"paperless", "Paperless-ngx", "paperless"}}},
 	{Slot: "notes", Title: "Notes", EnvKey: "NOTES_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Notes", "notes"}, {"nextcloud", "Nextcloud Notes", "nextcloud"}}},
+	{Slot: "tasks", Title: "Tasks", EnvKey: "TASKS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Tasks", "tasks"}, {"nextcloud", "Nextcloud Tasks", "nextcloud"}}},
 	{Slot: "garage", Title: "Garage", EnvKey: "GARAGE_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Garage", "garage"}, {"lubelogger", "LubeLogger", "lubelogger"}}},
 	{Slot: "requests", Title: "Requests", EnvKey: "REQUESTS_BACKEND", Options: []ChoiceOption{{"pocket", "Pocket Requests", "requests"}, {"jellyseerr", "Jellyseerr", "jellyseerr"}}},
 }
