@@ -7,7 +7,9 @@ import (
 
 // This is a reviewed capability catalog, not an HTTP proxy or an automatic
 // export of app routes. No tool controls credentials, sharing, delivery,
-// deletion, arbitrary HTTP methods, or service administration.
+// deletion, arbitrary HTTP methods, or service administration. One sharing
+// exception: pocket_projects_share_note copies the person's own note onto a
+// Projects issue for its team (approved per call; see mcpSharingAllowed).
 var mcpAppCatalog = buildMCPAppCatalog()
 
 type mcpFields map[string]any
@@ -62,7 +64,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true}
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true}
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
 func mcpOpKind(name, method string) string {
@@ -355,6 +357,13 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	remember := textFields("text")
 	remember["text"].(map[string]any)["description"] = "One short factual line, e.g. \"Tests run with make test; the web app is in web/\"."
 	write("projects", "remember", "Save one short durable fact about a team's code, conventions or environment to the team's AI memory (shown to future Pocket AI conversations for that team). Team = key like AS. No secrets.", "POST", "/teams/{team}/memory", remember, "text")
+	read("projects", "shared_notes", "List the team's shared notes on an issue (numeric id): title, who wrote and changed them, updated_at. body = 1 includes their text. Everyone on the team sees them; the person's own notes are in Pocket Notes instead.", "/issues/{id}/shared-notes", "body")
+	read("projects", "get_shared_note", "Read one shared note of an issue (issue id, note id) with its text and updated_at.", "/issues/{id}/shared-notes/{note}", "")
+	write("projects", "create_shared_note", "Write a new shared note on an issue (numeric id) in Markdown; the whole team sees and can edit it. Only for what the person wants the team to have.", "POST", "/issues/{id}/shared-notes", textFields("title body"), "body")
+	sharedEdit := textFields("title body base")
+	sharedEdit["base"].(map[string]any)["description"] = "The note's updated_at as you last read it. If a teammate saved since, nothing is written and the error says so: read it again and merge."
+	write("projects", "update_shared_note", "Change a shared note's title or text (issue id, note id); the text replaces the whole note.", "PATCH", "/issues/{id}/shared-notes/{note}", sharedEdit, "base")
+	write("projects", "share_note", "Copy one of your own Pocket Notes (note = its id in Pocket Notes) onto the issue (numeric id) as a shared note for the team; sharing the same note again replaces that copy. The note itself stays private and unchanged.", "POST", "/issues/{id}/notes/{note}/share", nil, "")
 	read("projects", "workspaces", "List the other Pocket Projects instances you connected (Settings → Connected instances): id, name, url. Pass the id as workspace to the other pocket_projects_* tools to read and change issues there.", "/remotes", "")
 	read("projects", "inbox", "Read your Pocket Projects inbox: assignments, mentions, comments, status changes and reminders.", "/notifications", "filter limit")
 	read("movement", "summary", "What a day or a range (at most 92 days) looked like: distance, journeys with transport modes, the places you stopped at in order, countries. date = YYYY-MM-DD, or from and to.", "/summary", "date from to")

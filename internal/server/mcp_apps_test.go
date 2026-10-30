@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -296,6 +297,17 @@ func TestMCPAppCredentialMetadataRedaction(t *testing.T) {
 	}
 }
 
+// The only tools on a sharing route: the team's shared notes on a Projects
+// issue (the word only), and copying one of your own notes there, which the
+// person approves call by call. Nothing else may publish or share.
+var mcpSharingAllowed = map[string]bool{
+	"pocket_projects_shared_notes /issues/{id}/shared-notes":              true,
+	"pocket_projects_get_shared_note /issues/{id}/shared-notes/{note}":    true,
+	"pocket_projects_create_shared_note /issues/{id}/shared-notes":        true,
+	"pocket_projects_update_shared_note /issues/{id}/shared-notes/{note}": true,
+	"pocket_projects_share_note /issues/{id}/notes/{note}/share":          true,
+}
+
 func TestMCPApplicationCatalogBoundary(t *testing.T) {
 	names := map[string]bool{}
 	reads, writes := map[string]bool{}, map[string]bool{}
@@ -313,7 +325,7 @@ func TestMCPApplicationCatalogBoundary(t *testing.T) {
 			t.Fatalf("prohibited method %s", op.Method)
 		}
 		for _, part := range []string{"/admin", "/settings", "/auth", "/delete", "/share", "/invite", "/send", "/restart", "/exec", "/scan"} {
-			if strings.Contains(op.Path, part) {
+			if strings.Contains(op.Path, part) && !mcpSharingAllowed[op.Name+" "+op.Path] {
 				t.Fatalf("administration/deletion route exposed: %s", op.Path)
 			}
 		}
@@ -503,6 +515,66 @@ func TestMCPProjectsConnectedWorkspace(t *testing.T) {
 	for _, op := range mcpAppCatalog {
 		if op.App != "projects" && op.Schema["properties"].(mcpFields)["workspace"] != nil {
 			t.Fatalf("%s has a workspace", op.Name)
+		}
+	}
+}
+
+func TestMCPProjectsSharedNotes(t *testing.T) {
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var seen []string
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		seen = append(seen, r.Method+" "+r.URL.RequestURI()+" "+string(b))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":9,"title":"Plan"}`))
+	}))
+	defer fake.Close()
+	f.app("projects", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read apps:write")
+	session := mcpSessionWithToken(t, f.env, access)
+	call := func(name string, args map[string]any) *mcp.CallToolResult {
+		t.Helper()
+		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	for _, c := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"pocket_projects_shared_notes", map[string]any{"id": 5, "query": map[string]any{"body": "1"}}},
+		{"pocket_projects_get_shared_note", map[string]any{"id": 5, "note": 9}},
+		{"pocket_projects_create_shared_note", map[string]any{"id": 5, "request_id": "operation-sn-000001", "data": map[string]any{"title": "Plan", "body": "Steps"}}},
+		{"pocket_projects_update_shared_note", map[string]any{"id": 5, "note": 9, "request_id": "operation-sn-000002", "data": map[string]any{"body": "More", "base": "2026-10-30 01:00:00"}}},
+		{"pocket_projects_share_note", map[string]any{"id": 5, "note": 401, "workspace": 2, "request_id": "operation-sn-000003", "data": map[string]any{}}},
+	} {
+		if r := call(c.name, c.args); r.IsError {
+			t.Fatalf("%s: %v", c.name, r.Content)
+		}
+	}
+	want := []string{
+		"GET /api/v1/issues/5/shared-notes?body=1 ",
+		"GET /api/v1/issues/5/shared-notes/9 ",
+		`POST /api/v1/issues/5/shared-notes {"body":"Steps","title":"Plan"}`,
+		`PATCH /api/v1/issues/5/shared-notes/9 {"base":"2026-10-30 01:00:00","body":"More"}`,
+		"POST /r/2/api/v1/issues/5/notes/401/share {}",
+	}
+	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
+	}
+	// an edit must say which version it read, so a teammate's save is never overwritten blind
+	if r := call("pocket_projects_update_shared_note", map[string]any{"id": 5, "note": 9, "request_id": "operation-sn-000004", "data": map[string]any{"body": "Blind"}}); !r.IsError || len(seen) != len(want) {
+		t.Fatal("update without base went through")
+	}
+	for _, op := range mcpAppCatalog {
+		if op.Name == "pocket_projects_share_note" && op.Kind != "change" {
+			t.Fatalf("share_note kind %s: it can replace an earlier copy", op.Kind)
+		}
+		if strings.Contains(op.Name, "shared_note") && op.Method == "DELETE" {
+			t.Fatal("shared notes are never deleted from a tool")
 		}
 	}
 }
