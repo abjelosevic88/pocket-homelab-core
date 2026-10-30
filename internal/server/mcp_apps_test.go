@@ -453,3 +453,56 @@ func TestMCPAIScheduleTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPProjectsConnectedWorkspace(t *testing.T) {
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var paths []string
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":5,"identifier":"ATH-5","title":"Pilot"}`))
+	}))
+	defer fake.Close()
+	f.app("projects", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read apps:write")
+	session := mcpSessionWithToken(t, f.env, access)
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil || r.IsError {
+			t.Fatalf("%s: %v %v", name, err, r)
+		}
+		return r.StructuredContent.(map[string]any)
+	}
+	got := call("pocket_projects_get_issue", map[string]any{"id": 5, "workspace": 3})
+	if !strings.HasSuffix(got["source_url"].(string), "/r/3/issue/5") || !strings.HasSuffix(got["app_url"].(string), "/r/3/") {
+		t.Fatalf("workspace links: %v %v", got["source_url"], got["app_url"])
+	}
+	call("pocket_projects_comment", map[string]any{"id": 5, "workspace": 3, "request_id": "operation-ws-000001", "data": map[string]any{"body": "Done"}})
+	call("pocket_projects_create_issue", map[string]any{"workspace": 3, "request_id": "operation-ws-000002", "data": map[string]any{"title": "Follow-up", "team": "ATH"}})
+	call("pocket_projects_remember", map[string]any{"team": "ATH", "workspace": 3, "request_id": "operation-ws-000003", "data": map[string]any{"text": "make test"}})
+	own := call("pocket_projects_get_issue", map[string]any{"id": 5})
+	call("pocket_projects_workspaces", map[string]any{})
+	want := []string{"GET /r/3/api/v1/issues/5", "POST /r/3/api/v1/issues/5/comments", "POST /r/3/api/v1/issues", "POST /r/3/api/v1/teams/ATH/memory", "GET /api/v1/issues/5", "GET /api/v1/remotes"}
+	if strings.Join(paths, "|") != strings.Join(want, "|") {
+		t.Fatalf("paths: %v", paths)
+	}
+	if strings.Contains(own["source_url"].(string), "/r/") {
+		t.Fatalf("own instance link: %v", own["source_url"])
+	}
+	for _, bad := range []any{0, -1, "3/../x", 1.5} {
+		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_projects_get_issue", Arguments: map[string]any{"id": 5, "workspace": bad}})
+		if err == nil && !r.IsError {
+			t.Fatalf("workspace %v accepted", bad)
+		}
+	}
+	if len(paths) != len(want) {
+		t.Fatal("an invalid workspace reached Projects")
+	}
+	for _, op := range mcpAppCatalog {
+		if op.App != "projects" && op.Schema["properties"].(mcpFields)["workspace"] != nil {
+			t.Fatalf("%s has a workspace", op.Name)
+		}
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +52,20 @@ func (s *Server) addMCPAppTools(ms *mcp.Server, ctx context.Context) {
 	}
 }
 
+var mcpWorkspaceID = regexp.MustCompile(`^[1-9][0-9]{0,15}$`)
+
+// mcpWorkspacePrefix is "/r/{id}" for a Projects call into a connected
+// instance: Projects answers it there with the person's own token.
+func mcpWorkspacePrefix(op *mcpAppTool, input map[string]any) string {
+	if op.App != "projects" {
+		return ""
+	}
+	if id := mcpScalar(input["workspace"]); mcpWorkspaceID.MatchString(id) {
+		return "/r/" + id
+	}
+	return ""
+}
+
 func mcpAppResult(value any, failed bool) *mcp.CallToolResult {
 	b, _ := json.Marshal(value)
 	return &mcp.CallToolResult{IsError: failed, StructuredContent: value, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}
@@ -81,9 +96,9 @@ func (s *Server) callMCPApp(ctx context.Context, op *mcpAppTool, args json.RawMe
 		return mcpAppError("Application has an invalid registered API URL.")
 	}
 	target := *base
-	target.Path = strings.TrimRight(base.Path, "/") + "/api/v1" + op.Path
+	target.Path = strings.TrimRight(base.Path, "/") + mcpWorkspacePrefix(op, input) + "/api/v1" + op.Path
 	for k, v := range input {
-		if k != "data" && k != "query" && k != "request_id" {
+		if k != "data" && k != "query" && k != "request_id" && k != "workspace" {
 			target.Path = strings.ReplaceAll(target.Path, "{"+k+"}", mcpScalar(v))
 		}
 	}
