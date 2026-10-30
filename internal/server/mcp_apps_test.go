@@ -241,7 +241,7 @@ func TestMCPApplicationResponseBoundaries(t *testing.T) {
 				fmt.Fprint(w, tc.content)
 			}))
 			defer upstream.Close()
-			r := f.s.requestMCPApp(context.Background(), &mcpAppTool{Method: "GET"}, upstream.URL, "test-token", "", nil)
+			r := f.s.requestMCPApp(context.Background(), &mcpAppTool{Method: "GET"}, upstream.URL, "test-token", "", nil, "")
 			if !r.IsError || requests.Load() != 1 {
 				t.Fatal("invalid response accepted or redirect followed")
 			}
@@ -471,7 +471,7 @@ func TestMCPProjectsConnectedWorkspace(t *testing.T) {
 	f.s.cfg.MCPAppToolsEnabled = true
 	var paths []string
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.Method+" "+r.URL.Path)
+		paths = append(paths, r.Method+" "+r.URL.Path+" ws="+r.Header.Get("X-Pocket-Workspace"))
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"id":5,"identifier":"ATH-5","title":"Pilot"}`))
 	}))
@@ -496,17 +496,29 @@ func TestMCPProjectsConnectedWorkspace(t *testing.T) {
 	call("pocket_projects_remember", map[string]any{"team": "ATH", "workspace": 3, "request_id": "operation-ws-000003", "data": map[string]any{"text": "make test"}})
 	own := call("pocket_projects_get_issue", map[string]any{"id": 5})
 	call("pocket_projects_workspaces", map[string]any{})
-	want := []string{"GET /r/3/api/v1/issues/5", "POST /r/3/api/v1/issues/5/comments", "POST /r/3/api/v1/issues", "POST /r/3/api/v1/teams/ATH/memory", "GET /api/v1/issues/5", "GET /api/v1/remotes"}
+	byName := call("pocket_projects_comment", map[string]any{"id": "WEB-7", "request_id": "operation-ws-000004", "data": map[string]any{"body": "By name"}})
+	if !strings.HasSuffix(byName["source_url"].(string), "/issue/WEB-7") {
+		t.Fatalf("identifier link: %v", byName["source_url"])
+	}
+	call("pocket_projects_update_issue", map[string]any{"id": 5, "workspace": 0, "request_id": "operation-ws-000005", "data": map[string]any{"title": "Own"}})
+	want := []string{"GET /r/3/api/v1/issues/5 ws=3", "POST /r/3/api/v1/issues/5/comments ws=3", "POST /r/3/api/v1/issues ws=3", "POST /r/3/api/v1/teams/ATH/memory ws=3", "GET /api/v1/issues/5 ws=", "GET /api/v1/remotes ws=",
+		"POST /api/v1/issues/WEB-7/comments ws=", "PATCH /api/v1/issues/5 ws=0"}
 	if strings.Join(paths, "|") != strings.Join(want, "|") {
 		t.Fatalf("paths: %v", paths)
 	}
 	if strings.Contains(own["source_url"].(string), "/r/") {
 		t.Fatalf("own instance link: %v", own["source_url"])
 	}
-	for _, bad := range []any{0, -1, "3/../x", 1.5} {
+	for _, bad := range []any{-1, "3/../x", 1.5} {
 		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_projects_get_issue", Arguments: map[string]any{"id": 5, "workspace": bad}})
 		if err == nil && !r.IsError {
 			t.Fatalf("workspace %v accepted", bad)
+		}
+	}
+	for _, bad := range []any{"WEB-7/../x", "../5", "WEB 7", "-5"} {
+		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_projects_get_issue", Arguments: map[string]any{"id": bad}})
+		if err == nil && !r.IsError {
+			t.Fatalf("issue id %v accepted", bad)
 		}
 	}
 	if len(paths) != len(want) {

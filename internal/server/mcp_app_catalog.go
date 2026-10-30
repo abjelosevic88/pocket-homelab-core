@@ -92,6 +92,11 @@ func buildMCPAppCatalog() []*mcpAppTool {
 			if app == "calendar" {
 				root[p[1]] = map[string]any{"anyOf": []any{root[p[1]], map[string]any{"type": "string", "pattern": `^[1-9][0-9]{0,15}$`}}, "description": "Numeric event/series ID, not an occurrence ID."}
 			}
+			if app == "projects" && p[1] == "id" && strings.HasPrefix(path, "/issues/") {
+				// the identifier names one issue whichever workspace; a bare number needs the workspace said
+				root[p[1]] = map[string]any{"anyOf": []any{root[p[1]], map[string]any{"type": "string", "pattern": `^[A-Za-z][A-Za-z0-9]{0,6}-[1-9][0-9]{0,9}$`}},
+					"description": "The issue's identifier like WEB-12 (preferred) or its numeric id."}
+			}
 			if p[1] == "team" {
 				root[p[1]] = map[string]any{"type": "string", "pattern": `^([A-Za-z][A-Za-z0-9]{0,6}|[1-9][0-9]{0,15})$`, "description": "Team key, e.g. WEB (or the team's numeric id)."}
 			}
@@ -114,8 +119,8 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		}
 		if app == "projects" {
 			// a Pocket Projects instance the person connected (Settings → Connected instances), reached through theirs
-			root["workspace"] = map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991),
-				"description": "Connected workspace id from pocket_projects_workspaces: the call then goes to that other Pocket Projects instance, as you there. Omit for your own instance."}
+			root["workspace"] = map[string]any{"type": "integer", "minimum": 0, "maximum": int64(9007199254740991),
+				"description": "0 = your own instance; an id from pocket_projects_workspaces = that connected Pocket Projects instance, as you there. Once workspaces are connected, a change by numeric id needs this (or name the issue by identifier)."}
 		}
 		if method != "GET" {
 			root["request_id"] = map[string]any{"type": "string", "pattern": `^[A-Za-z0-9_-]{16,80}$`, "description": "A unique operation ID (for example a UUID). Reuse only for an identical retry."}
