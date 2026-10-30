@@ -44,6 +44,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
+var mcpIssueIdent = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,6}-[1-9][0-9]{0,9}$`)
 var mcpLinkDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
 func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool, input map[string]any) *mcp.CallToolResult {
@@ -71,7 +72,7 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 	parent := ""
 	if len(parts) > 1 && strings.HasPrefix(parts[1], "{") {
 		id := mcpScalar(input[strings.Trim(parts[1], "{}")])
-		if route.item != "" && mcpLinkID.MatchString(id) {
+		if route.item != "" && (mcpLinkID.MatchString(id) || op.App == "projects" && mcpIssueIdent.MatchString(id)) {
 			parent = link(strings.ReplaceAll(route.item, "{id}", id))
 			source = parent
 		}

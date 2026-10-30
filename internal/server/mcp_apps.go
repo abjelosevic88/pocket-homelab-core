@@ -66,6 +66,18 @@ func mcpWorkspacePrefix(op *mcpAppTool, input map[string]any) string {
 	return ""
 }
 
+// mcpWorkspaceSaid is the workspace a Projects call named ("0" = the person's
+// own instance), "" when it named none.
+func mcpWorkspaceSaid(op *mcpAppTool, input map[string]any) string {
+	if op.App != "projects" {
+		return ""
+	}
+	if id := mcpScalar(input["workspace"]); id == "0" || mcpWorkspaceID.MatchString(id) {
+		return id
+	}
+	return ""
+}
+
 func mcpAppResult(value any, failed bool) *mcp.CallToolResult {
 	b, _ := json.Marshal(value)
 	return &mcp.CallToolResult{IsError: failed, StructuredContent: value, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}
@@ -152,7 +164,7 @@ func (s *Server) callMCPApp(ctx context.Context, op *mcpAppTool, args json.RawMe
 			defer done()
 			_ = s.store.DeleteMCPAppToken(cleanup, token)
 		}()
-		result = s.requestMCPApp(work, op, target.String(), token, requestID, data)
+		result = s.requestMCPApp(work, op, target.String(), token, requestID, data, mcpWorkspaceSaid(op, input))
 		result = addMCPAppLinks(result, app.EffectivePublicURL(), op, input)
 	}
 	if write {
@@ -166,7 +178,7 @@ func (s *Server) callMCPApp(ctx context.Context, op *mcpAppTool, args json.RawMe
 	return result
 }
 
-func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, token, requestID string, data map[string]any) *mcp.CallToolResult {
+func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, token, requestID string, data map[string]any, workspace string) *mcp.CallToolResult {
 	client := &http.Client{Timeout: 14 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	if op.Merge {
 		req, _ := http.NewRequestWithContext(ctx, "GET", target, nil)
@@ -199,6 +211,9 @@ func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, toke
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Pocket-Source", "mcp")
+	if workspace != "" {
+		req.Header.Set("X-Pocket-Workspace", workspace) // Projects refuses ambiguous bare-number changes without it
+	}
 	if requestID != "" {
 		req.Header.Set("Idempotency-Key", "mcp-"+requestID)
 	}
