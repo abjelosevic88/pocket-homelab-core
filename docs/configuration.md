@@ -15,6 +15,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `DB_PATH` / `SECRET_PATH` | `$DATA_DIR/pocket-core.db` / `$DATA_DIR/secret.key` | Override locations. The secret key encrypts stored service credentials; back it up with the database. |
 | `SERVICES_FILE` | — | A JSON list of third-party services a Pocket Box runs, applied at every start (see below). |
 | `BOX_AGENT` | — | The Pocket Box agent's unix socket. Set on a Pocket Box only: adds Settings → System and the first-run box wizard (see below). |
+| `INSTALLER_SOCKET` / `INSTALLER_TOKEN` | — | The installer agent's unix socket and its token: adds **Install app** and a full **Remove app** to the Apps page. See [installer.md](installer.md). |
 | `TZ` | – | Container timezone |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `text` | `debug`, `warn`, `error`; `json` |
 | `TRUST_PROXY` | `true` | Honour `X-Forwarded-For` |

@@ -1,0 +1,82 @@
+# Pocket Search — private web search (Go + SQLite) with its own search engine.
+# `docker compose up -d` starts both: the app, and SearXNG — the meta-search
+# engine that asks Google, Bing, Brave, DuckDuckGo, Wikipedia and ~70 others at
+# once. The engine has no port of its own: only the app reaches it, so it
+# cannot be found or abused from outside. Its settings are below (no file to
+# edit); engines are switched on and off per person in Pocket Search.
+services:
+  pocket-search:
+    image: ghcr.io/abjelosevic88/pocket-homelab-search:latest
+    container_name: pocket-search
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      # SECURE_COOKIES: "true"          # behind HTTPS
+      # First admin (only used while the database has no users):
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # The bundled engine below. Point it at your own SearXNG instead if you
+      # have one (its settings.yml needs `search.formats: [html, json]`).
+      SEARXNG_URL: http://engine:8080
+      # Pocket Core: one sign-in, Pocket AI, and your other Pocket apps in the results.
+      # CORE_URL: http://pocket-core:8080
+      # CORE_REGISTRATION_KEY: ${CORE_REGISTRATION_KEY}
+    volumes:
+      - ./data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - engine
+
+  # SearXNG, the official image: engine fixes arrive with every image update.
+  engine:
+    image: searxng/searxng:latest
+    container_name: pocket-search-engine
+    restart: unless-stopped
+    environment:
+      SEARXNG_SETTINGS_PATH: /pocket/settings.yml
+      # Signs SearXNG's own cookies; the engine is private to the app, but a
+      # value of your own does not hurt.
+      SEARXNG_SECRET: ${ENGINE_SECRET:-pocket-search-private-engine}
+    configs:
+      - source: engine-settings
+        target: /pocket/settings.yml
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+configs:
+  engine-settings:
+    content: |
+      # Only what differs from SearXNG's defaults: new and fixed engines keep
+      # arriving with the image.
+      use_default_settings: true
+      general:
+        instance_name: "Pocket Search engine"
+        donation_url: false
+        contact_url: false
+        privacypolicy_url: false
+        enable_metrics: false
+      server:
+        limiter: false          # only Pocket Search asks it
+        public_instance: false
+        image_proxy: false      # Pocket Search proxies pictures itself
+        method: "GET"
+      search:
+        safe_search: 1
+        autocomplete: "duckduckgo"
+        default_lang: "auto"
+        formats: [html, json]
+      outgoing:
+        request_timeout: 5.0
+        max_request_timeout: 15.0
+        pool_connections: 100
+        pool_maxsize: 20

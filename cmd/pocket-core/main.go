@@ -56,6 +56,9 @@ func main() {
 		case "credentials":
 			runCredentials(os.Args[2:])
 			return
+		case "installer":
+			runInstaller(os.Args[2:])
+			return
 		case "help", "--help", "-h":
 			fmt.Println(`pocket-core — the hub of a Pocket Box: app registry, event bus, OIDC provider, device pairing
 
@@ -73,6 +76,8 @@ Usage:
   pocket-core connector [-token T] <type> <action>
                                      drive a connector (test, enable-events, enable-sso, provision <email>, status…)
                                      through the running server's admin API; "pocket-core connector -h" for actions
+  pocket-core installer              run the installer agent on the Docker host (Install/Remove
+                                     buttons); "pocket-core installer -h" for its settings
   pocket-core version                print version
   pocket-core mcp setup|check         create MCP client credentials or check a running MCP endpoint
 
