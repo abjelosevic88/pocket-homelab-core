@@ -49,6 +49,13 @@ who owns the app folders and answers Core on a unix socket.
 Pocket Core itself (and anything in `INSTALLER_PROTECTED`) is never removed. An app the agent can't
 find (one that runs outside Docker) can still be removed from Core only.
 
+## Switching it off
+
+- **Settings → Box → Install and remove apps** (admins): off hides *Install app*, and *Remove app* goes back
+  to only unregistering the app from Core. Stored in Core's settings (`installs_off`).
+- **`INSTALLER_ENABLED=false`** in Core's environment: off for good on that Core; the switch shows greyed out.
+- No `INSTALLER_SOCKET` (or no agent running): the feature doesn't exist there at all.
+
 ## Setup
 
 ```sh

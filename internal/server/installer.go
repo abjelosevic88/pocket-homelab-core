@@ -63,6 +63,35 @@ func (j *installJob) finish(state, errMsg string) {
 	j.mu.Unlock()
 }
 
+// installerState says whether one-click installs exist here and why not.
+// "" = on; otherwise the reason they are off.
+func (s *Server) installerState(ctx context.Context) string {
+	switch {
+	case s.inst == nil:
+		return "no installer agent on this server (INSTALLER_SOCKET)"
+	case !s.cfg.InstallerEnabled:
+		return "switched off by the server (INSTALLER_ENABLED=false)"
+	}
+	if st, err := s.store.GetSettings(ctx); err == nil && st.InstallsOff {
+		return "switched off under Settings → Box"
+	}
+	return ""
+}
+
+// installerOff answers 404/403 when installs are not available.
+func (s *Server) installerOff(w http.ResponseWriter, r *http.Request) bool {
+	why := s.installerState(r.Context())
+	switch {
+	case why == "":
+		return false
+	case s.inst == nil:
+		writeErr(w, http.StatusNotFound, "no installer on this server")
+	default:
+		writeErr(w, http.StatusForbidden, "Install and Remove are "+why)
+	}
+	return true
+}
+
 func appName(slug string) string {
 	if e, ok := catalog.Get(slug); ok && e.Name != "" {
 		return e.Name
@@ -82,8 +111,7 @@ func (s *Server) installerErr(w http.ResponseWriter, err error) {
 // handleInstallerCatalog lists the apps released on GitHub with whether each
 // is already registered here.
 func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) {
-	if s.inst == nil {
-		writeErr(w, http.StatusNotFound, "no installer on this server")
+	if s.installerOff(w, r) {
 		return
 	}
 	ctx := r.Context()
@@ -123,8 +151,7 @@ func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
-	if s.inst == nil {
-		writeErr(w, http.StatusNotFound, "no installer on this server")
+	if s.installerOff(w, r) {
 		return
 	}
 	ctx := r.Context()
@@ -172,8 +199,7 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUninstallApp(w http.ResponseWriter, r *http.Request) {
-	if s.inst == nil {
-		writeErr(w, http.StatusNotFound, "no installer on this server")
+	if s.installerOff(w, r) {
 		return
 	}
 	ctx := r.Context()

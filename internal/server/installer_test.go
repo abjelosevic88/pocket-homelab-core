@@ -183,3 +183,48 @@ func toStrs(v any) []string {
 	}
 	return out
 }
+
+func TestInstallerSwitch(t *testing.T) {
+	e := newEnv(t)
+	if c := e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "owner@b.c", "password": "password123", "name": "Owner", "box_name": "Box"}, nil); c != 200 {
+		t.Fatalf("setup %d", c)
+	}
+	startFakeInstaller(t, e)
+	status := func() map[string]any {
+		var st map[string]any
+		e.do("GET", "/api/v1/auth/status", "", nil, &st)
+		return st
+	}
+	if st := status(); st["installer"] != true || st["installer_agent"] != true || st["installer_locked"] != false {
+		t.Fatalf("default on: %v", st)
+	}
+
+	// The admin switches it off: no button, the routes refuse.
+	if c := e.do("PUT", "/api/v1/settings", "", map[string]any{"installs_off": true}, nil); c != 200 {
+		t.Fatalf("put settings %d", c)
+	}
+	if st := status(); st["installer"] != false || st["installer_agent"] != true {
+		t.Fatalf("switched off: %v", st)
+	}
+	for _, c := range []int{
+		e.do("GET", "/api/v1/installer", "", nil, nil),
+		e.do("POST", "/api/v1/installer/install", "", map[string]string{"slug": "lookout"}, nil),
+	} {
+		if c != 403 {
+			t.Fatalf("switched off must refuse, got %d", c)
+		}
+	}
+	e.do("PUT", "/api/v1/settings", "", map[string]any{"installs_off": false}, nil)
+	if st := status(); st["installer"] != true {
+		t.Fatalf("back on: %v", st)
+	}
+
+	// INSTALLER_ENABLED=false wins over the switch.
+	e.s.cfg.InstallerEnabled = false
+	if st := status(); st["installer"] != false || st["installer_locked"] != true {
+		t.Fatalf("env lock: %v", st)
+	}
+	if c := e.do("POST", "/api/v1/installer/install", "", map[string]string{"slug": "lookout"}, nil); c != 403 {
+		t.Fatalf("env lock must refuse, got %d", c)
+	}
+}
