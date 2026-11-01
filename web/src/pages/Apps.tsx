@@ -6,12 +6,14 @@ import type { App, OIDCClient, Settings, Webhook } from '../lib/types'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
+import { InstallModal, RemoveModal } from '../components/Installer'
 
 export default function Apps() {
   const { slug } = useParams()
-  const { user } = useApp()
+  const { user, status } = useApp()
   const { data, loading, reload } = useAsync(() => api.get<App[]>(`${V1}/apps`), [])
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [installing, setInstalling] = useState(false)
   useEffect(() => { if (user?.role === 'admin') api.get<Settings>(`${V1}/settings`).then(setSettings).catch(() => {}) }, [user])
   if (slug) return <AppDetail slug={slug} onChange={reload} />
   if (loading && !data) return <Loading />
@@ -20,8 +22,12 @@ export default function Apps() {
   const down = apps.filter(a => a.status === 'down').length
   return (
     <>
-      <PageHeader title="Apps" sub="Pocket apps that registered themselves with this box." actions={<button type="button" className="btn" onClick={reload}><Icon name="refresh" size={15} />Refresh</button>} />
-      {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">Give each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
+      <PageHeader title="Apps" sub="Pocket apps that registered themselves with this box." actions={<>
+        <button type="button" className="btn" onClick={reload}><Icon name="refresh" size={15} />Refresh</button>
+        {status?.installer && <button type="button" className="btn primary" onClick={() => setInstalling(true)}><Icon name="download" size={15} />Install app</button>}
+      </>} />
+      {installing && <InstallModal onClose={() => setInstalling(false)} onInstalled={reload} />}
+      {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">{status?.installer ? <>Press <b>Install app</b> to add one from GitHub, or give</> : 'Give'} each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
         <div className="app-summary">
           <span className="pill">{apps.length} apps</span>
           <span className="pill ok">{up} up</span>
@@ -75,7 +81,8 @@ interface Detail { app: App; webhooks: Webhook[]; oidc_client: OIDCClient | null
 function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { user } = useApp()
+  const { user, status } = useApp()
+  const [removing, setRemoving] = useState(false)
   const admin = user?.role === 'admin'
   const { data, loading, error, reload } = useAsync(() => api.get<Detail>(`${V1}/apps/${slug}`), [slug])
   const [edit, setEdit] = useState(false)
@@ -109,7 +116,7 @@ function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
             <dt>Last check</dt><dd>{when(a.last_check_at) || 'never'}</dd>
             <dt>Registered</dt><dd>{when(a.created_at)}</dd>
           </dl>
-          {admin && <div className="form-actions mt"><button type="button" className="btn" onClick={() => setConfirm('rotate')}>Rotate token</button><button type="button" className="btn danger" onClick={() => setConfirm('delete')}>Remove app</button></div>}
+          {admin && <div className="form-actions mt"><button type="button" className="btn" onClick={() => setConfirm('rotate')}>Rotate token</button><button type="button" className="btn danger" onClick={() => status?.installer && a.slug !== 'core' ? setRemoving(true) : setConfirm('delete')}>Remove app</button></div>}
           {newToken && <div className="mt"><div className="callout success mb-sm">New app token — set it in the app's environment or delete its token file so it re-registers with the key.</div><Secret value={newToken} /></div>}
         </Card>
         <div className="grid" style={{ gap: 16 }}>
@@ -137,6 +144,7 @@ function AppDetail({ slug, onChange }: { slug: string; onChange: () => void }) {
           <div className="form-actions"><button type="button" className="btn" onClick={() => setEdit(false)}>Cancel</button><button className="btn primary">Save</button></div>
         </form>
       </Modal>}
+      {removing && <RemoveModal app={a} onClose={() => setRemoving(false)} onRemoved={() => { onChange(); navigate('/apps') }} />}
       {confirm === 'delete' && <Confirm title="Remove app" message={<>Remove <b>{a.name}</b> from the registry? Its service entry, webhooks and SSO client go with it. The app itself keeps running and can register again.</>} onConfirm={del} onCancel={() => setConfirm(null)} />}
       {confirm === 'rotate' && <Confirm title="Rotate app token" message="The current token stops working immediately. You will need to give the app the new one." onConfirm={rotate} onCancel={() => setConfirm(null)} danger={false} />}
     </>

@@ -27,10 +27,14 @@ type Config struct {
 	ServicesFile string
 	// BoxAgent: the Pocket Box agent's unix socket (time zone, Wi-Fi,
 	// Tailscale, console password). Empty off a Pocket Box.
-	BoxAgent   string
-	LogLevel   string
-	LogFormat  string // text | json
-	TrustProxy bool
+	BoxAgent string
+	// Installer: the installer agent's unix socket and token (`pocket-core
+	// installer` on the host). Empty = no Install/Remove buttons.
+	InstallerSocket string
+	InstallerToken  string
+	LogLevel        string
+	LogFormat       string // text | json
+	TrustProxy      bool
 
 	AuthMode             string // local | proxy | none
 	AuthProxyHeader      string
@@ -117,9 +121,12 @@ func Load() (*Config, error) {
 		SecretPath:   env("SECRET_PATH", dataDir+"/secret.key"),
 		ServicesFile: env("SERVICES_FILE", ""),
 		BoxAgent:     env("BOX_AGENT", ""),
-		LogLevel:     strings.ToLower(env("LOG_LEVEL", "info")),
-		LogFormat:    strings.ToLower(env("LOG_FORMAT", "text")),
-		TrustProxy:   envBool("TRUST_PROXY", true),
+
+		InstallerSocket: env("INSTALLER_SOCKET", ""),
+		InstallerToken:  env("INSTALLER_TOKEN", ""),
+		LogLevel:        strings.ToLower(env("LOG_LEVEL", "info")),
+		LogFormat:       strings.ToLower(env("LOG_FORMAT", "text")),
+		TrustProxy:      envBool("TRUST_PROXY", true),
 
 		AuthMode:             strings.ToLower(env("AUTH_MODE", "local")),
 		AuthProxyHeader:      env("AUTH_PROXY_HEADER", "Remote-User"),

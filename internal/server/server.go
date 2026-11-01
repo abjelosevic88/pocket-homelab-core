@@ -26,6 +26,7 @@ import (
 	"github.com/abjelosevic88/pocket-homelab-core/internal/config"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/crypto"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/events"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/installer"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/oidc"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 )
@@ -49,13 +50,16 @@ type Server struct {
 	requests    atomic.Int64
 	errors      atomic.Int64
 	http        *http.Client
-	connHTTP    *http.Client    // connectors talking to third-party apps
-	ctx         context.Context // lives as long as the server; background work hangs off it
-	box         *boxAgent       // the Pocket Box agent (BOX_AGENT); nil off a box
-	polling     sync.Map        // service id → struct{}: a poll is running
-	nextPoll    sync.Map        // service id → time.Time: when the scheduler polls next
-	provMu      sync.Mutex      // one provisioning at a time: no duplicate accounts from racing clicks
-	rotations   sync.WaitGroup  // background key replacements after a service link was switched off
+	connHTTP    *http.Client      // connectors talking to third-party apps
+	ctx         context.Context   // lives as long as the server; background work hangs off it
+	box         *boxAgent         // the Pocket Box agent (BOX_AGENT); nil off a box
+	inst        *installer.Client // the installer agent (INSTALLER_SOCKET); nil = no one-click installs
+	installs    sync.Map          // job id → *installJob
+	removing    sync.Map          // slug → true: being removed, not health-checked
+	polling     sync.Map          // service id → struct{}: a poll is running
+	nextPoll    sync.Map          // service id → time.Time: when the scheduler polls next
+	provMu      sync.Mutex        // one provisioning at a time: no duplicate accounts from racing clicks
+	rotations   sync.WaitGroup    // background key replacements after a service link was switched off
 
 	hookMu    sync.Mutex // one subscription sync at a time
 	hookSyncs sync.Map   // service id → hookSyncResult: what the last sync found per person
@@ -78,7 +82,7 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		ctx:        context.Background(),
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute),
 		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute),
-		box: newBoxAgent(cfg.BoxAgent)}
+		box: newBoxAgent(cfg.BoxAgent), inst: installer.NewClient(cfg.InstallerSocket, cfg.InstallerToken)}
 }
 
 // warnStaleAdminEnv logs when ADMIN_* no longer describe a working sign-in. The
@@ -306,6 +310,10 @@ func (s *Server) Router() http.Handler {
 				r.HandleFunc("/box/system/*", s.handleBoxSystem)
 				r.Put("/apps/{slug}", s.handleUpdateApp)
 				r.Delete("/apps/{slug}", s.handleDeleteApp)
+				r.Post("/apps/{slug}/uninstall", s.handleUninstallApp)
+				r.Get("/installer", s.handleInstallerCatalog)
+				r.Post("/installer/install", s.handleInstallApp)
+				r.Get("/installer/jobs/{id}", s.handleInstallJob)
 				r.Post("/apps/{slug}/rotate", s.handleRotateApp)
 				r.Post("/apps/{slug}/check", s.handleCheckApp)
 

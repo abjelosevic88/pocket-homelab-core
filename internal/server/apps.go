@@ -391,7 +391,9 @@ func (s *Server) checkAllApps(ctx context.Context) {
 		return
 	}
 	for i := range apps {
-		s.checkApp(ctx, &apps[i])
+		if _, busy := s.removing.Load(apps[i].Slug); !busy {
+			s.checkApp(ctx, &apps[i])
+		}
 	}
 }
 

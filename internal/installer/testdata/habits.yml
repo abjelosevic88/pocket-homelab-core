@@ -1,0 +1,26 @@
+# Pocket Habits — minimal homelab deployment.
+#   docker compose up -d
+#   open http://<host>:8080 and create your account
+services:
+  app:
+    image: ghcr.io/abjelosevic88/pocket-homelab-habit-tracker:latest
+    # build: .                       # uncomment to build from source instead
+    container_name: pocket-habits
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: ${TZ:-UTC}                                  # "today" and the reminder follow this zone
+      BASE_URL: ${BASE_URL:-http://localhost:8080}    # used in reminder links
+      # ADMIN_EMAIL: you@example.com                  # optional: skip the setup screen
+      # ADMIN_PASSWORD: change-me-please
+      # AUTH_MODE: proxy                              # behind Authelia/Authentik/Tinyauth: trust Remote-User header
+      # SECURE_COOKIES: "true"                        # when served over HTTPS
+      # LOG_LEVEL: info
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,338 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/abjelosevic88/pocket-homelab-core/internal/catalog"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/installer"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
+)
+
+// One-click install and removal of Pocket apps. The work on the host is done
+// by the installer agent (INSTALLER_SOCKET); Core decides who may ask, hands
+// the agent its registration key, and finishes the job on its side: it waits
+// for a new app to register (which creates its sign-in client, service entry
+// and app links) and unregisters a removed one.
+
+// installJob mirrors an agent job plus what Core did after it.
+type installJob struct {
+	mu      sync.Mutex
+	ID      string            `json:"id"`
+	Kind    string            `json:"kind"`
+	Slug    string            `json:"slug"`
+	Name    string            `json:"name"`
+	State   string            `json:"state"` // running | done | failed
+	Log     []string          `json:"log"`
+	Error   string            `json:"error,omitempty"`
+	Result  *installer.Result `json:"result,omitempty"`
+	OpenURL string            `json:"open_url,omitempty"`
+	Started time.Time         `json:"started_at"`
+
+	agentLog []string
+	coreLog  []string
+	ended    time.Time
+}
+
+func (j *installJob) snapshot() map[string]any {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return map[string]any{"id": j.ID, "kind": j.Kind, "slug": j.Slug, "name": j.Name, "state": j.State,
+		"log": append(slices.Clone(j.agentLog), j.coreLog...), "error": j.Error, "result": j.Result,
+		"open_url": j.OpenURL, "started_at": j.Started}
+}
+
+func (j *installJob) logf(format string, args ...any) {
+	j.mu.Lock()
+	j.coreLog = append(j.coreLog, fmt.Sprintf(format, args...))
+	j.mu.Unlock()
+}
+
+func (j *installJob) finish(state, errMsg string) {
+	j.mu.Lock()
+	j.State, j.Error, j.ended = state, errMsg, time.Now()
+	j.mu.Unlock()
+}
+
+func appName(slug string) string {
+	if e, ok := catalog.Get(slug); ok && e.Name != "" {
+		return e.Name
+	}
+	return "Pocket " + slug
+}
+
+func (s *Server) installerErr(w http.ResponseWriter, err error) {
+	var ie *installer.Error
+	if errors.As(err, &ie) {
+		writeErr(w, ie.Status, ie.Msg)
+		return
+	}
+	writeErr(w, http.StatusBadGateway, err.Error())
+}
+
+// handleInstallerCatalog lists the apps released on GitHub with whether each
+// is already registered here.
+func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) {
+	if s.inst == nil {
+		writeErr(w, http.StatusNotFound, "no installer on this server")
+		return
+	}
+	ctx := r.Context()
+	st, err := s.inst.Status(ctx)
+	if err != nil {
+		s.installerErr(w, err)
+		return
+	}
+	rels, err := s.inst.Catalog(ctx, r.URL.Query().Get("refresh") == "1")
+	if err != nil {
+		s.installerErr(w, err)
+		return
+	}
+	apps, _ := s.store.ListApps(ctx)
+	have := map[string]*store.App{}
+	for i := range apps {
+		have[apps[i].Slug] = &apps[i]
+	}
+	out := make([]map[string]any, 0, len(rels))
+	for _, rel := range rels {
+		item := map[string]any{"slug": rel.Slug, "name": appName(rel.Slug), "description": rel.Description, "repo": rel.Repo,
+			"repo_url": rel.RepoURL, "version": rel.Version, "tag": rel.Tag, "container": rel.Container, "present": rel.Present}
+		if a := have[rel.Slug]; a != nil {
+			item["installed"], item["name"], item["installed_version"] = true, a.Name, a.Version
+		}
+		out = append(out, item)
+	}
+	running := ""
+	s.installs.Range(func(_, v any) bool {
+		if j := v.(*installJob); j.snapshot()["state"] == "running" {
+			running = j.ID
+			return false
+		}
+		return true
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": st, "apps": out, "running_job": running})
+}
+
+func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
+	if s.inst == nil {
+		writeErr(w, http.StatusNotFound, "no installer on this server")
+		return
+	}
+	ctx := r.Context()
+	var in struct {
+		Slug string `json:"slug"`
+	}
+	if err := decode(r, &in); err != nil || !slugRe.MatchString(in.Slug) {
+		writeErr(w, http.StatusBadRequest, "slug is required")
+		return
+	}
+	if _, err := s.store.GetAppBySlug(ctx, in.Slug); err == nil {
+		writeErr(w, http.StatusConflict, appName(in.Slug)+" is already registered here")
+		return
+	}
+	st, err := s.store.GetSettings(ctx)
+	if err != nil {
+		s.fail(w, err, "settings")
+		return
+	}
+	u := userFrom(ctx)
+	if u == nil {
+		writeErr(w, http.StatusUnauthorized, "sign in first")
+		return
+	}
+	var reserved []int
+	if apps, err := s.store.ListApps(ctx); err == nil {
+		for _, a := range apps {
+			if p := urlPort(a.URL); p > 0 {
+				reserved = append(reserved, p)
+			}
+		}
+	}
+	name := appName(in.Slug)
+	aj, err := s.inst.Install(ctx, installer.InstallRequest{Slug: in.Slug, Name: name, RegistrationKey: st.RegistrationKey,
+		AdminEmail: u.Email, AdminName: u.Name, Reserved: reserved})
+	if err != nil {
+		s.installerErr(w, err)
+		return
+	}
+	j := &installJob{ID: aj.ID, Kind: "install", Slug: in.Slug, Name: name, State: "running", Started: time.Now().UTC()}
+	s.installs.Store(j.ID, j)
+	s.log.Info("app install started", "slug", in.Slug, "by", u.Email)
+	go s.followInstall(j)
+	writeJSON(w, http.StatusAccepted, j.snapshot())
+}
+
+func (s *Server) handleUninstallApp(w http.ResponseWriter, r *http.Request) {
+	if s.inst == nil {
+		writeErr(w, http.StatusNotFound, "no installer on this server")
+		return
+	}
+	ctx := r.Context()
+	a, err := s.store.GetAppBySlug(ctx, chi.URLParam(r, "slug"))
+	if err != nil {
+		s.fail(w, err, "get app")
+		return
+	}
+	if a.Slug == "core" {
+		writeErr(w, http.StatusForbidden, "Pocket Core cannot remove itself")
+		return
+	}
+	// Removing an app takes it down on purpose: no "app down" event meanwhile.
+	s.removing.Store(a.Slug, true)
+	aj, err := s.inst.Uninstall(ctx, installer.UninstallRequest{Slug: a.Slug, URL: a.URL, PublicURL: a.PublicURL})
+	if err != nil {
+		s.removing.Delete(a.Slug)
+		s.installerErr(w, err)
+		return
+	}
+	j := &installJob{ID: aj.ID, Kind: "uninstall", Slug: a.Slug, Name: a.Name, State: "running", Started: time.Now().UTC()}
+	s.installs.Store(j.ID, j)
+	if u := userFrom(ctx); u != nil {
+		s.log.Info("app removal started", "slug", a.Slug, "by", u.Email)
+	}
+	go s.followInstall(j)
+	writeJSON(w, http.StatusAccepted, j.snapshot())
+}
+
+func (s *Server) handleInstallJob(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.installs.Load(chi.URLParam(r, "id"))
+	if !ok {
+		writeErr(w, http.StatusNotFound, "no such job")
+		return
+	}
+	writeJSON(w, http.StatusOK, v.(*installJob).snapshot())
+}
+
+// followInstall mirrors the agent's job and then does Core's part.
+func (s *Server) followInstall(j *installJob) {
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
+	defer cancel()
+	defer s.pruneInstallJobs()
+	if j.Kind == "uninstall" {
+		defer s.removing.Delete(j.Slug)
+	}
+	var aj *installer.Job
+	misses := 0
+	for {
+		select {
+		case <-ctx.Done():
+			j.finish("failed", "gave up waiting for the installer")
+			return
+		case <-time.After(time.Second):
+		}
+		got, err := s.inst.Job(ctx, j.ID)
+		if err != nil {
+			if misses++; misses > 30 {
+				j.finish("failed", "lost the installer: "+err.Error())
+				return
+			}
+			continue
+		}
+		misses = 0
+		aj = got
+		j.mu.Lock()
+		j.agentLog, j.Result = aj.Log, aj.Result
+		j.mu.Unlock()
+		if aj.State != "running" {
+			break
+		}
+	}
+	if aj.State == "failed" {
+		j.finish("failed", aj.Error)
+		return
+	}
+	if j.Kind == "uninstall" {
+		s.unregister(ctx, j)
+		return
+	}
+	s.awaitRegistration(ctx, j)
+}
+
+// awaitRegistration waits for the new app's first start: registering creates
+// its service entry, its "Sign in with Pocket Core" client and its app links.
+func (s *Server) awaitRegistration(ctx context.Context, j *installJob) {
+	j.logf("Waiting for the app to register with Pocket Core")
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		a, err := s.store.GetAppBySlug(ctx, j.Slug)
+		if err == nil {
+			j.logf("Registered with Pocket Core as %s", a.Name)
+			if cl, err := s.store.GetOIDCClient(ctx, "pocket-"+a.Slug); err == nil && cl.AppID == a.ID {
+				j.logf("Sign in with Pocket Core is set up")
+			}
+			if links, err := s.store.ListAppLinks(ctx, a.ID); err == nil && len(links) > 0 {
+				on := 0
+				for _, l := range links {
+					if l.Enabled {
+						on++
+					}
+				}
+				j.logf("App links: %d of %d switched on", on, len(links))
+			}
+			s.checkApp(ctx, a)
+			j.mu.Lock()
+			j.Name = a.Name
+			j.OpenURL = signedInURL(s.signInStarts(ctx), a.ID, a.EffectivePublicURL())
+			j.mu.Unlock()
+			j.finish("done", "")
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+	j.mu.Lock()
+	if j.Result != nil {
+		j.Result.Warnings = append(j.Result.Warnings, "The app runs but has not registered with Pocket Core yet. Check its log: docker logs "+j.Result.Container)
+	}
+	j.mu.Unlock()
+	j.finish("done", "")
+}
+
+func (s *Server) unregister(ctx context.Context, j *installJob) {
+	a, err := s.store.GetAppBySlug(ctx, j.Slug)
+	if err != nil {
+		j.finish("done", "")
+		return
+	}
+	if err := s.store.DeleteApp(ctx, a.ID); err != nil {
+		j.finish("failed", "the app is gone from the server, but Core could not unregister it: "+err.Error())
+		return
+	}
+	_ = s.hub.Publish(ctx, &store.Event{Topic: "core.app.removed", Source: "core", Subject: "app:" + a.Slug, Payload: mustJSON(map[string]any{"slug": a.Slug})})
+	j.logf("Unregistered from Pocket Core: its sign-in client, service entry, webhooks and app links are gone")
+	j.finish("done", "")
+}
+
+func (s *Server) pruneInstallJobs() {
+	s.installs.Range(func(k, v any) bool {
+		j := v.(*installJob)
+		j.mu.Lock()
+		old := !j.ended.IsZero() && time.Since(j.ended) > 24*time.Hour
+		j.mu.Unlock()
+		if old {
+			s.installs.Delete(k)
+		}
+		return true
+	})
+}
+
+func urlPort(raw string) int {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 0
+	}
+	p, _ := strconv.Atoi(u.Port())
+	return p
+}

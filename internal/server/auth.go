@@ -268,6 +268,8 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"cookie_warning": s.cookieWarning(r),
 		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
 		"box_system": s.box != nil,
+		// One-click install/removal of Pocket apps (admins).
+		"installer":  s.inst != nil && u != nil && u.Role == "admin",
 		"box_wizard": s.box != nil && n > 0 && s.box.wizardPending(r.Context()),
 	})
 }

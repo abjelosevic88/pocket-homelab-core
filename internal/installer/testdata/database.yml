@@ -1,0 +1,30 @@
+# Pocket Database — every database on your server (Go + SQLite). One container, one volume.
+# Host networking lets it reach database containers on their own networks; the Docker socket
+# lets it find them (with the credentials in their settings) and pause an app while a live
+# SQLite file is changed. Mount the folders your apps keep their data in at the same path.
+services:
+  pocket-database:
+    image: ghcr.io/abjelosevic88/pocket-homelab-database:latest
+    container_name: pocket-database
+    restart: unless-stopped
+    network_mode: host
+    group_add:
+      - "${DOCKER_GID:-999}"            # the docker group, for the socket
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      PORT: "8080"
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      # SECURE_COOKIES: "true"          # behind HTTPS
+      # First admin (only used while the database has no users):
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      NOTIFY_URL: ${NOTIFY_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # SCAN_PATHS: /srv/other-app/data   # more folders to look for SQLite files in
+      # Pocket Core: one sign-in, Pocket AI, events.
+      # CORE_URL: http://127.0.0.1:8179
+      # CORE_REGISTRATION_KEY: ${CORE_REGISTRATION_KEY}
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv:/srv                       # your apps' data folders, same path inside
