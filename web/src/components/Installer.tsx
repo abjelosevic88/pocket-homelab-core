@@ -131,9 +131,10 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
                 <div className="grow">
                   <div className="row wrap" style={{ gap: 6 }}><b>{a.name}</b><span className="muted small">{formatVersion(a.version)}</span></div>
                   {a.description && <div className="muted small inst-desc">{a.description}</div>}
-                  {!a.installed && cat?.status.public_url && <div className="muted small mono">{cat.status.public_url.replace('{slug}', a.slug)}</div>}
+                  {a.installed && a.installed_version && a.installed_version.replace(/^v/, '') !== a.version && <div className="small inst-update">Running {formatVersion(a.installed_version)}</div>}
+                  {!a.installed && cat?.status.public_url && <div className="muted small mono inst-url">{cat.status.public_url.replace('{slug}', a.slug)}</div>}
                 </div>
-                {a.installed ? <span className="pill ok">Installed{a.installed_version ? ` · ${formatVersion(a.installed_version)}` : ''}</span>
+                {a.installed ? <span className="pill ok" title={a.installed_version ? `Running ${formatVersion(a.installed_version)}` : undefined}>Installed</span>
                   : a.present ? <span className="pill" title={`A container named ${a.container} already exists on the server but is not registered here. Start it with CORE_URL and the registration key, or remove it first.`}>Container exists</span>
                   : <button type="button" className="btn primary sm" disabled={!!starting} onClick={() => install(a.slug)}>{starting === a.slug ? <Spinner /> : <Icon name="download" size={14} />}Install</button>}
               </div>

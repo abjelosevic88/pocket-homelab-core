@@ -5,7 +5,7 @@ import { api, V1 } from '../lib/api'
 import { uptime, when } from '../lib/format'
 import type { OIDCClient, Settings as S, SystemInfo } from '../lib/types'
 import { useApp, type ThemeMode } from '../lib/app-context'
-import { Confirm, Field, Loading, Modal, Secret, Segmented, SettingRow, Tabs, useAsync, useIsMobile, useToast } from '../components/ui'
+import { Confirm, Field, Loading, Modal, Secret, Segmented, SettingRow, Switch, Tabs, useAsync, useIsMobile, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
 import { CredentialsModal, Tokens } from './Users'
 import { Select } from '../components/Select'
@@ -100,7 +100,7 @@ function Section({ title, sub, icon, actions, children }: { title: React.ReactNo
 }
 
 function Box() {
-  const { refresh } = useApp()
+  const { refresh, status } = useApp()
   const { toast } = useToast()
   const { data: st, reload } = useAsync(() => api.get<S>(`${V1}/settings`), [])
   const [form, setForm] = useState<{ title?: string; box_name?: string; family_name?: string }>({})
@@ -117,6 +117,14 @@ function Box() {
           <div className="form-actions"><button className="btn primary">Save changes</button></div>
         </form>
       </Section>
+      {status?.installer_agent && <Section title="Install and remove apps" icon="package"
+        sub="Install app on the Apps page puts any released Pocket app on this server and connects it; Remove app takes one off again (its folder is archived). Switch it off where apps are set up by hand.">
+        <SettingRow title="One-click Install and Remove"
+          help={status.installer_locked ? <>Turned off on the server with <code>INSTALLER_ENABLED=false</code>; change it there.</> : st.installs_off ? 'Off: Apps shows no Install button, and Remove only unregisters an app from Core.' : 'On for admins.'}>
+          <Switch on={!status.installer_locked && !st.installs_off} disabled={status.installer_locked} label="One-click Install and Remove"
+            onChange={async on => { await api.put(`${V1}/settings`, { installs_off: !on }); await reload(); await refresh(); toast(on ? 'Install and Remove on' : 'Install and Remove off') }} />
+        </SettingRow>
+      </Section>}
       <Section title="App registration key" icon="key" sub="Apps present this once to join the box; afterwards they use their own token. Rotating it does not affect apps already registered."
         actions={<button type="button" className="btn sm" onClick={() => setRot(true)}><Icon name="refresh" size={14} />Rotate</button>}>
         <Secret value={st.registration_key} />

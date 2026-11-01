@@ -32,9 +32,12 @@ type Config struct {
 	// installer` on the host). Empty = no Install/Remove buttons.
 	InstallerSocket string
 	InstallerToken  string
-	LogLevel        string
-	LogFormat       string // text | json
-	TrustProxy      bool
+	// InstallerEnabled=false keeps Install/Remove off whatever the admin
+	// switch says (installs on this box are done by hand).
+	InstallerEnabled bool
+	LogLevel         string
+	LogFormat        string // text | json
+	TrustProxy       bool
 
 	AuthMode             string // local | proxy | none
 	AuthProxyHeader      string
@@ -122,11 +125,12 @@ func Load() (*Config, error) {
 		ServicesFile: env("SERVICES_FILE", ""),
 		BoxAgent:     env("BOX_AGENT", ""),
 
-		InstallerSocket: env("INSTALLER_SOCKET", ""),
-		InstallerToken:  env("INSTALLER_TOKEN", ""),
-		LogLevel:        strings.ToLower(env("LOG_LEVEL", "info")),
-		LogFormat:       strings.ToLower(env("LOG_FORMAT", "text")),
-		TrustProxy:      envBool("TRUST_PROXY", true),
+		InstallerSocket:  env("INSTALLER_SOCKET", ""),
+		InstallerToken:   env("INSTALLER_TOKEN", ""),
+		InstallerEnabled: envBool("INSTALLER_ENABLED", true),
+		LogLevel:         strings.ToLower(env("LOG_LEVEL", "info")),
+		LogFormat:        strings.ToLower(env("LOG_FORMAT", "text")),
+		TrustProxy:       envBool("TRUST_PROXY", true),
 
 		AuthMode:             strings.ToLower(env("AUTH_MODE", "local")),
 		AuthProxyHeader:      env("AUTH_PROXY_HEADER", "Remote-User"),

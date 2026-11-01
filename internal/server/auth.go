@@ -269,8 +269,11 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
 		"box_system": s.box != nil,
 		// One-click install/removal of Pocket apps (admins).
-		"installer":  s.inst != nil && u != nil && u.Role == "admin",
-		"box_wizard": s.box != nil && n > 0 && s.box.wizardPending(r.Context()),
+		"installer": u.IsAdmin() && s.installerState(r.Context()) == "",
+		// Settings → Box: the switch exists when there is an agent; locked by INSTALLER_ENABLED=false.
+		"installer_agent":  u.IsAdmin() && s.inst != nil,
+		"installer_locked": u.IsAdmin() && s.inst != nil && !s.cfg.InstallerEnabled,
+		"box_wizard":       s.box != nil && n > 0 && s.box.wizardPending(r.Context()),
 	})
 }
 
@@ -724,9 +727,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title      *string `json:"title"`
-		BoxName    *string `json:"box_name"`
-		FamilyName *string `json:"family_name"`
+		Title       *string `json:"title"`
+		BoxName     *string `json:"box_name"`
+		FamilyName  *string `json:"family_name"`
+		InstallsOff *bool   `json:"installs_off"`
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -737,6 +741,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.BoxName != nil && strings.TrimSpace(*in.BoxName) != "" {
 		st.BoxName = strings.TrimSpace(*in.BoxName)
+	}
+	if in.InstallsOff != nil {
+		st.InstallsOff = *in.InstallsOff
 	}
 	oldFamily := st.FamilyName
 	if in.FamilyName != nil {

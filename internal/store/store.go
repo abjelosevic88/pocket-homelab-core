@@ -182,6 +182,8 @@ type Settings struct {
 	FamilyName      string `json:"family_name"` // replaces "Pocket" in app names ("Pocket Notes" → "Home Notes")
 	RegistrationKey string `json:"registration_key"`
 	SetupComplete   bool   `json:"setup_complete"`
+	// InstallsOff: an admin switched one-click Install/Remove off (Settings → Box).
+	InstallsOff bool `json:"installs_off"`
 }
 
 // GetSettings loads the settings with defaults.
@@ -214,6 +216,8 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 			st.RegistrationKey = v
 		case "setup_complete":
 			st.SetupComplete = v == "1"
+		case "installs_off":
+			st.InstallsOff = v == "1"
 		}
 	}
 	return st, rows.Err()
@@ -227,6 +231,7 @@ func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
 		"family_name":      st.FamilyName,
 		"registration_key": st.RegistrationKey,
 		"setup_complete":   fmt.Sprint(boolInt(st.SetupComplete)),
+		"installs_off":     fmt.Sprint(boolInt(st.InstallsOff)),
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
