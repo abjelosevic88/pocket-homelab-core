@@ -395,6 +395,8 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	place["radius"].(map[string]any)["description"] = "Metres, 15 to 5000 (default 100)."
 	write("movement", "create_place", "Save a place (home, work, the gym…) with a radius: every visit inside it, past ones too, gets its name and is confirmed.", "POST", "/places", place, "lat lng")
 	write("movement", "update_place", "Rename, recategorise, move or resize one of your places; omitted fields stay as they are.", "PUT", "/places/{id}", place, "")
+	read("search", "web", "Search the web privately through Pocket Search (SearXNG on the person's own server; their engines and site rules apply, nothing is added to their search history). terms = the search; cat = general (default), news, images, videos, it, science; time = day, week, month or year; page = 1-20. Results carry url, title, content (snippet), domain and published date.", "/search", "terms cat time page lang")
+	read("search", "read_page", "Read a web page's article text through Pocket Search's reading view: fetched by the person's server, scripts, trackers and adverts removed. url = the page's http(s) address.", "/read", "url")
 	read("ai", "threads", "Find your Pocket AI conversations.", "/threads", "q limit")
 	read("ai", "conversation", "Read the recent messages in one of your Pocket AI conversations.", "/ask-context/{id}", "")
 	read("ai", "schedules", "List your Pocket AI scheduled runs: id, name, the full prompt, timing (spec), machine (host_id, 0 = the Pocket AI server), enabled, next and last run, last status and summary.", "/schedules", "")
