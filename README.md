@@ -275,6 +275,7 @@ Example requests after connecting:
 - “Show low-stock inventory and add the missing ingredients to my Kitchen shopping list.”
 - “Record a 12.50 EUR expense in my selected Money account.”
 - “Show the tasks in this Pocket Review review and mark this one done.”
+- “Does athena#4205 add a feature flag, and what does it guard?” (Pocket PR Review: find, brief, diff and search of a pull request's changes)
 
 For example, `pocket_notes_create` accepts:
 
