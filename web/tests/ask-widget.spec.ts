@@ -73,3 +73,20 @@ test('closing returns keyboard focus to the floating launcher', async ({ page })
   await expect(page.getByRole('dialog', { name: 'Pocket Ask' })).toBeHidden()
   await expect(launch).toBeFocused()
 })
+
+test('links from the Ask panel into the host app navigate in the same window', async ({ page }) => {
+  await page.route('https://core.test/ask**', route => route.fulfill({
+    contentType: 'text/html',
+    body: `<a id="same" href="https://app.test/issue/ATH-50">ATH-50</a><a id="other" href="https://elsewhere.test/">Other</a>
+<script>const origin='https://app.test';document.addEventListener('click',e=>{const a=e.target.closest('a[href]');const u=new URL(a.href);if(u.origin!==origin)return;e.preventDefault();parent.postMessage({type:'pocket-ask-navigate',url:u.href},origin)})</script>`,
+  }))
+  await page.evaluate(() => { (window as any).pops = 0; addEventListener('popstate', () => (window as any).pops++) })
+  await page.locator('#photo').click()
+  await page.frameLocator('iframe').locator('#same').click()
+  await expect(page).toHaveURL('https://app.test/issue/ATH-50')
+  await expect.poll(() => page.evaluate(() => (window as any).pops)).toBe(1)
+  expect(page.context().pages()).toHaveLength(1)
+  // A message claiming another origin is ignored.
+  await page.evaluate(() => dispatchEvent(new MessageEvent('message', { data: { type: 'pocket-ask-navigate', url: 'https://evil.test/' }, origin: 'https://core.test' })))
+  await expect(page).toHaveURL('https://app.test/issue/ATH-50')
+})
