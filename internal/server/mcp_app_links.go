@@ -30,6 +30,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"split/groups":      {"/groups", "/groups/{id}"},
 	"invoicing/clients": {"/clients", "/clients/{id}"}, "invoicing/invoices": {"/invoices", "/invoices/{id}"},
 	"review/reviews":    {"/reviews", "/reviews/{id}"},
+	"pr-review/pulls":   {"/", "/pr/{id}"},
 	"travel/trips":      {"/trips", "/trips/{id}"},
 	"podcasts/podcasts": {"/podcasts", "/podcasts/{id}"}, "podcasts/episodes": {"/episodes", "/episodes/{id}"}, "podcasts/queue": {"/queue", "/episodes/{id}"},
 	"subtitles/library": {"/library", ""}, "subtitles/files": {"/library", "/files/{id}"},
@@ -108,6 +109,15 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 				for _, row := range rows {
 					if m, ok := row.(map[string]any); ok {
 						itemLink(m, "id", "/inbox?task={id}")
+					}
+				}
+			}
+		}
+		if op.App == "pr-review" {
+			if rows, ok := data["pulls"].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/pr/{id}")
 					}
 				}
 			}
