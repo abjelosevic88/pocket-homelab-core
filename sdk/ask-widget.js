@@ -74,8 +74,8 @@ launch.querySelector('.open').onclick=()=>open();launch.querySelector('.pick').o
 document.addEventListener('click',e=>{if(!picking||e.composedPath().includes(host))return;e.preventDefault();e.stopImmediatePropagation();pick(false);open(e.target)},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(picking){e.stopPropagation();pick(false)}else if(!panel.hidden){e.stopPropagation();hide()}}});
 window.addEventListener('message',e=>{if(e.origin!==coreOrigin||e.source!==frame?.contentWindow)return;if(e.data?.type==='pocket-ask-ready')sendContext();if(e.data?.type==='pocket-ask-close')hide();if(e.data?.type==='pocket-ask-navigate')navigate(e.data.url)});
-// Every Pocket app routes with BrowserRouter, which follows pushState + popstate without a reload.
-function navigate(url){let u;try{u=new URL(url,location.href)}catch{return}if(u.origin!==location.origin)return;if(u.href!==location.href)history.pushState({usr:null,key:Math.random().toString(36).slice(2,10),idx:(history.state?.idx??0)+1},'',u.href);dispatchEvent(new PopStateEvent('popstate',{state:history.state}))}
+// The app routes the link itself if it can (cancels the event); otherwise it loads in this window.
+function navigate(url){let u;try{u=new URL(url,location.href)}catch{return}if(u.origin!==location.origin)return;if(dispatchEvent(new CustomEvent('pocket-ask-navigate',{detail:{url:u.href},cancelable:true})))location.assign(u.href)}
 window.addEventListener('pocket-ask',e=>open(e.detail?.element,e.detail));
 window.addEventListener('pocket-ask-pick',()=>pick(true));
 // App integrations may dispatch pocket-ask with an item element; the picker also

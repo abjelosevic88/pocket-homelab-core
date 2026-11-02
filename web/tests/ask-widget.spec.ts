@@ -77,16 +77,23 @@ test('closing returns keyboard focus to the floating launcher', async ({ page })
 test('links from the Ask panel into the host app navigate in the same window', async ({ page }) => {
   await page.route('https://core.test/ask**', route => route.fulfill({
     contentType: 'text/html',
-    body: `<a id="same" href="https://app.test/issue/ATH-50">ATH-50</a><a id="other" href="https://elsewhere.test/">Other</a>
-<script>const origin='https://app.test';document.addEventListener('click',e=>{const a=e.target.closest('a[href]');const u=new URL(a.href);if(u.origin!==origin)return;e.preventDefault();parent.postMessage({type:'pocket-ask-navigate',url:u.href},origin)})</script>`,
+    body: `<a id="routed" href="https://app.test/issue/ATH-50">ATH-50</a><a id="loaded" href="https://app.test/r/2/issue/ATH-51">ATH-51</a>
+<script>const origin='https://app.test';document.addEventListener('click',e=>{const a=e.target.closest('a[href]');e.preventDefault();parent.postMessage({type:'pocket-ask-navigate',url:a.href},origin)})</script>`,
   }))
-  await page.evaluate(() => { (window as any).pops = 0; addEventListener('popstate', () => (window as any).pops++) })
+  // The app routes /issue/… itself and leaves other paths to the widget.
+  await page.evaluate(() => addEventListener('pocket-ask-navigate', e => {
+    const url = (e as CustomEvent<{ url: string }>).detail.url
+    if (!new URL(url).pathname.startsWith('/issue/')) return
+    e.preventDefault(); history.pushState(null, '', url); (window as any).routed = url
+  }))
   await page.locator('#photo').click()
-  await page.frameLocator('iframe').locator('#same').click()
-  await expect(page).toHaveURL('https://app.test/issue/ATH-50')
-  await expect.poll(() => page.evaluate(() => (window as any).pops)).toBe(1)
-  expect(page.context().pages()).toHaveLength(1)
+  await page.frameLocator('iframe').locator('#routed').click()
+  await expect.poll(() => page.evaluate(() => (window as any).routed)).toBe('https://app.test/issue/ATH-50')
   // A message claiming another origin is ignored.
   await page.evaluate(() => dispatchEvent(new MessageEvent('message', { data: { type: 'pocket-ask-navigate', url: 'https://evil.test/' }, origin: 'https://core.test' })))
   await expect(page).toHaveURL('https://app.test/issue/ATH-50')
+  await page.frameLocator('iframe').locator('#loaded').click()
+  await expect(page).toHaveURL('https://app.test/r/2/issue/ATH-51')
+  await expect(page.locator('#photo')).toBeVisible()
+  expect(page.context().pages()).toHaveLength(1)
 })
