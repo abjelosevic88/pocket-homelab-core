@@ -5,7 +5,7 @@ import { api, V1 } from '../lib/api'
 import { uptime, when } from '../lib/format'
 import type { OIDCClient, Settings as S, SystemInfo } from '../lib/types'
 import { useApp, type ThemeMode } from '../lib/app-context'
-import { Confirm, Field, Loading, Modal, Secret, Segmented, SettingRow, Switch, Tabs, useAsync, useIsMobile, useToast } from '../components/ui'
+import { Confirm, Field, Loading, Modal, Secret, Segmented, SettingRow, Spinner, Switch, Tabs, errMsg, useAsync, useIsMobile, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
 import { CredentialsModal, Tokens } from './Users'
 import { Select } from '../components/Select'
@@ -124,6 +124,7 @@ function Box() {
           <Switch on={!status.installer_locked && !st.installs_off} disabled={status.installer_locked} label="One-click Install and Remove"
             onChange={async on => { await api.put(`${V1}/settings`, { installs_off: !on }); await reload(); await refresh(); toast(on ? 'Install and Remove on' : 'Install and Remove off') }} />
         </SettingRow>
+        {!status.installer_locked && !st.installs_off && <AppUpdates st={st} reload={reload} />}
       </Section>}
       <Section title="App registration key" icon="key" sub="Apps present this once to join the box; afterwards they use their own token. Rotating it does not affect apps already registered."
         actions={<button type="button" className="btn sm" onClick={() => setRot(true)}><Icon name="refresh" size={14} />Rotate</button>}>
@@ -294,5 +295,64 @@ function OIDCClients() {
         <div className="form-actions mt"><button type="button" className="btn primary" onClick={() => setSecret(null)}>Done</button></div></Modal>}
       {del && <Confirm title="Delete client" message={<>Delete <b>{del.name}</b>? Logins through it stop immediately.</>} onConfirm={async () => { await api.del(`${V1}/oidc/clients/${del.id}`); setDel(null); reload() }} onCancel={() => setDel(null)} confirmLabel="Delete" />}
     </div>
+  )
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: `${String(h).padStart(2, '0')}:00` }))
+
+/** Nightly automatic updates and the notifications about them (runs in Core, in the background). */
+function AppUpdates({ st, reload }: { st: S; reload: () => Promise<unknown> | void }) {
+  const { toast } = useToast()
+  const [url, setUrl] = useState(st.notify_url || '')
+  const [busy, setBusy] = useState('')
+  const hour = st.auto_update_hour ?? 4
+  const put = async (body: Partial<S>, msg: string) => {
+    try { await api.put(`${V1}/settings`, body); await reload(); toast(msg) } catch (e) { toast(errMsg(e), 'err') }
+  }
+  const test = async () => {
+    setBusy('test')
+    try {
+      if (url !== (st.notify_url || '')) await api.put(`${V1}/settings`, { notify_url: url })
+      const r = await api.post<{ to: string }>(`${V1}/settings/notify-test`)
+      await reload(); toast(`Test sent to ${r.to}`)
+    } catch (e) { toast(errMsg(e), 'err') }
+    setBusy('')
+  }
+  const check = async () => {
+    setBusy('check')
+    try {
+      const r = await api.post<{ running?: boolean; updated?: string[]; failed?: string[]; available?: string[] }>(`${V1}/installer/check-updates`)
+      if (r.running) toast('Updating in the background; you get a notification for each app')
+      else {
+        const n = (r.updated?.length || 0) + (r.failed?.length || 0) + (r.available?.length || 0)
+        toast(n === 0 ? 'Every app is up to date (or already announced)' : [r.updated?.length && `${r.updated.length} updated`, r.failed?.length && `${r.failed.length} failed`, r.available?.length && `${r.available.length} available`].filter(Boolean).join(', '))
+      }
+    } catch (e) { toast(errMsg(e), 'err') }
+    setBusy('')
+  }
+  return (
+    <>
+      <SettingRow title="Update apps automatically"
+        help={st.auto_update ? 'Apps installed from the catalog move to their newest release every night. Their data is backed up first, and an update that does not start goes back to the old version with its data. Apps built on this server or following latest are left alone.' : 'Off: new versions are only announced; press Update in Install app.'}>
+        <Switch on={!!st.auto_update} label="Update apps automatically" onChange={on => put({ auto_update: on }, on ? 'Apps update automatically' : 'Automatic updates off')} />
+      </SettingRow>
+      <SettingRow title={st.auto_update ? 'Update time' : 'Check for new versions at'} help="Once a day, this server's time.">
+        <Select value={String(hour)} options={HOURS} ariaLabel="Hour" onChange={v => put({ auto_update_hour: Number(v) }, `Runs at ${HOURS[Number(v)].label}`)} />
+      </SettingRow>
+      <SettingRow title="Notify me about app updates" help="One notification for each update, each failed update and each new version (once).">
+        <Switch on={st.notify_updates !== false} label="Notify me about app updates" onChange={on => put({ notify_updates: on }, on ? 'Update notifications on' : 'Update notifications off')} />
+      </SettingRow>
+      {st.notify_updates !== false && <SettingRow stack title="Send notifications to"
+        help={<>An ntfy topic, e.g. <code>https://ntfy.sh/my-topic</code> or Pocket Alerts’ <code>http://host.docker.internal:8096/alerts</code>, or an Apprise address ending in <code>/notify/&lt;key&gt;</code>. Empty = the server’s <code>NOTIFY_URL</code>.</>}>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <input className="grow" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://ntfy.sh/my-topic" style={{ minWidth: 240 }} />
+          <button type="button" className="btn" disabled={url === (st.notify_url || '')} onClick={() => put({ notify_url: url }, 'Saved')}>Save</button>
+          <button type="button" className="btn" disabled={!!busy} onClick={test}>{busy === 'test' ? <Spinner /> : <Icon name="bell" size={14} />}Send test</button>
+        </div>
+      </SettingRow>}
+      <SettingRow title="Check for updates now" help={st.auto_update ? 'Runs the nightly pass now: updates what it can and announces the rest.' : 'Looks for new versions now and announces them.'}>
+        <button type="button" className="btn" disabled={!!busy} onClick={check}>{busy === 'check' ? <Spinner /> : <Icon name="refresh" size={14} />}Check now</button>
+      </SettingRow>
+    </>
   )
 }

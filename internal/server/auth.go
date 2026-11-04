@@ -727,10 +727,14 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title       *string `json:"title"`
-		BoxName     *string `json:"box_name"`
-		FamilyName  *string `json:"family_name"`
-		InstallsOff *bool   `json:"installs_off"`
+		Title          *string `json:"title"`
+		BoxName        *string `json:"box_name"`
+		FamilyName     *string `json:"family_name"`
+		InstallsOff    *bool   `json:"installs_off"`
+		AutoUpdate     *bool   `json:"auto_update"`
+		AutoUpdateHour *int    `json:"auto_update_hour"`
+		NotifyUpdates  *bool   `json:"notify_updates"`
+		NotifyURL      *string `json:"notify_url"`
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -744,6 +748,27 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.InstallsOff != nil {
 		st.InstallsOff = *in.InstallsOff
+	}
+	if in.AutoUpdate != nil {
+		st.AutoUpdate = *in.AutoUpdate
+	}
+	if in.AutoUpdateHour != nil {
+		if *in.AutoUpdateHour < 0 || *in.AutoUpdateHour > 23 {
+			writeErr(w, http.StatusBadRequest, "auto_update_hour is 0-23")
+			return
+		}
+		st.AutoUpdateHour = *in.AutoUpdateHour
+	}
+	if in.NotifyUpdates != nil {
+		st.NotifyUpdates = *in.NotifyUpdates
+	}
+	if in.NotifyURL != nil {
+		u := strings.TrimSpace(*in.NotifyURL)
+		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			writeErr(w, http.StatusBadRequest, "the notification address must start with http:// or https://")
+			return
+		}
+		st.NotifyURL = u
 	}
 	oldFamily := st.FamilyName
 	if in.FamilyName != nil {

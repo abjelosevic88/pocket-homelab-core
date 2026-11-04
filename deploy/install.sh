@@ -23,12 +23,14 @@
 #   --email EMAIL    for Let's Encrypt (with --domain)
 #   --version X.Y.Z  a specific Pocket Core release (default: the newest)
 #   --port PORT      Core's port (8179)
+#   --notify URL     where update notifications go: an ntfy topic (https://ntfy.sh/my-topic) or an
+#                    Apprise …/notify/<key> URL (also settable later in Core: Settings → Box)
 #   -y, --yes        don't ask (installs Docker if missing)
 set -eu
 
 REPO=abjelosevic88/pocket-homelab-core
 DIR=${POCKET_DIR:-$HOME/pocket}
-HOST="" DOMAIN="" EMAIL="" VERSION="" PORT="" YES=0
+HOST="" DOMAIN="" EMAIL="" VERSION="" PORT="" NOTIFY="" YES=0
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
 	--email) EMAIL=$2; shift 2 ;;
 	--version) VERSION=${2#v}; shift 2 ;;
 	--port) PORT=$2; shift 2 ;;
+	--notify) NOTIFY=$2; shift 2 ;;
 	-y | --yes) YES=1; shift ;;
 	-h | --help) sed -n '2,30p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
@@ -88,6 +91,7 @@ get() { [ -f "$ENV" ] && sed -n "s/^$1=//p" "$ENV" | tail -n1 || true; }
 [ -n "$EMAIL" ] || EMAIL=$(get POCKET_EMAIL)
 [ -n "$HOST" ] || HOST=$(get POCKET_HOST)
 [ -n "$PORT" ] || PORT=$(get CORE_PORT)
+[ -n "$NOTIFY" ] || NOTIFY=$(get NOTIFY_URL)
 [ -n "$PORT" ] || PORT=8179
 TOKEN=$(get INSTALLER_TOKEN)
 [ -n "$TOKEN" ] || TOKEN=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
@@ -132,6 +136,7 @@ COMPOSE_PROFILES=$PROFILES
 CORE_PORT=$PORT
 BASE_URL=$CORE_URL
 SECURE_COOKIES=$SECURE
+NOTIFY_URL=$NOTIFY
 TZ=$TZ_NAME
 PUID=$PUID
 PGID=$PGID
@@ -158,6 +163,7 @@ services:
       TZ: ${TZ}
       BASE_URL: ${BASE_URL}
       SECURE_COOKIES: ${SECURE_COOKIES}
+      NOTIFY_URL: ${NOTIFY_URL:-}
       INSTALLER_SOCKET: /run/pocket-installer/installer.sock
       INSTALLER_TOKEN: ${INSTALLER_TOKEN}
     volumes:
@@ -232,6 +238,7 @@ say
 
 step "Pocket Core $VERSION is running"
 say "Open $CORE_URL to create your account, then Apps → Install app."
+say "Automatic app updates and notifications: Settings → Box → Install and remove apps."
 [ -n "$DOMAIN" ] && say "(core.$DOMAIN must point here with ports 80/443 open before you can sign in: Core expects HTTPS.)"
 [ "$DOCKER" = docker ] || say "Tip: log out and back in once, so Docker works without sudo."
 say "Files: $DIR · update: run this script again · logs: cd $DIR && docker compose logs -f"

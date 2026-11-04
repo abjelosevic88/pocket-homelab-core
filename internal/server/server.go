@@ -162,6 +162,9 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	go s.hub.Run(ctx)
 	go s.janitor(ctx)
 	go s.connectorScheduler(ctx)
+	if s.inst != nil {
+		go s.autoUpdater(ctx)
+	}
 	return nil
 }
 
@@ -315,6 +318,8 @@ func (s *Server) Router() http.Handler {
 				r.Get("/installer", s.handleInstallerCatalog)
 				r.Post("/installer/install", s.handleInstallApp)
 				r.Get("/installer/jobs/{id}", s.handleInstallJob)
+				r.Post("/installer/check-updates", s.handleCheckUpdates)
+				r.Post("/settings/notify-test", s.handleNotifyTest)
 				r.Post("/apps/{slug}/rotate", s.handleRotateApp)
 				r.Post("/apps/{slug}/check", s.handleCheckApp)
 

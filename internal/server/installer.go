@@ -222,25 +222,35 @@ func (s *Server) handleUpgradeApp(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "get app")
 		return
 	}
-	if a.Slug == "core" {
-		writeErr(w, http.StatusForbidden, "Pocket Core is updated on its own")
+	by := ""
+	if u := userFrom(ctx); u != nil {
+		by = u.Email
+	}
+	j, err := s.startUpgrade(ctx, a, by)
+	if err != nil {
+		s.installerErr(w, err)
 		return
+	}
+	writeJSON(w, http.StatusAccepted, j.snapshot())
+}
+
+// startUpgrade asks the agent to update an app and follows the job.
+func (s *Server) startUpgrade(ctx context.Context, a *store.App, by string) (*installJob, error) {
+	if a.Slug == "core" {
+		return nil, &installer.Error{Status: http.StatusForbidden, Msg: "Pocket Core is updated on its own"}
 	}
 	// The restart is on purpose: no "app down" event meanwhile.
 	s.removing.Store(a.Slug, true)
 	aj, err := s.inst.Update(ctx, installer.UpdateRequest{Slug: a.Slug, URL: a.URL})
 	if err != nil {
 		s.removing.Delete(a.Slug)
-		s.installerErr(w, err)
-		return
+		return nil, err
 	}
 	j := &installJob{ID: aj.ID, Kind: "update", Slug: a.Slug, Name: a.Name, State: "running", Started: time.Now().UTC()}
 	s.installs.Store(j.ID, j)
-	if u := userFrom(ctx); u != nil {
-		s.log.Info("app update started", "slug", a.Slug, "by", u.Email)
-	}
+	s.log.Info("app update started", "slug", a.Slug, "by", by)
 	go s.followInstall(j)
-	writeJSON(w, http.StatusAccepted, j.snapshot())
+	return j, nil
 }
 
 func (s *Server) handleUninstallApp(w http.ResponseWriter, r *http.Request) {

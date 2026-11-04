@@ -35,9 +35,13 @@ type Config struct {
 	// InstallerEnabled=false keeps Install/Remove off whatever the admin
 	// switch says (installs on this box are done by hand).
 	InstallerEnabled bool
-	LogLevel         string
-	LogFormat        string // text | json
-	TrustProxy       bool
+	// NotifyURL is where Core sends notifications (app updates) when the
+	// admin hasn't set one under Settings: an ntfy topic URL or an Apprise
+	// /notify/<key> URL.
+	NotifyURL  string
+	LogLevel   string
+	LogFormat  string // text | json
+	TrustProxy bool
 
 	AuthMode             string // local | proxy | none
 	AuthProxyHeader      string
@@ -128,6 +132,7 @@ func Load() (*Config, error) {
 		InstallerSocket:  env("INSTALLER_SOCKET", ""),
 		InstallerToken:   env("INSTALLER_TOKEN", ""),
 		InstallerEnabled: envBool("INSTALLER_ENABLED", true),
+		NotifyURL:        env("NOTIFY_URL", ""),
 		LogLevel:         strings.ToLower(env("LOG_LEVEL", "info")),
 		LogFormat:        strings.ToLower(env("LOG_FORMAT", "text")),
 		TrustProxy:       envBool("TRUST_PROXY", true),

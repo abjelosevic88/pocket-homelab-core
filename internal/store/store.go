@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -184,11 +185,33 @@ type Settings struct {
 	SetupComplete   bool   `json:"setup_complete"`
 	// InstallsOff: an admin switched one-click Install/Remove off (Settings → Box).
 	InstallsOff bool `json:"installs_off"`
+	// AutoUpdate: Core moves installed apps to new releases every night at
+	// AutoUpdateHour (local time). NotifyUpdates (on unless switched off)
+	// sends a notification for each update, failure and newly available
+	// version to NotifyURL (ntfy topic or Apprise URL; empty = NOTIFY_URL).
+	AutoUpdate     bool   `json:"auto_update"`
+	AutoUpdateHour int    `json:"auto_update_hour"`
+	NotifyUpdates  bool   `json:"notify_updates"`
+	NotifyURL      string `json:"notify_url"`
+}
+
+// GetKV reads one raw settings row ("" when missing). For internal
+// bookkeeping (last automatic update run, versions already announced).
+func (s *Store) GetKV(ctx context.Context, key string) string {
+	var v string
+	_ = s.DB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	return v
+}
+
+// SetKV writes one raw settings row.
+func (s *Store) SetKV(ctx context.Context, key, value string) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
 }
 
 // GetSettings loads the settings with defaults.
 func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
-	st := Settings{Title: "Pocket Core", BoxName: "Pocket Box", FamilyName: DefaultFamily}
+	st := Settings{Title: "Pocket Core", BoxName: "Pocket Box", FamilyName: DefaultFamily, AutoUpdateHour: 4, NotifyUpdates: true}
 	rows, err := s.DB.QueryContext(ctx, `SELECT key, value FROM settings`)
 	if err != nil {
 		return st, err
@@ -218,6 +241,16 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 			st.SetupComplete = v == "1"
 		case "installs_off":
 			st.InstallsOff = v == "1"
+		case "auto_update":
+			st.AutoUpdate = v == "1"
+		case "auto_update_hour":
+			if h, err := strconv.Atoi(v); err == nil && h >= 0 && h < 24 {
+				st.AutoUpdateHour = h
+			}
+		case "notify_updates_off":
+			st.NotifyUpdates = v != "1"
+		case "notify_url":
+			st.NotifyURL = v
 		}
 	}
 	return st, rows.Err()
@@ -226,12 +259,16 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 // SaveSettings persists the settings.
 func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
 	kv := map[string]string{
-		"title":            st.Title,
-		"box_name":         st.BoxName,
-		"family_name":      st.FamilyName,
-		"registration_key": st.RegistrationKey,
-		"setup_complete":   fmt.Sprint(boolInt(st.SetupComplete)),
-		"installs_off":     fmt.Sprint(boolInt(st.InstallsOff)),
+		"title":              st.Title,
+		"box_name":           st.BoxName,
+		"family_name":        st.FamilyName,
+		"registration_key":   st.RegistrationKey,
+		"setup_complete":     fmt.Sprint(boolInt(st.SetupComplete)),
+		"installs_off":       fmt.Sprint(boolInt(st.InstallsOff)),
+		"auto_update":        fmt.Sprint(boolInt(st.AutoUpdate)),
+		"auto_update_hour":   fmt.Sprint(st.AutoUpdateHour),
+		"notify_updates_off": fmt.Sprint(boolInt(!st.NotifyUpdates)),
+		"notify_url":         st.NotifyURL,
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {

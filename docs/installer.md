@@ -117,6 +117,25 @@ The list marks installed apps whose registered version is older than the catalog
    and starts the old version, so the old version never meets a database it doesn't know;
 7. Core waits for the app to register with its new version (health checks are paused meanwhile).
 
+## Automatic updates and notifications
+
+Settings → Box → **Install and remove apps** (admins):
+
+- **Update apps automatically** (off by default): once a night at the **Update time** (this server's
+  clock, 04:00 by default) Core reads the catalog and runs Update for every app the installer can update,
+  one after the other: same backup, rollback and checks as the button. Apps that follow a moving tag or
+  are built from source are never touched. It runs inside Core in the background; no page needs to be open.
+- **Notify me about app updates** (on by default): one notification for each update, each failed
+  update (the app is back on its old version with its data) and each new version that was not applied
+  (automatic updates off, or an app that has to be updated by hand), once per version, collected into
+  one message per night. The same notices go on the event bus as `core.app.updated`,
+  `core.app.update_failed` and `core.apps.updates_available` (source `core`, admins and Pocket Flows).
+- **Send notifications to**: an ntfy topic URL (`https://ntfy.sh/my-topic`; Title/Priority/Tags
+  headers) or an Apprise API URL (`…/notify/<key>`); `user:password@` becomes Basic auth. Empty = the
+  server's `NOTIFY_URL`. On a box with Pocket Alerts: `http://host.docker.internal:8096/alerts`.
+  **Send test** sends one now.
+- **Check now** runs the nightly pass immediately (`POST /api/v1/installer/check-updates`).
+
 ## What Remove does
 
 1. Finds the app's container by the port Core reaches it on (or `pocket-<slug>`), and its compose
