@@ -241,3 +241,6 @@ Testing: `go test ./internal/installer/ ./internal/appstore/` covers the compose
 edits, catalog building/signing/verification and the update rewrite;
 `POCKET_INSTALLER_DOCKER_TEST=1 env -i PATH=$PATH HOME=$HOME go test -run TestDockerEndToEnd ./internal/installer/`
 installs and removes a real release image behind a throwaway Caddy, against a fake GitHub and Core.
+`scripts/smoke/run.sh [slug…]` is the end-to-end check of what people get: a throwaway Docker-in-Docker
+host runs the published `install.sh`, then installs every catalog app through Core's API, checks it
+registers, removes it, and writes `results.json` (all 53 passed on 2026-11-04).
