@@ -112,6 +112,7 @@ var entries = []Entry{
 	{Type: "lookout", Name: "Pocket Lookout", Prefix: "LOOKOUT", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "games", Name: "Pocket Games", Prefix: "GAMES", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "sphere", Name: "Pocket Sphere", Prefix: "SPHERE", Group: "Pocket", Pocket: true, Fields: apiKey("")},
+	{Type: "home", Name: "Pocket Home", Prefix: "HOME", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "search", Name: "Pocket Search", Prefix: "SEARCH", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "podcasts", Name: "Pocket Podcasts", Prefix: "PODCASTS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "notes", Name: "Pocket Notes", Prefix: "NOTES", Group: "Pocket", Pocket: true, Fields: apiKey("")},

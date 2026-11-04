@@ -43,6 +43,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"movement/summary":       {"/timeline", ""}, "movement/where": {"/timeline", ""}, "movement/now": {"/", ""}, "movement/day": {"/timeline", ""},
 	"movement/insights": {"/insights", ""}, "movement/countries": {"/insights/countries", ""}, "movement/places": {"/places", "/places/{id}"},
 	"movement/visits": {"/timeline", ""}, "movement/search": {"/places", "/places/{id}"},
+	"home/overview": {"/", ""}, "home/due": {"/upkeep", ""}, "home/homes": {"/homes", "/homes/{id}"}, "home/things": {"/things", "/things/{id}"},
+	"home/jobs": {"/upkeep", "/upkeep/{id}"}, "home/records": {"/log", "/log/{id}"}, "home/spending": {"/log", ""},
+	"home/meters": {"/meters", "/meters/{id}"}, "home/pros": {"/pros", "/pros/{id}"}, "home/search": {"/", ""},
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
@@ -134,6 +137,27 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 							}
 						}
 					}
+				}
+			}
+		}
+	}
+	// Pocket Home's overview, due list and search mix record kinds: each list has its own page.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "home" && (op.Path == "/overview" || op.Path == "/due" || op.Path == "/search") {
+		routes := map[string]string{"attention": "/upkeep/{id}", "upcoming": "/upkeep/{id}", "overdue": "/upkeep/{id}", "due": "/upkeep/{id}", "soon": "/upkeep/{id}",
+			"recent": "/log/{id}", "jobs": "/upkeep/{id}", "records": "/log/{id}", "things": "/things/{id}", "homes": "/homes/{id}", "pros": "/pros/{id}", "meters": "/meters/{id}"}
+		for key, r := range routes {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", r)
+					}
+				}
+			}
+		}
+		if rows, ok := data["warranties"].([]any); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					itemLink(m, "thing_id", "/things/{id}")
 				}
 			}
 		}

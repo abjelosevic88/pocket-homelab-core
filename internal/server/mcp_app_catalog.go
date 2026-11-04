@@ -64,7 +64,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true}
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true}
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
 func mcpOpKind(name, method string) string {
@@ -257,6 +257,40 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("kitchen", "update_recipe", "Update supplied recipe fields. Supplied ingredient/step arrays replace those arrays.", "PUT", "/recipes/{id}", recipe, "")
 	write("kitchen", "add_shopping_item", "Add an item to a shopping list.", "POST", "/lists/{list_id}/items", textFields("name unit note aisle").numbers("qty"), "name")
 	write("kitchen", "update_shopping_item", "Update or check off a shopping item.", "PUT", "/lists/{list_id}/items/{id}", textFields("name unit note").numbers("qty").booleans("checked"), "")
+
+	// Pocket Home: homes, appliances, upkeep (jobs), the log (records), meters and pros. Costs are minor units of the home's currency.
+	read("home", "summary", "Get the home overview in one call: counts of overdue, due and soon upkeep, what needs doing, the next two months, recent log entries, warranties ending and meters needing a reading, and spending this year vs last year to date. Log costs can overlap Money: confirmed bookings carry money_tx_id; never add Home and Money totals without verifying it.", "/overview", "home_id")
+	read("home", "due", "Get upkeep that is overdue, due today, due soon and coming in the next days (default 30) across your homes, each with status and days_left.", "/due", "days home_id")
+	read("home", "homes", "List your homes with their appliance counts and open, overdue and soon upkeep.", "/homes", "")
+	read("home", "things", "List appliances and parts of the house (boiler, roof, washing machine) with room, model, warranty and next upkeep. Filter by home, category, room or text.", "/things", "home_id category room q")
+	read("home", "get_thing", "Read one appliance or part: details, warranty state, its upkeep, log and attachments.", "/things/{id}", "")
+	read("home", "jobs", "List upkeep (recurring or one-off maintenance) with status (overdue, due, soon, ok, paused, done), due_on and how often it repeats.", "/jobs", "home_id thing_id q all")
+	read("home", "get_job", "Read one piece of upkeep and the log entries written when it was done.", "/jobs/{id}", "")
+	read("home", "records", "Read the log of repairs, maintenance, improvements, checks and purchases, newest first. cost is minor units of currency; money_tx_id is the confirmed Pocket Money booking.", "/records", "home_id thing_id pro_id kind from to q limit offset")
+	read("home", "spending", "Get what the log cost per month, per kind, per appliance and per year. State the range and currency; avoid double counting linked Money transactions.", "/spending", "months home_id")
+	read("home", "meters", "List electricity, water, gas and other meters with their last reading.", "/meters", "home_id")
+	read("home", "get_meter", "Read a meter with every reading, use per calendar month (spread evenly between readings) and a yearly summary.", "/meters/{id}", "")
+	read("home", "pros", "List the pros who work on the house (plumber, electrician) with their jobs and what they cost.", "/pros", "q")
+	read("home", "search", "Search homes, appliances, upkeep, log entries, pros and meters.", "/search", "q limit")
+	homeRecord := textFields("title date notes").integers("home_id thing_id job_id pro_id cost").booleans("money").enum("kind", "maintenance", "repair", "improvement", "inspection", "purchase", "other")
+	homeRecord["cost"].(map[string]any)["description"] = "Minor units of the home's currency (8900 = 89.00)."
+	homeRecord["money"].(map[string]any)["description"] = "Also create a Pocket Money transaction when the person has Money connected (default: their setting)."
+	write("home", "log_work", "Add a log entry (a repair, service, improvement, check or purchase). Use thing_id for the appliance; the home follows from it.", "POST", "/records", homeRecord, "title")
+	write("home", "complete_job", "Mark upkeep done: writes a log entry (log: false to skip) and moves recurring upkeep to its next date, counted from date. Send at least the date (YYYY-MM-DD).", "POST", "/jobs/{id}/done", textFields("date notes").integers("cost pro_id").booleans("log money"), "")
+	write("home", "add_reading", "Add a meter reading. A value below the last reading needs reset (the meter was replaced).", "POST", "/meters/{id}/readings", textFields("read_on note").numbers("value").booleans("reset"), "value")
+	homeJob := func() mcpFields {
+		f := textFields("title notes due_on last_done").integers("home_id thing_id pro_id every_n soon_days est_cost").enum("every_unit", "day", "week", "month", "year")
+		f["every_n"].(map[string]any)["description"] = "Repeat every N units; 0 = once."
+		return f
+	}
+	write("home", "add_job", "Add upkeep: something to do every N days, weeks, months or years (or once, every_n 0), first due on due_on.", "POST", "/jobs", homeJob(), "title")
+	write("home", "update_job", "Update supplied upkeep fields, or pause it.", "PUT", "/jobs/{id}", homeJob().booleans("paused"), "")
+	homeThing := func() mcpFields {
+		return textFields("name room brand model serial installed_on purchased_on warranty_until vendor manual_url notes").integers("home_id price").
+			enum("category", "heating", "cooling", "water", "electrical", "appliance", "kitchen", "structure", "outdoor", "safety", "other")
+	}
+	write("home", "add_thing", "Add an appliance or part of the house to a home.", "POST", "/things", homeThing(), "name")
+	write("home", "update_thing", "Update supplied appliance fields.", "PUT", "/things/{id}", homeThing().booleans("archived"), "")
 
 	read("money", "accounts", "List financial accounts available to you.", "/accounts", "")
 	read("money", "categories", "List transaction categories.", "/categories", "")
