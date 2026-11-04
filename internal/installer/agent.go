@@ -469,7 +469,13 @@ func (a *Agent) uninstall(ctx context.Context, j *Job, req UninstallRequest) err
 	if err != nil {
 		return err
 	}
-	loc, err := a.locate(cs, req.Slug, req.URL)
+	// The release's own services (Office's OnlyOffice…) belong to the app;
+	// without the catalog only the app's container-name prefix does.
+	var own map[string]bool
+	if rel, err := a.src.Find(ctx, req.Slug); err == nil {
+		own = composeServices(rel.compose)
+	}
+	loc, err := a.locate(cs, req.Slug, req.URL, own)
 	if err != nil {
 		return err
 	}
@@ -505,8 +511,10 @@ func (l *located) composeArgs() []string {
 }
 
 // locate finds the container that serves an app (by the port Core reaches
-// it on, else by name) and checks its folder belongs to that app alone.
-func (a *Agent) locate(cs []container, slug, appURL string) (*located, error) {
+// it on, else by name) and checks its folder belongs to that app alone:
+// other containers in its compose project must be named after it or be one
+// of own, the services of the app's release (nil = none).
+func (a *Agent) locate(cs []container, slug, appURL string, own map[string]bool) (*located, error) {
 	port := 0
 	if u, err := url.Parse(appURL); err == nil {
 		port, _ = strconv.Atoi(u.Port())
@@ -540,7 +548,7 @@ func (a *Agent) locate(cs []container, slug, appURL string) (*located, error) {
 	// its compose project, and no other project started from the same folder.
 	for _, c := range cs {
 		p, d, _ := c.project()
-		if p == proj && c.Name != target.Name && !strings.HasPrefix(c.Name, target.Name+"-") {
+		if p == proj && c.Name != target.Name && !strings.HasPrefix(c.Name, target.Name+"-") && !own[c.Labels["com.docker.compose.service"]] {
 			return nil, fmt.Errorf("%s's compose project also runs %s; change it by hand", target.Name, c.Name)
 		}
 		if p != proj && filepath.Clean(d) == wd {

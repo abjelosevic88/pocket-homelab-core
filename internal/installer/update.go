@@ -129,7 +129,7 @@ func (a *Agent) update(ctx context.Context, j *Job, req UpdateRequest) error {
 	if err != nil {
 		return err
 	}
-	loc, err := a.locate(cs, req.Slug, req.URL)
+	loc, err := a.locate(cs, req.Slug, req.URL, composeServices(rel.compose))
 	if err != nil {
 		return err
 	}

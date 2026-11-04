@@ -312,3 +312,26 @@ func TestRestoreFromArchive(t *testing.T) {
 		t.Fatal("restored over a folder with files")
 	}
 }
+
+func TestLocateOwnServices(t *testing.T) {
+	wd := filepath.Join(t.TempDir(), "pocket-office")
+	os.MkdirAll(wd, 0o755)
+	lab := func(svc string) map[string]string {
+		return map[string]string{"com.docker.compose.project": "pocket-office", "com.docker.compose.project.working_dir": wd,
+			"com.docker.compose.project.config_files": filepath.Join(wd, "docker-compose.yml"), "com.docker.compose.service": svc}
+	}
+	cs := []container{{Name: "pocket-office", Ports: []int{8300}, Labels: lab("app")}, {Name: "onlyoffice", Labels: lab("onlyoffice")}}
+	a := &Agent{cfg: &Config{AppsDir: filepath.Dir(wd)}}
+	if _, err := a.locate(cs, "office", "http://host.docker.internal:8300", nil); err == nil || !strings.Contains(err.Error(), "also runs onlyoffice") {
+		t.Fatalf("without the release's services the sidecar must block: %v", err)
+	}
+	own := composeServices([]byte("services:\n  app:\n    image: x\n  onlyoffice:\n    image: y\n"))
+	if l, err := a.locate(cs, "office", "http://host.docker.internal:8300", own); err != nil || l.c.Name != "pocket-office" {
+		t.Fatalf("the release's own sidecar must be allowed: %v", err)
+	}
+	// A container the release doesn't have (added by hand) still blocks.
+	cs = append(cs, container{Name: "athena-link", Labels: lab("athena-link")})
+	if _, err := a.locate(cs, "office", "http://host.docker.internal:8300", own); err == nil {
+		t.Fatal("a hand-added service must still block")
+	}
+}

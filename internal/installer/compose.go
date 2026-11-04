@@ -58,6 +58,21 @@ func mainService(compose []byte, image string) (string, string, error) {
 	return "", "", fmt.Errorf("docker-compose.yml runs no %s service", image)
 }
 
+// composeServices lists the service names of a compose file.
+func composeServices(compose []byte) map[string]bool {
+	out := map[string]bool{}
+	var doc yaml.Node
+	if yaml.Unmarshal(compose, &doc) != nil || len(doc.Content) == 0 {
+		return out
+	}
+	if svcs := mapGet(doc.Content[0], "services"); svcs != nil && svcs.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(svcs.Content); i += 2 {
+			out[svcs.Content[i].Value] = true
+		}
+	}
+	return out
+}
+
 // Plan is everything Install writes for one app.
 type Plan struct {
 	Compose   []byte
