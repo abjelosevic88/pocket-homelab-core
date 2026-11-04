@@ -30,6 +30,10 @@ jobs:
           CATALOG_SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ -z "$CATALOG_SIGNING_KEY" ]; then
+            echo "::warning::The CATALOG_SIGNING_KEY secret is not set; the catalog was not rebuilt."
+            exit 0
+          fi
           /tmp/pocket-core catalog build -skip-unchanged \
             -site-meta https://raw.githubusercontent.com/abjelosevic88/pocket-homelab-web/main/src/data/pocket-apps.json \
             -previous https://github.com/${{ github.repository }}/releases/download/catalog/apps.json \
