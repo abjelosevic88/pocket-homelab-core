@@ -8,19 +8,27 @@ import { Icon } from './icons'
 // One-click install and removal of Pocket apps (the installer agent on the
 // server does the work; see docs/installer.md).
 
+export interface Requires {
+  docker_socket?: boolean; host_network?: boolean; privileged?: boolean; capabilities?: string[]; devices?: string[]; host_folders?: string[]; services?: string[]
+}
 export interface Release {
   slug: string; name: string; description?: string; repo: string; repo_url: string; version: string; tag: string
   container: string; present: boolean; installed?: boolean; installed_version?: string
+  category?: string; icon?: string; page?: string; digest?: string; platforms?: string[]; requires?: Requires
+  available?: boolean; running?: string; updatable?: boolean; update_note?: string
 }
-interface Catalog { status: { owner: string; apps_dir: string; archive_dir: string; public_url: string; proxy: boolean }; apps: Release[]; running_job?: string }
+interface Catalog {
+  status: { owner: string; apps_dir: string; archive_dir: string; public_url: string; proxy: boolean; source?: string; source_url?: string; platform?: string }
+  apps: Release[]; running_job?: string
+}
 export interface InstallJob {
-  id: string; kind: 'install' | 'uninstall'; slug: string; name: string; state: 'running' | 'done' | 'failed'; log: string[]; error?: string; open_url?: string
+  id: string; kind: 'install' | 'update' | 'uninstall'; slug: string; name: string; state: 'running' | 'done' | 'failed'; log: string[]; error?: string; open_url?: string
   result?: { dir?: string; archive?: string; container?: string; public_url?: string; port?: number; version?: string; warnings?: string[] }
 }
 
-function ReleaseIcon({ slug, name }: { slug: string; name: string }) {
+function ReleaseIcon({ slug, name, icon }: { slug: string; name: string; icon?: string }) {
   const [ok, setOk] = useState(true)
-  const src = bundledIcon(slug)
+  const src = bundledIcon(slug) || icon
   return <span className="app-tile-icon inst-icon">{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : shortName(name)[0]}</span>
 }
 
@@ -48,6 +56,34 @@ function useJob(id: string | null, onEnd?: (j: InstallJob) => void) {
   return { job, err }
 }
 
+const semver = (v?: string) => (v || '').replace(/^v/, '').split('.').map(n => parseInt(n, 10))
+/** a < b for X.Y.Z versions. */
+export function newer(a?: string, b?: string) {
+  const x = semver(a), y = semver(b)
+  if (x.length !== 3 || y.length !== 3 || [...x, ...y].some(isNaN)) return false
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]
+  return false
+}
+
+/** What the app asks of the server, shown before Install. */
+function RequireChips({ r }: { r?: Requires }) {
+  if (!r) return null
+  const chips: [string, string][] = []
+  if (r.docker_socket) chips.push(['Docker socket', 'Controls Docker on this server (can start and stop containers)'])
+  if (r.host_network) chips.push(['Host network', "Shares the server's network instead of its own"])
+  if (r.privileged) chips.push(['Privileged', 'Runs with full access to the server'])
+  for (const c of r.capabilities || []) chips.push([c, 'Linux capability ' + c])
+  for (const d of r.devices || []) chips.push([d, 'Uses the device ' + d])
+  for (const f of r.host_folders || []) chips.push([f, 'Mounts ' + f + ' from the server; edit its .env to point it at your folder'])
+  if (!chips.length && !r.services?.length) return null
+  return (
+    <div className="row wrap inst-req" style={{ gap: 4 }}>
+      {chips.map(([label, title]) => <span key={label} className="badge warn" title={title}>{label}</span>)}
+      {r.services?.length ? <span className="badge" title={r.services.join('\n')}>+{r.services.length} container{r.services.length > 1 ? 's' : ''}</span> : null}
+    </div>
+  )
+}
+
 export function JobView({ job }: { job: InstallJob | null }) {
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }) }, [job?.log.length])
@@ -63,6 +99,7 @@ export function JobView({ job }: { job: InstallJob | null }) {
       {job.state === 'failed' && <div className="callout danger"><Icon name="alert" size={15} /><span style={{ whiteSpace: "pre-wrap" }}>{job.error}</span></div>}
       {warnings.map((w, i) => <div key={i} className="callout warn"><Icon name="info" size={15} /><span>{w}</span></div>)}
       {job.state === 'done' && job.kind === 'install' && <div className="callout success"><Icon name="check-circle" size={15} /><span><b>{job.name}</b> is installed and connected to Pocket Core{job.result?.dir ? <> — files in <span className="inline-code">{job.result.dir}</span></> : null}.</span></div>}
+      {job.state === 'done' && job.kind === 'update' && <div className="callout success"><Icon name="check-circle" size={15} /><span><b>{job.name}</b> is updated{job.result?.version ? <> to {formatVersion(job.result.version)}</> : null}.</span></div>}
       {job.state === 'done' && job.kind === 'uninstall' && <div className="callout success"><Icon name="check-circle" size={15} /><span><b>{job.name}</b> is removed.{job.result?.archive ? <> Its folder was archived to <span className="inline-code">{job.result.archive}</span>.</> : null}</span></div>}
     </div>
   )
@@ -83,62 +120,83 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
   useEffect(() => { load() }, [])
   useEffect(() => { if (cat?.running_job && !jobId) setJobId(cat.running_job) }, [cat, jobId])
   const { job } = useJob(jobId, j => { if (j.state === 'done') onInstalled() })
-  const install = async (slug: string) => {
-    setStarting(slug)
-    try { const j = await api.post<InstallJob>(`${V1}/installer/install`, { slug }); setJobId(j.id) } catch (e) { setErr(errMsg(e)) }
+  const install = async (a: Release) => {
+    setStarting(a.slug)
+    try { const j = await api.post<InstallJob>(`${V1}/installer/install`, { slug: a.slug, name: a.name }); setJobId(j.id) } catch (e) { setErr(errMsg(e)) }
     setStarting('')
   }
+  const update = async (a: Release) => {
+    setStarting(a.slug)
+    try { const j = await api.post<InstallJob>(`${V1}/apps/${a.slug}/upgrade`); setJobId(j.id) } catch (e) { setErr(errMsg(e)) }
+    setStarting('')
+  }
+  const behind = (a: Release) => !!a.installed && newer(a.installed_version || a.running, a.version)
   const list = useMemo(() => {
     const t = q.trim().toLowerCase()
-    const all = (cat?.apps || []).filter(a => !t || a.name.toLowerCase().includes(t) || (a.description || '').toLowerCase().includes(t) || a.slug.includes(t))
-    return [...all.filter(a => !a.installed), ...all.filter(a => a.installed)]
+    const all = (cat?.apps || []).filter(a => !t || a.name.toLowerCase().includes(t) || (a.description || '').toLowerCase().includes(t) || a.slug.includes(t) || (a.category || '').includes(t))
+    return [...all.filter(behind), ...all.filter(a => !a.installed), ...all.filter(a => a.installed && !behind(a))]
   }, [cat, q])
 
   if (jobId) {
     const running = !job || job.state === 'running'
     return (
-      <Modal title={job ? `${job.kind === 'install' ? 'Installing' : 'Removing'} ${job.name}` : 'Installing'} onClose={onClose} size="lg"
+      <Modal title={job ? `${job.kind === 'install' ? 'Installing' : job.kind === 'update' ? 'Updating' : 'Removing'} ${job.name}` : 'Working'} onClose={onClose} size="lg"
         footer={<>
           {job?.state === 'done' && job.open_url && <a className="btn primary" href={job.open_url} target="_blank" rel="noreferrer">Open {shortName(job.name)}<Icon name="external" size={14} /></a>}
           {!running && <button type="button" className="btn" onClick={() => { setJobId(null); load() }}>Install another</button>}
           <button type="button" className="btn" onClick={onClose}>{running ? 'Hide' : 'Close'}</button>
         </>}>
-        {running && <p className="muted small" style={{ marginTop: 0 }}>You can close this; the install keeps going on the server.</p>}
+        {running && <p className="muted small" style={{ marginTop: 0 }}>You can close this; the work keeps going on the server.</p>}
         <JobView job={job} />
       </Modal>
     )
   }
 
   const avail = list.filter(a => !a.installed).length
+  const updates = list.filter(behind).length
+  const signed = cat?.status.source === 'catalog'
   return (
     <Modal title="Install an app" onClose={onClose} size="lg">
       <div className="stack tight">
         <p className="muted small" style={{ marginTop: 0 }}>
-          Newest releases from <a href={`https://github.com/${cat?.status.owner || ''}`} target="_blank" rel="noreferrer">github.com/{cat?.status.owner || '…'}</a>.
+          {signed ? <>Newest releases from the signed Pocket app catalog. </> : <>Newest releases from <a href={`https://github.com/${cat?.status.owner || ''}`} target="_blank" rel="noreferrer">github.com/{cat?.status.owner || '…'}</a>. </>}
           One click pulls the release image, starts it in its own folder{cat?.status.proxy ? ', adds its HTTPS address' : ''} and connects it here: sign-in, links to your other apps and your phones.
         </p>
         <div className="row">
           <input className="grow" type="search" placeholder="Search apps" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-          <button type="button" className="btn" onClick={() => load(true)} disabled={refreshing} title="Check GitHub for new releases now">{refreshing ? <Spinner /> : <Icon name="refresh" size={15} />}Refresh</button>
+          <button type="button" className="btn" onClick={() => load(true)} disabled={refreshing} title="Check for new releases now">{refreshing ? <Spinner /> : <Icon name="refresh" size={15} />}Refresh</button>
         </div>
         {err && <div className="callout danger"><Icon name="alert" size={15} /><span>{err}</span></div>}
-        {!cat && !err ? <Loading label="Reading releases from GitHub…" /> : list.length === 0 ? <Empty icon="package" title={q ? 'Nothing matches' : 'No releases found'} /> : (
+        {!cat && !err ? <Loading label="Reading the app catalog…" /> : list.length === 0 ? <Empty icon="package" title={q ? 'Nothing matches' : 'No releases found'} /> : (
           <div className="inst-list">
+            {updates > 0 && !q && <p className="muted small">{updates} update{updates > 1 ? 's' : ''} available.</p>}
             {avail === 0 && !q && <p className="muted small">Every released app is installed already.</p>}
-            {list.map(a => (
-              <div key={a.slug} className={`inst-row${a.installed ? ' done' : ''}`}>
-                <ReleaseIcon slug={a.slug} name={a.name} />
-                <div className="grow">
-                  <div className="row wrap" style={{ gap: 6 }}><b>{a.name}</b><span className="muted small">{formatVersion(a.version)}</span></div>
-                  {a.description && <div className="muted small inst-desc">{a.description}</div>}
-                  {a.installed && a.installed_version && a.installed_version.replace(/^v/, '') !== a.version && <div className="small inst-update">Running {formatVersion(a.installed_version)}</div>}
-                  {!a.installed && cat?.status.public_url && <div className="muted small mono inst-url">{cat.status.public_url.replace('{slug}', a.slug)}</div>}
+            {list.map(a => {
+              const late = behind(a)
+              const off = a.available === false
+              return (
+                <div key={a.slug} className={`inst-row${a.installed && !late ? ' done' : ''}`}>
+                  <ReleaseIcon slug={a.slug} name={a.name} icon={a.icon} />
+                  <div className="grow">
+                    <div className="row wrap" style={{ gap: 6 }}>
+                      {a.page ? <a href={a.page} target="_blank" rel="noreferrer"><b>{a.name}</b></a> : <b>{a.name}</b>}
+                      <span className="muted small">{formatVersion(a.version)}</span>
+                      {a.category && <span className="badge cat">{a.category}</span>}
+                    </div>
+                    {a.description && <div className="muted small inst-desc">{a.description}</div>}
+                    {a.installed && late && <div className="small inst-update">Running {formatVersion(a.installed_version || a.running)}{!a.updatable && a.update_note ? <span className="muted"> — {a.update_note}</span> : null}</div>}
+                    {!a.installed && <RequireChips r={a.requires} />}
+                    {!a.installed && cat?.status.public_url && <div className="muted small mono inst-url">{cat.status.public_url.replace('{slug}', a.slug).replace('{port}', '<port>')}</div>}
+                  </div>
+                  {a.installed ? (late && a.updatable
+                    ? <button type="button" className="btn primary sm" disabled={!!starting} onClick={() => update(a)} title={`${formatVersion(a.installed_version || a.running)} → ${formatVersion(a.version)}`}>{starting === a.slug ? <Spinner /> : <Icon name="refresh" size={14} />}Update</button>
+                    : <span className="pill ok" title={a.installed_version ? `Running ${formatVersion(a.installed_version)}` : undefined}>Installed</span>)
+                    : a.present ? <span className="pill" title={`A container named ${a.container} already exists on the server but is not registered here. Start it with CORE_URL and the registration key, or remove it first.`}>Container exists</span>
+                    : off ? <span className="pill" title={`Built for ${(a.platforms || []).join(', ')}`}>Not for {cat?.status.platform || 'this server'}</span>
+                    : <button type="button" className="btn primary sm" disabled={!!starting} onClick={() => install(a)}>{starting === a.slug ? <Spinner /> : <Icon name="download" size={14} />}Install</button>}
                 </div>
-                {a.installed ? <span className="pill ok" title={a.installed_version ? `Running ${formatVersion(a.installed_version)}` : undefined}>Installed</span>
-                  : a.present ? <span className="pill" title={`A container named ${a.container} already exists on the server but is not registered here. Start it with CORE_URL and the registration key, or remove it first.`}>Container exists</span>
-                  : <button type="button" className="btn primary sm" disabled={!!starting} onClick={() => install(a.slug)}>{starting === a.slug ? <Spinner /> : <Icon name="download" size={14} />}Install</button>}
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

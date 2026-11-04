@@ -13,8 +13,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/abjelosevic88/pocket-homelab-core/internal/appstore"
 )
 
 // Config is the agent's configuration, read from INSTALLER_* variables.
@@ -26,9 +29,15 @@ type Config struct {
 	RepoPrefix  string // only repos named like this are offered
 	GitHubToken string // optional; raises the API limit for the repo list
 
+	// CatalogURLs are the signed app catalogs tried in order; nil = read
+	// GitHub directly (INSTALLER_CATALOG_URL=github).
+	CatalogURLs []string
+	CatalogKeys []string // trusted "<id>:<base64>" keys: the official ones plus INSTALLER_CATALOG_KEYS
+	DockerGID   string   // the docker group, when /etc/group can't tell (the agent in a container)
+
 	AppsDir    string // each app gets AppsDir/pocket-<slug>
 	ArchiveDir string // removed apps' folders are moved here
-	PublicURL  string // template, {slug} is replaced: https://{slug}.example.com
+	PublicURL  string // template: https://{slug}.example.com, or http://192.168.1.20:{port} without a domain
 	CoreURL    string // how app containers reach Core
 	PortFrom   int    // host ports handed to new apps
 	PortTo     int
@@ -71,6 +80,8 @@ func LoadConfig() (*Config, error) {
 		Owner:          env("INSTALLER_GITHUB_OWNER", "abjelosevic88"),
 		RepoPrefix:     env("INSTALLER_REPO_PREFIX", "pocket-homelab-"),
 		GitHubToken:    env("INSTALLER_GITHUB_TOKEN", ""),
+		CatalogKeys:    append(slices.Clone(appstore.OfficialKeys), list(env("INSTALLER_CATALOG_KEYS", ""))...),
+		DockerGID:      env("INSTALLER_DOCKER_GID", ""),
 		AppsDir:        apps,
 		ArchiveDir:     env("INSTALLER_ARCHIVE_DIR", filepath.Join(apps, "pocket-archive")),
 		PublicURL:      env("INSTALLER_PUBLIC_URL", ""),
@@ -83,6 +94,12 @@ func LoadConfig() (*Config, error) {
 		CaddyUpstream:  env("INSTALLER_CADDY_UPSTREAM", "host.docker.internal"),
 		Leftovers:      list(env("INSTALLER_LEFTOVER_FILES", "")),
 		Protected:      append([]string{"core"}, list(env("INSTALLER_PROTECTED", ""))...),
+	}
+	if u := env("INSTALLER_CATALOG_URL", appstore.DefaultURL); u != "github" {
+		c.CatalogURLs = list(u)
+	}
+	if _, err := appstore.ParseKeys(c.CatalogKeys); err != nil {
+		return nil, fmt.Errorf("INSTALLER_CATALOG_KEYS: %w", err)
 	}
 	if f := env("INSTALLER_TOKEN_FILE", ""); f != "" && c.Token == "" {
 		b, err := os.ReadFile(f)
@@ -99,8 +116,8 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("INSTALLER_SOCKET is required")
 	case len(c.Token) < 24:
 		return nil, fmt.Errorf("INSTALLER_TOKEN (or INSTALLER_TOKEN_FILE) must be at least 24 characters")
-	case c.PublicURL == "" || !strings.Contains(c.PublicURL, "{slug}"):
-		return nil, fmt.Errorf("INSTALLER_PUBLIC_URL must contain {slug}, e.g. https://{slug}.example.com")
+	case c.PublicURL == "" || !strings.Contains(c.PublicURL, "{slug}") && !strings.Contains(c.PublicURL, "{port}"):
+		return nil, fmt.Errorf("INSTALLER_PUBLIC_URL must contain {slug} or {port}, e.g. https://{slug}.example.com or http://192.168.1.20:{port}")
 	case !ok || c.PortFrom < 1024 || c.PortTo < c.PortFrom || c.PortTo > 65535:
 		return nil, fmt.Errorf("INSTALLER_PORTS must look like 8300-8399")
 	case !filepath.IsAbs(c.AppsDir) || !filepath.IsAbs(c.ArchiveDir):
@@ -109,10 +126,14 @@ func LoadConfig() (*Config, error) {
 	return c, nil
 }
 
-// publicURL is where people open the app.
+// publicURL is where people open the app; {port} is filled in once the
+// app has its host port.
 func (c *Config) publicURL(slug string) string {
 	return strings.TrimRight(strings.ReplaceAll(c.PublicURL, "{slug}", slug), "/")
 }
+
+// byPort: apps are opened on their own port, so there is no proxy site to add.
+func (c *Config) byPort() bool { return strings.Contains(c.PublicURL, "{port}") }
 
 func (c *Config) protected(slug string) bool {
 	for _, p := range c.Protected {

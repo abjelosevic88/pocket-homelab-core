@@ -104,3 +104,8 @@ func (c *Client) Job(ctx context.Context, id string) (*Job, error) {
 	var j Job
 	return &j, c.do(ctx, http.MethodGet, "/v1/jobs/"+id, nil, &j)
 }
+
+func (c *Client) Update(ctx context.Context, req UpdateRequest) (*Job, error) {
+	var j Job
+	return &j, c.do(ctx, http.MethodPost, "/v1/update", req, &j)
+}

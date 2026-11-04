@@ -19,7 +19,21 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/pocket-core ./cmd/pocket-core
 
-# ---------- 3. runtime ----------
+# ---------- 3. installer agent (target "installer") ----------
+# The host-side helper behind Install/Update/Remove, as its own image for
+# setups without a host binary: docker CLI + compose, the Docker socket
+# mounted in (see deploy/install.sh).
+FROM alpine:3.21 AS installer
+RUN apk add --no-cache ca-certificates tzdata docker-cli docker-cli-compose
+COPY --from=build /out/pocket-core /usr/local/bin/pocket-core
+ENV HOME=/tmp
+LABEL org.opencontainers.image.title="Pocket Core installer" \
+      org.opencontainers.image.description="Installs, updates and removes Pocket apps for Pocket Core." \
+      org.opencontainers.image.source="https://github.com/abjelosevic88/pocket-homelab-core" \
+      org.opencontainers.image.licenses="MIT"
+ENTRYPOINT ["pocket-core", "installer"]
+
+# ---------- 4. runtime (default) ----------
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata curl \
  && addgroup -g 1000 app && adduser -u 1000 -G app -D -h /data app

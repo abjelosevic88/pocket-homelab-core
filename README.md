@@ -65,6 +65,16 @@ Core runs on your box, next to the apps. You choose which service endpoints, ide
 
 ## Run it
 
+The quickest way, on any Linux machine (it offers to install Docker if it is missing):
+
+```sh
+curl -fsSL https://pockethomelab.com/install.sh | sh
+```
+
+That starts Core and its app installer in `~/pocket` and prints the address to open. Create your account, then **Apps → Install app** lists every released Pocket app from the signed [app catalog](docs/installer.md#the-app-catalog): one click installs it, **Update** moves it to a new release. Without a domain each app gets its own port on that machine; with `sh -s -- --domain example.com --email you@example.com` every app gets `https://<app>.example.com` through a bundled Caddy. Run the script again to update Core.
+
+By hand:
+
 ```sh
 docker run -d --name pocket-core -p 8080:8080 -v ./data:/data \
   -e BASE_URL=https://core.example.com -e SECURE_COOKIES=true \

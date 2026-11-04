@@ -2,6 +2,8 @@
 
 From an empty box to "everyone signs in to every Pocket app with one account". Steps 1–4 are needed; 5–7 are optional.
 
+> **Shortcut:** `curl -fsSL https://pockethomelab.com/install.sh | sh` does steps 1–3 for you on a Linux machine: it picks the address (this machine's LAN address and a port per app, or `--domain example.com` for HTTPS names through a bundled Caddy), sets `SECURE_COOKIES` to match, starts Core with the [installer](installer.md), and prints where to create the admin. Apps are then installed from **Apps → Install app** and connect themselves. The rest of this page is the manual route and the reference for what can go wrong.
+
 ## 1. Decide the address
 
 Pick the one URL that phones, browsers **and** the app containers will use for Core, e.g. `https://core.home.example` or `http://192.168.1.10:8179`. It becomes `BASE_URL`, is baked into pairing QR codes and is the issuer every app checks at sign-in. Changing it later means re-pairing devices and restarting apps.

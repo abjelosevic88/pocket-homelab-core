@@ -15,12 +15,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/abjelosevic88/pocket-homelab-core/internal/appstore"
 )
 
 // InstallRequest asks the agent to put one app on the server.
@@ -31,6 +34,13 @@ type InstallRequest struct {
 	AdminEmail      string `json:"admin_email"`
 	AdminName       string `json:"admin_name,omitempty"`
 	Reserved        []int  `json:"reserved_ports,omitempty"` // ports Core knows are taken
+}
+
+// UpdateRequest asks the agent to move an installed app to the catalog's
+// newest release. URL is the address the app registered with Core.
+type UpdateRequest struct {
+	Slug string `json:"slug"`
+	URL  string `json:"url"`
 }
 
 // UninstallRequest asks the agent to take one app off the server. URL is
@@ -72,13 +82,16 @@ type Status struct {
 	AppsDir    string `json:"apps_dir"`
 	ArchiveDir string `json:"archive_dir"`
 	PublicURL  string `json:"public_url"`
-	Proxy      bool   `json:"proxy"` // edits the Caddyfile
+	Proxy      bool   `json:"proxy"`      // edits the Caddyfile
+	Source     string `json:"source"`     // catalog | github
+	SourceURL  string `json:"source_url"` // the catalog, or github.com/<owner>
+	Platform   string `json:"platform"`   // linux/amd64…
 }
 
 // Agent does the host-side work.
 type Agent struct {
 	cfg *Config
-	gh  *GitHub
+	src source
 	dk  *Docker
 	log *slog.Logger
 
@@ -91,8 +104,23 @@ type Agent struct {
 }
 
 func NewAgent(cfg *Config, log *slog.Logger) *Agent {
-	return &Agent{cfg: cfg, gh: NewGitHub(cfg), dk: NewDocker(), log: log, jobs: map[string]*Job{},
+	var src source = NewGitHub(cfg)
+	if len(cfg.CatalogURLs) > 0 {
+		keys, _ := appstore.ParseKeys(cfg.CatalogKeys) // checked by LoadConfig
+		src = newCatalogSource(cfg, keys)
+	}
+	return &Agent{cfg: cfg, src: src, dk: NewDocker(), log: log, jobs: map[string]*Job{},
 		healthWait: 3 * time.Minute, httpc: &http.Client{Timeout: 5 * time.Second}}
+}
+
+func (a *Agent) status() Status {
+	st := Status{Owner: a.cfg.Owner, AppsDir: a.cfg.AppsDir, ArchiveDir: a.cfg.ArchiveDir, PublicURL: a.cfg.PublicURL,
+		Proxy: a.cfg.Caddyfile != "" && !a.cfg.byPort(), Source: "github", SourceURL: "https://github.com/" + a.cfg.Owner,
+		Platform: runtime.GOOS + "/" + runtime.GOARCH}
+	if len(a.cfg.CatalogURLs) > 0 {
+		st.Source, st.SourceURL = "catalog", a.cfg.CatalogURLs[0]
+	}
+	return st
 }
 
 // Serve answers on the unix socket until ctx ends.
@@ -127,7 +155,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 func (a *Agent) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, Status{Owner: a.cfg.Owner, AppsDir: a.cfg.AppsDir, ArchiveDir: a.cfg.ArchiveDir, PublicURL: a.cfg.PublicURL, Proxy: a.cfg.Caddyfile != ""})
+		writeJSON(w, http.StatusOK, a.status())
 	})
 	mux.HandleFunc("GET /v1/catalog", a.handleCatalog)
 	mux.HandleFunc("POST /v1/install", func(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +165,18 @@ func (a *Agent) Handler() http.Handler {
 			return
 		}
 		a.start(w, "install", req.Slug, func(ctx context.Context, j *Job) error { return a.install(ctx, j, req) })
+	})
+	mux.HandleFunc("POST /v1/update", func(w http.ResponseWriter, r *http.Request) {
+		var req UpdateRequest
+		if json.NewDecoder(r.Body).Decode(&req) != nil || !slugOK(req.Slug) {
+			writeErr(w, http.StatusBadRequest, "slug is required")
+			return
+		}
+		if a.cfg.protected(req.Slug) {
+			writeErr(w, http.StatusForbidden, req.Slug+" is not updated from here")
+			return
+		}
+		a.start(w, "update", req.Slug, func(ctx context.Context, j *Job) error { return a.update(ctx, j, req) })
 	})
 	mux.HandleFunc("POST /v1/uninstall", func(w http.ResponseWriter, r *http.Request) {
 		var req UninstallRequest
@@ -177,21 +217,28 @@ func (a *Agent) Handler() http.Handler {
 }
 
 func (a *Agent) handleCatalog(w http.ResponseWriter, r *http.Request) {
-	rels, err := a.gh.Catalog(r.Context(), r.URL.Query().Get("refresh") == "1")
+	rels, err := a.src.Catalog(r.Context(), r.URL.Query().Get("refresh") == "1")
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	names := map[string]bool{}
-	if cs, err := a.dk.containers(r.Context()); err == nil {
-		for _, c := range cs {
-			names[c.Name] = true
-		}
+	byName := map[string]*container{}
+	cs, _ := a.dk.containers(r.Context())
+	for i := range cs {
+		byName[cs[i].Name] = &cs[i]
 	}
 	out := make([]Release, len(rels))
 	for i, rel := range rels {
 		out[i] = rel
-		out[i].Present = names[rel.Container]
+		out[i].Available = supports(rel.Platforms)
+		if c := byName[rel.Container]; c != nil {
+			out[i].Present = true
+			if chk := a.checkUpdate(c, &rel); chk.err == nil {
+				out[i].Running, out[i].Updatable = chk.current, chk.newer
+			} else {
+				out[i].Running, out[i].UpdateNote = chk.current, chk.err.Error()
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"apps": out})
 }
@@ -247,10 +294,13 @@ func (a *Agent) setResult(j *Job, r *Result) {
 // ---- install ----
 
 func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
-	a.logf(j, "Looking up the newest release on GitHub")
-	rel, err := a.gh.Find(ctx, req.Slug)
+	a.logf(j, "Looking up the newest release")
+	rel, err := a.src.Find(ctx, req.Slug)
 	if err != nil {
 		return err
+	}
+	if !supports(rel.Platforms) {
+		return fmt.Errorf("%s %s has no image for %s/%s (only %s)", rel.Repo, rel.Tag, runtime.GOOS, runtime.GOARCH, strings.Join(rel.Platforms, ", "))
 	}
 	a.logf(j, "Found %s %s", rel.Repo, rel.Tag)
 	cs, err := a.dk.containers(ctx)
@@ -288,13 +338,13 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return 0, fmt.Errorf("no free port left in %d-%d", a.cfg.PortFrom, a.cfg.PortTo)
 	}
 	_, zerr := os.Stat("/usr/share/zoneinfo")
-	public := a.cfg.publicURL(rel.Slug)
-	plan, err := BuildPlan(PlanInput{Release: rel, Name: req.Name, PublicURL: public, CoreURL: a.cfg.CoreURL,
+	plan, err := BuildPlan(PlanInput{Release: rel, Name: req.Name, PublicURL: a.cfg.publicURL(rel.Slug), CoreURL: a.cfg.CoreURL,
 		RegistrationKey: req.RegistrationKey, AdminEmail: req.AdminEmail, AdminName: req.AdminName, TZ: a.cfg.TZ,
-		Zoneinfo: zerr == nil, NextPort: next, DockerGID: dockerGID(), Now: time.Now()})
+		Zoneinfo: zerr == nil, NextPort: next, DockerGID: firstNonEmpty(a.cfg.DockerGID, dockerGID()), Now: time.Now()})
 	if err != nil {
 		return err
 	}
+	public := plan.PublicURL
 	if err := writePlan(dir, plan); err != nil {
 		return err
 	}
@@ -305,7 +355,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 	a.setResult(j, res)
 	a.logf(j, "Wrote %s (host port %d)", dir, plan.Port)
 
-	a.logf(j, "Downloading %s:%s", rel.Image, rel.Version)
+	a.logf(j, "Downloading %s", rel.ref())
 	if _, err := a.dk.run(ctx, dir, "compose", "pull", "--quiet"); err != nil {
 		return a.rollback(ctx, j, dir, err)
 	}
@@ -319,7 +369,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 	}
 	a.logf(j, "%s is up", plan.Container)
 
-	if a.cfg.Caddyfile != "" {
+	if a.cfg.Caddyfile != "" && !a.cfg.byPort() {
 		host := siteHost(public)
 		upstream := fmt.Sprintf("%s:%d", a.cfg.CaddyUpstream, plan.Port)
 		comment := fmt.Sprintf("%s — installed by Pocket Core %s (%s, :%d).", firstNonEmpty(req.Name, displayName(rel.Slug)), time.Now().Format("2006-01-02"), dir, plan.Port)
@@ -390,8 +440,46 @@ func (a *Agent) uninstall(ctx context.Context, j *Job, req UninstallRequest) err
 	if err != nil {
 		return err
 	}
+	loc, err := a.locate(cs, req.Slug, req.URL)
+	if err != nil {
+		return err
+	}
+	target, wd, port := loc.c, loc.wd, loc.port
+	res := &Result{Dir: wd, Container: target.Name, Port: port, PublicURL: req.PublicURL}
+	a.setResult(j, res)
+
+	a.logf(j, "Stopping %s", target.Name)
+	args := loc.composeArgs()
+	if _, err := a.dk.run(ctx, wd, append(args, "down", "--remove-orphans")...); err != nil {
+		return err
+	}
+	a.logf(j, "Removed the containers")
+	return a.finishUninstall(ctx, j, req, res, wd, port)
+}
+
+// located is an app's container and the compose project it came from.
+type located struct {
+	c        *container
+	proj, wd string
+	files    []string
+	port     int
+}
+
+func (l *located) composeArgs() []string {
+	args := []string{"compose", "-p", l.proj, "--project-directory", l.wd}
+	for _, f := range l.files {
+		if _, err := os.Stat(f); err == nil {
+			args = append(args, "-f", f)
+		}
+	}
+	return args
+}
+
+// locate finds the container that serves an app (by the port Core reaches
+// it on, else by name) and checks its folder belongs to that app alone.
+func (a *Agent) locate(cs []container, slug, appURL string) (*located, error) {
 	port := 0
-	if u, err := url.Parse(req.URL); err == nil {
+	if u, err := url.Parse(appURL); err == nil {
 		port, _ = strconv.Atoi(u.Port())
 	}
 	var target *container
@@ -403,48 +491,40 @@ func (a *Agent) uninstall(ctx context.Context, j *Job, req UninstallRequest) err
 	}
 	if target == nil {
 		for i := range cs {
-			if cs[i].Name == "pocket-"+req.Slug {
+			if cs[i].Name == "pocket-"+slug {
 				target = &cs[i]
 			}
 		}
 	}
 	if target == nil {
-		return fmt.Errorf("no container on this server serves %s (looked for port %d and pocket-%s); it may run outside Docker", req.Slug, port, req.Slug)
+		return nil, fmt.Errorf("no container on this server serves %s (looked for port %d and pocket-%s); it may run outside Docker", slug, port, slug)
 	}
 	proj, wd, files := target.project()
 	if proj == "" || wd == "" {
-		return fmt.Errorf("%s was not started with docker compose; remove it by hand", target.Name)
+		return nil, fmt.Errorf("%s was not started with docker compose; change it by hand", target.Name)
 	}
 	wd = filepath.Clean(wd)
 	if rel, err := filepath.Rel(a.cfg.AppsDir, wd); err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("%s lives in %s, outside %s; remove it by hand", target.Name, wd, a.cfg.AppsDir)
+		return nil, fmt.Errorf("%s lives in %s, outside %s; change it by hand", target.Name, wd, a.cfg.AppsDir)
 	}
 	// The folder must belong to this app alone: no other app's containers in
 	// its compose project, and no other project started from the same folder.
 	for _, c := range cs {
 		p, d, _ := c.project()
 		if p == proj && c.Name != target.Name && !strings.HasPrefix(c.Name, target.Name+"-") {
-			return fmt.Errorf("%s's compose project also runs %s; remove it by hand", target.Name, c.Name)
+			return nil, fmt.Errorf("%s's compose project also runs %s; change it by hand", target.Name, c.Name)
 		}
 		if p != proj && filepath.Clean(d) == wd {
-			return fmt.Errorf("%s is shared with %s; remove it by hand", wd, c.Name)
+			return nil, fmt.Errorf("%s is shared with %s; change it by hand", wd, c.Name)
 		}
 	}
-	res := &Result{Dir: wd, Container: target.Name, Port: port, PublicURL: req.PublicURL}
-	a.setResult(j, res)
-
-	a.logf(j, "Stopping %s", target.Name)
-	args := []string{"compose", "-p", proj, "--project-directory", wd}
-	for _, f := range files {
-		if _, err := os.Stat(f); err == nil {
-			args = append(args, "-f", f)
-		}
+	if port == 0 && len(target.Ports) > 0 {
+		port = target.Ports[0]
 	}
-	if _, err := a.dk.run(ctx, wd, append(args, "down", "--remove-orphans")...); err != nil {
-		return err
-	}
-	a.logf(j, "Removed the containers")
+	return &located{c: target, proj: proj, wd: wd, files: files, port: port}, nil
+}
 
+func (a *Agent) finishUninstall(ctx context.Context, j *Job, req UninstallRequest, res *Result, wd string, port int) error {
 	dest, err := a.archive(wd, "")
 	if err != nil {
 		res.Warnings = append(res.Warnings, "The folder stays at "+wd+": "+err.Error())
