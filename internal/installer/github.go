@@ -43,6 +43,9 @@ type Release struct {
 	Running    string `json:"running,omitempty"`     // image tag the container here runs
 	Updatable  bool   `json:"updatable,omitempty"`   // Update can move it to Version
 	UpdateNote string `json:"update_note,omitempty"` // why it can't
+	// Archive is the newest archived folder of a removed install, whose
+	// data Install can bring back.
+	Archive *ArchiveInfo `json:"archive,omitempty"`
 
 	compose    []byte
 	envExample []byte

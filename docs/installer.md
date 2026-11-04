@@ -67,6 +67,24 @@ containers — shown as chips before Install), the name, category, icon and web 
 5. Core waits for the app's first start: registering creates its service entry (paired phones get it),
    its *Sign in with Pocket Core* client and its app links (approved on first registration).
 
+## Bringing back a removed app's data
+
+Remove never deletes data: the app's folder goes to the archive whole. When you install that app
+again, the list offers **Bring back your data from <date>** (on by default) for the newest archived
+folder (`<folder>-<YYYYMMDD-HHMMSS>`, failed installs excluded). With it, Install:
+
+- copies the archived data folders the new release uses (its relative bind mounts, e.g. `./data`)
+  into the new folder; **the archive stays as it is**;
+- keeps the archived secrets (values from the old `.env` and literal values in the old compose
+  file) for every variable the new `.env` sets, because apps encrypt stored passwords and tokens
+  with them; Core's registration key is always the current one;
+- leaves out the app's old Core token (`core.token`, `core.token.oidc.json`): Core deleted it on
+  removal and apps never re-enroll on their own when it is refused, so the new install registers
+  afresh (new sign-in client, app links approved again).
+
+Untick it to start empty. Agent API: `POST /v1/install` with `"restore_from": "<archived folder name>"`;
+the catalog lists the newest archive per app as `archive: {name, saved_at}`.
+
 ## Addresses: a domain, or just ports
 
 `INSTALLER_PUBLIC_URL` is a template:

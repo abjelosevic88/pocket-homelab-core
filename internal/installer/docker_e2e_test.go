@@ -213,4 +213,38 @@ func TestDockerEndToEnd(t *testing.T) {
 	if code, body := get(); code == 200 && !strings.Contains(body, "fallback") {
 		t.Fatalf("caddy still proxies the removed app: %d %s", code, body)
 	}
+
+	// Install again, bringing back the archived data and secrets.
+	as := a.archivesFor(ctrName)
+	if len(as) != 1 || as[0].Name != filepath.Base(j2.Result.Archive) {
+		t.Fatalf("archives %+v", as)
+	}
+	mu.Lock()
+	before := len(regs)
+	mu.Unlock()
+	j3 := &Job{}
+	if err := a.install(ctx, j3, InstallRequest{Slug: "e2e-habits", Name: "Pocket Habits (e2e)", RegistrationKey: "e2e-key", AdminEmail: "e2e@example.test", RestoreFrom: as[0].Name}); err != nil {
+		t.Fatalf("reinstall: %v\n%s", err, strings.Join(j3.Log, "\n"))
+	}
+	t.Logf("reinstall log:\n%s", strings.Join(j3.Log, "\n"))
+	if b, _ := os.ReadFile(filepath.Join(j3.Result.Dir, "data", "marker")); string(b) != "before" {
+		t.Fatal("the archived data did not come back")
+	}
+	oldEnv, _ := os.ReadFile(filepath.Join(j2.Result.Archive, ".env"))
+	newEnv, _ := os.ReadFile(filepath.Join(j3.Result.Dir, ".env"))
+	if pw := oldSettings(j2.Result.Archive)["ADMIN_PASSWORD"]; pw == "" || !strings.Contains(string(newEnv), "ADMIN_PASSWORD="+pw) {
+		t.Fatalf("secrets not kept:\n%s\n%s", oldEnv, newEnv)
+	}
+	if _, err := os.Stat(filepath.Join(j2.Result.Archive, "data", "marker")); err != nil {
+		t.Fatal("the archive must stay as it is")
+	}
+	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(time.Second) {
+		mu.Lock()
+		n := len(regs)
+		mu.Unlock()
+		if n > before {
+			return
+		}
+	}
+	t.Fatal("the restored app did not register with Core again")
 }

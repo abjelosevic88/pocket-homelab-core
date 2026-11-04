@@ -34,6 +34,9 @@ type InstallRequest struct {
 	AdminEmail      string `json:"admin_email"`
 	AdminName       string `json:"admin_name,omitempty"`
 	Reserved        []int  `json:"reserved_ports,omitempty"` // ports Core knows are taken
+	// RestoreFrom names an archived folder of this app (see Release.Archive)
+	// whose data and secrets the new install takes over.
+	RestoreFrom string `json:"restore_from,omitempty"`
 }
 
 // UpdateRequest asks the agent to move an installed app to the catalog's
@@ -232,6 +235,9 @@ func (a *Agent) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	for i, rel := range rels {
 		out[i] = rel
 		out[i].Available = supports(rel.Platforms)
+		if as := a.archivesFor(rel.Container, "pocket-"+rel.Slug); len(as) > 0 {
+			out[i].Archive = &as[0]
+		}
 		if c := byName[rel.Container]; c != nil {
 			out[i].Present = true
 			if chk := a.checkUpdate(c, &rel); chk.err == nil {
@@ -329,6 +335,12 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("%s already exists; move it away first", dir)
 	}
+	archived := ""
+	if req.RestoreFrom != "" {
+		if archived, err = a.archivedDir(req.RestoreFrom, rel.Container, "pocket-"+rel.Slug); err != nil {
+			return err
+		}
+	}
 	next := func() (int, error) {
 		for p := a.cfg.PortFrom; p <= a.cfg.PortTo; p++ {
 			if !used[p] && portFree(p) {
@@ -346,8 +358,24 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return err
 	}
 	public := plan.PublicURL
+	if archived != "" {
+		if kept := keepOldSecrets(plan, oldSettings(archived)); len(kept) > 0 {
+			a.logf(j, "Kept the secrets it had before: %s", strings.Join(kept, ", "))
+		}
+	}
 	if err := writePlan(dir, plan, a.cfg.AppOwner, a.cfg.FilesOwner); err != nil {
 		return err
+	}
+	if archived != "" {
+		got, err := restoreInto(dir, archived, plan.Dirs)
+		if err != nil {
+			return a.rollback(ctx, j, dir, err)
+		}
+		if len(got) == 0 {
+			a.logf(j, "The archived folder has none of the data folders this release uses; starting empty")
+		} else {
+			a.logf(j, "Brought back %s from %s (the archive stays as it is)", strings.Join(got, ", "), archived)
+		}
 	}
 	res := &Result{Dir: dir, Container: plan.Container, AppURL: plan.AppURL, PublicURL: public, Port: plan.Port, Version: rel.Version}
 	for _, n := range plan.Notes {

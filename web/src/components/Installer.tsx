@@ -16,6 +16,7 @@ export interface Release {
   container: string; present: boolean; installed?: boolean; installed_version?: string
   category?: string; icon?: string; page?: string; digest?: string; platforms?: string[]; requires?: Requires
   available?: boolean; running?: string; updatable?: boolean; update_note?: string
+  archive?: { name: string; saved_at: string }
 }
 interface Catalog {
   status: { owner: string; apps_dir: string; archive_dir: string; public_url: string; proxy: boolean; source?: string; source_url?: string; platform?: string }
@@ -112,6 +113,7 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
   const [refreshing, setRefreshing] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [starting, setStarting] = useState('')
+  const [fresh, setFresh] = useState<Record<string, boolean>>({}) // slugs to install without their archived data
   const load = async (refresh = false) => {
     setRefreshing(refresh)
     try { setCat(await api.get<Catalog>(`${V1}/installer${refresh ? '?refresh=1' : ''}`)); setErr('') } catch (e) { setErr(errMsg(e)) }
@@ -122,7 +124,8 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
   const { job } = useJob(jobId, j => { if (j.state === 'done') onInstalled() })
   const install = async (a: Release) => {
     setStarting(a.slug)
-    try { const j = await api.post<InstallJob>(`${V1}/installer/install`, { slug: a.slug, name: a.name }); setJobId(j.id) } catch (e) { setErr(errMsg(e)) }
+    const restore_from = a.archive && !fresh[a.slug] ? a.archive.name : undefined
+    try { const j = await api.post<InstallJob>(`${V1}/installer/install`, { slug: a.slug, name: a.name, restore_from }); setJobId(j.id) } catch (e) { setErr(errMsg(e)) }
     setStarting('')
   }
   const update = async (a: Release) => {
@@ -185,6 +188,12 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
                     </div>
                     {a.description && <div className="muted small inst-desc">{a.description}</div>}
                     {a.installed && late && <div className="small inst-update">Running {formatVersion(a.installed_version || a.running)}{!a.updatable && a.update_note ? <span className="muted"> — {a.update_note}</span> : null}</div>}
+                    {!a.installed && a.archive && !a.present && (
+                      <label className="row small inst-restore" style={{ gap: 6 }}>
+                        <input type="checkbox" checked={!fresh[a.slug]} onChange={e => setFresh(f => ({ ...f, [a.slug]: !e.target.checked }))} />
+                        Bring back your data from {new Date(a.archive.saved_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                      </label>
+                    )}
                     {!a.installed && <RequireChips r={a.requires} />}
                     {!a.installed && cat?.status.public_url && <div className="muted small mono inst-url">{cat.status.public_url.replace('{slug}', a.slug).replace('{port}', '<port>')}</div>}
                   </div>
@@ -234,7 +243,7 @@ export function RemoveModal({ app, onClose, onRemoved }: { app: { slug: string; 
           <p style={{ marginTop: 0 }}>This takes <b>{app.name}</b> off the server:</p>
           <ul className="inst-steps">
             <li>stops and deletes its containers</li>
-            <li>moves its folder, data included, to the archive — nothing is deleted</li>
+            <li>moves its folder, data included, to the archive — nothing is deleted, and installing it again brings the data back</li>
             {app.public_url && <li>removes its HTTPS site <span className="inline-code">{app.public_url.replace(/^https?:\/\//, '')}</span></li>}
             <li>unregisters it here: its sign-in, service entry, webhooks and app links</li>
           </ul>

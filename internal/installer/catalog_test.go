@@ -248,3 +248,67 @@ func TestDataBackupRestore(t *testing.T) {
 		t.Fatalf("pruned to %v", left)
 	}
 }
+
+func TestRestoreFromArchive(t *testing.T) {
+	arch := t.TempDir()
+	a := &Agent{cfg: &Config{ArchiveDir: arch}}
+	for _, n := range []string{"pocket-time-20261101-100000", "pocket-time-20261103-090000", "pocket-time-20261104-080000-failed", "pocket-timer-20261105-000000"} {
+		os.Mkdir(filepath.Join(arch, n), 0o755)
+	}
+	as := a.archivesFor("pocket-time")
+	if len(as) != 2 || as[0].Name != "pocket-time-20261103-090000" {
+		t.Fatalf("archives %+v", as)
+	}
+	for _, bad := range []string{"../etc", "pocket-timer-20261105-000000", "pocket-time-20261104-080000-failed", "pocket-time"} {
+		if _, err := a.archivedDir(bad, "pocket-time"); err == nil {
+			t.Fatalf("%s accepted", bad)
+		}
+	}
+	old, err := a.archivedDir("pocket-time-20261103-090000", "pocket-time")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(old, ".env"), []byte("ADMIN_PASSWORD=old-admin\nCORE_REGISTRATION_KEY=old-key\nexport SESSION_SECRET=\"old-secret\"\n"), 0o600)
+	os.WriteFile(filepath.Join(old, "docker-compose.yml"), []byte("services:\n  app:\n    environment:\n      ENCRYPTION_KEY: old-enc\n      BASE_URL: ${BASE_URL}\n"), 0o644)
+	os.MkdirAll(filepath.Join(old, "data", "sub"), 0o755)
+	os.WriteFile(filepath.Join(old, "data", "time.db"), []byte("old-db"), 0o600)
+	os.WriteFile(filepath.Join(old, "data", "core.token"), []byte("pca_revoked"), 0o600)
+	os.WriteFile(filepath.Join(old, "data", "core.token.oidc.json"), []byte("{}"), 0o600)
+
+	p := &Plan{Env: []envVar{{"ADMIN_PASSWORD", "new"}, {"CORE_REGISTRATION_KEY", "current-key"}, {"SESSION_SECRET", "new"}, {"ENCRYPTION_KEY", "new"}, {"OTHER_SECRET", "new"}}, Dirs: []string{"data", "data/sub"}}
+	kept := keepOldSecrets(p, oldSettings(old))
+	if strings.Join(kept, ",") != "ADMIN_PASSWORD,SESSION_SECRET,ENCRYPTION_KEY" {
+		t.Fatalf("kept %v", kept)
+	}
+	want := map[string]string{"ADMIN_PASSWORD": "old-admin", "CORE_REGISTRATION_KEY": "current-key", "SESSION_SECRET": "old-secret", "ENCRYPTION_KEY": "old-enc", "OTHER_SECRET": "new"}
+	for _, e := range p.Env {
+		if want[e.Key] != e.Value {
+			t.Fatalf("%s = %s", e.Key, e.Value)
+		}
+	}
+
+	dir := filepath.Join(t.TempDir(), "pocket-time")
+	if err := writePlan(dir, p, owner{}, owner{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := restoreInto(dir, old, p.Dirs)
+	if err != nil || strings.Join(got, ",") != "data" {
+		t.Fatalf("restore %v %v", got, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "data", "time.db")); string(b) != "old-db" {
+		t.Fatal("data not brought back")
+	}
+	for _, f := range coreTokenFiles {
+		if _, err := os.Stat(filepath.Join(dir, "data", f)); err == nil {
+			t.Fatalf("%s must not come back", f)
+		}
+		if _, err := os.Stat(filepath.Join(old, "data", f)); err != nil {
+			t.Fatalf("the archive must stay as it is (%s)", f)
+		}
+	}
+	// A folder with files in it is never replaced.
+	os.WriteFile(filepath.Join(dir, "data", "x"), []byte("x"), 0o644)
+	if _, err := restoreInto(dir, old, []string{"data"}); err == nil {
+		t.Fatal("restored over a folder with files")
+	}
+}

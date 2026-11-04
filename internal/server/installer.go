@@ -144,7 +144,7 @@ func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) 
 			"repo_url": rel.RepoURL, "version": rel.Version, "tag": rel.Tag, "container": rel.Container, "present": rel.Present,
 			"category": rel.Category, "icon": rel.Icon, "page": rel.Page, "digest": rel.Digest, "platforms": rel.Platforms,
 			"requires": rel.Requires, "available": rel.Available, "running": rel.Running, "updatable": rel.Updatable,
-			"update_note": rel.UpdateNote}
+			"update_note": rel.UpdateNote, "archive": rel.Archive}
 		if a := have[rel.Slug]; a != nil {
 			item["installed"], item["name"], item["installed_version"] = true, a.Name, a.Version
 		}
@@ -168,7 +168,8 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in struct {
 		Slug string `json:"slug"`
-		Name string `json:"name"` // the catalog's, for apps this Core does not know yet
+		Name        string `json:"name"`         // the catalog's, for apps this Core does not know yet
+		RestoreFrom string `json:"restore_from"` // an archived folder whose data the install takes over
 	}
 	if err := decode(r, &in); err != nil || !slugRe.MatchString(in.Slug) {
 		writeErr(w, http.StatusBadRequest, "slug is required")
@@ -198,7 +199,7 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	}
 	name := appName(in.Slug, in.Name)
 	aj, err := s.inst.Install(ctx, installer.InstallRequest{Slug: in.Slug, Name: name, RegistrationKey: st.RegistrationKey,
-		AdminEmail: u.Email, AdminName: u.Name, Reserved: reserved})
+		AdminEmail: u.Email, AdminName: u.Name, Reserved: reserved, RestoreFrom: in.RestoreFrom})
 	if err != nil {
 		s.installerErr(w, err)
 		return
