@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,8 +46,9 @@ type installJob struct {
 func (j *installJob) snapshot() map[string]any {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	log := append(append([]string{}, j.agentLog...), j.coreLog...) // [] not null before the first line
 	return map[string]any{"id": j.ID, "kind": j.Kind, "slug": j.Slug, "name": j.Name, "state": j.State,
-		"log": append(slices.Clone(j.agentLog), j.coreLog...), "error": j.Error, "result": j.Result,
+		"log": log, "error": j.Error, "result": j.Result,
 		"open_url": j.OpenURL, "started_at": j.Started}
 }
 

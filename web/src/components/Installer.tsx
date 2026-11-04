@@ -87,13 +87,13 @@ function RequireChips({ r }: { r?: Requires }) {
 
 export function JobView({ job }: { job: InstallJob | null }) {
   const end = useRef<HTMLDivElement>(null)
-  useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }) }, [job?.log.length])
+  useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }) }, [job?.log?.length])
   if (!job) return <Loading label="Starting…" />
   const warnings = job.result?.warnings || []
   return (
     <div className="stack tight">
       <div className="inst-log" aria-live="polite">
-        {job.log.map((l, i) => <div key={i} className="inst-line"><Icon name="check" size={13} />{l}</div>)}
+        {(job.log || []).map((l, i) => <div key={i} className="inst-line"><Icon name="check" size={13} />{l}</div>)}
         {job.state === 'running' && <div className="inst-line muted"><Spinner size={12} />Working…</div>}
         <div ref={end} />
       </div>
