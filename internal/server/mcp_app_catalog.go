@@ -64,7 +64,8 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true}
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true,
+	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
 func mcpOpKind(name, method string) string {
@@ -447,6 +448,17 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	schedule["prompt"].(map[string]any)["description"] = "The complete new prompt; it replaces the old one, so send the whole edited text, not a fragment."
 	schedule["spec"].(map[string]any)["description"] = "every 6h, daily 08:00, weekdays 08:30, weekly mon 09:00 or a cron line like 0 8 * * *."
 	schedule["notify"].(map[string]any)["description"] = "When to notify after a run: always, attention (only when it needs a human) or never."
+	newSchedule := textFields("name prompt spec cwd").enum("notify", "always", "attention", "never").booleans("enabled").
+		enum("provider", "claude", "codex").enum("effort", "low", "medium", "high", "xhigh", "max").
+		// no full-access modes (bypassPermissions, full-access): those are set in Pocket AI only
+		enum("mode", "default", "acceptEdits", "plan", "auto", "untrusted", "on-request", "read-only").
+		field("host_id", map[string]any{"type": "integer", "minimum": 0, "description": "The machine it runs on: 0 = the Pocket AI server (default), else a host_id as pocket_ai_schedules shows it."})
+	newSchedule["prompt"].(map[string]any)["description"] = "Everything the unattended agent must do; it cannot ask anything back, and its final message is saved as the run's summary."
+	newSchedule["spec"].(map[string]any)["description"] = schedule["spec"].(map[string]any)["description"]
+	newSchedule["notify"].(map[string]any)["description"] = schedule["notify"].(map[string]any)["description"]
+	newSchedule["cwd"].(map[string]any)["description"] = "The folder it runs in (absolute or ~/…; on another machine, that machine's folder)."
+	newSchedule["mode"].(map[string]any)["description"] = "Permission mode: claude = default, acceptEdits, plan or auto; codex = untrusted, on-request or read-only. Full access is only set in Pocket AI itself."
+	write("ai", "create_schedule", "Create a Pocket AI scheduled run: a prompt an agent runs by itself on a timing (spec), on this server or another machine (host_id), in a folder (cwd). enabled defaults to true and notify to attention. Read pocket_ai_schedules first to reuse an existing schedule's machine, folder and agent.", "POST", "/schedules", newSchedule, "name prompt spec")
 	write("ai", "update_schedule", "Edit one of your Pocket AI scheduled runs (schedule = id from pocket_ai_schedules): name, prompt, timing, notify or enabled; omitted fields stay as they are. The agent, model, permission mode, machine and folder cannot be changed here.", "PUT", "/schedules/{schedule}", schedule, "")
 	return out
 }

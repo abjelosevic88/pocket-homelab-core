@@ -458,6 +458,25 @@ func TestMCPAIScheduleTools(t *testing.T) {
 	if err := update.resolved.Validate(map[string]any{"schedule": 2, "request_id": "0123456789abcdef", "data": map[string]any{"mode": "bypassPermissions"}}); err == nil {
 		t.Fatal("update_schedule accepted a permission-mode change")
 	}
+	var create *mcpAppTool
+	for _, op := range mcpAppCatalog {
+		if op.Name == "pocket_ai_create_schedule" {
+			create = op
+		}
+	}
+	if create == nil || create.Method != "POST" || create.Path != "/schedules" || create.Kind != "change" {
+		t.Fatalf("create_schedule: %+v", create)
+	}
+	ok := map[string]any{"name": "PRs", "prompt": "Fix my PRs", "spec": "daily 06:00", "provider": "claude", "mode": "auto", "host_id": 2, "cwd": "/work/x"}
+	if err := create.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("create_schedule refused a plain schedule: %v", err)
+	}
+	for _, mode := range []string{"bypassPermissions", "full-access"} {
+		bad := map[string]any{"name": "x", "prompt": "y", "spec": "daily 06:00", "mode": mode}
+		if err := create.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("create_schedule accepted mode %s", mode)
+		}
+	}
 	// Conversation ids stay UUIDs.
 	for _, op := range mcpAppCatalog {
 		if op.Name == "pocket_ai_conversation" && op.Schema["properties"].(mcpFields)["id"].(map[string]any)["pattern"] == nil {
