@@ -55,7 +55,16 @@ func BuildCatalog(ctx context.Context, o BuildOptions) (*appstore.Catalog, error
 	}
 	meta, err := readSiteMeta(ctx, gh.http, o.SiteMeta)
 	if err != nil {
-		return nil, err
+		if o.Previous == nil {
+			return nil, err
+		}
+		// Names and icons are cosmetic: keep the published ones rather than
+		// republish a catalog without them.
+		logf("%v; using the previous catalog's names and icons", err)
+		meta = map[string]siteApp{}
+		for _, a := range o.Previous.Apps {
+			meta[a.Slug] = siteApp{Slug: a.Slug, Name: a.Name, Category: a.Category, Summary: a.Description, Icon: a.Icon}
+		}
 	}
 	base := strings.TrimRight(o.SiteBase, "/")
 
@@ -90,7 +99,10 @@ func BuildCatalog(ctx context.Context, o BuildOptions) (*appstore.Catalog, error
 				a.Name = firstNonEmpty(m.Name, a.Name)
 				a.Description = firstNonEmpty(m.Summary, a.Description)
 				a.Category = m.Category
-				if m.Icon != "" && base != "" {
+				switch {
+				case strings.HasPrefix(m.Icon, "https://"):
+					a.Icon = m.Icon
+				case m.Icon != "" && base != "":
 					a.Icon = base + m.Icon
 				}
 				if base != "" {

@@ -35,7 +35,7 @@ jobs:
             exit 0
           fi
           /tmp/pocket-core catalog build -skip-unchanged \
-            -site-meta https://raw.githubusercontent.com/abjelosevic88/pocket-homelab-web/main/src/data/pocket-apps.json \
+            -site-meta https://pockethomelab.com/apps/catalog-meta.json \
             -previous https://github.com/${{ github.repository }}/releases/download/catalog/apps.json \
             -out apps.json | tee build.log
           if [ -f apps.json ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
