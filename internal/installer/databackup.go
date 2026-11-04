@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -101,14 +100,6 @@ func treeSize(path string) int64 {
 	return n
 }
 
-func freeBytes(path string) (int64, error) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		return 0, err
-	}
-	return int64(st.Bavail) * int64(st.Bsize), nil
-}
-
 // copyTree copies src to dst (which must not exist): folders, files and
 // symlinks with their modes and times, and their owners when run as root.
 func copyTree(src, dst string) error {
@@ -143,8 +134,10 @@ func copyTree(src, dst string) error {
 		default:
 			return nil // sockets, fifos: nothing to keep
 		}
-		if st, ok := fi.Sys().(*syscall.Stat_t); ok && root {
-			_ = os.Lchown(target, int(st.Uid), int(st.Gid))
+		if root {
+			if uid, gid, ok := fileOwner(fi); ok {
+				_ = os.Lchown(target, uid, gid)
+			}
 		}
 		if fi.Mode()&fs.ModeSymlink == 0 {
 			_ = os.Chmod(target, fi.Mode()&(fs.ModePerm|fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky))
