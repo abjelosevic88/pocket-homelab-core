@@ -104,6 +104,18 @@ func TestPlanSidecarSecrets(t *testing.T) {
 	}
 }
 
+func TestPlanDefaultedBindDirs(t *testing.T) {
+	// Pocket Watch brings Jellyfin along; its folders are ${VAR:-./default}
+	p, doc := plan(t, "watch.yml", "pocket-homelab-watch", "watch")
+	if svc(doc, "jellyfin")["image"] != "jellyfin/jellyfin:latest" {
+		t.Fatal("the sidecar's image must stay")
+	}
+	want := []string{"data", "jellyfin/config", "jellyfin/cache", "media/movies", "media/shows"}
+	if strings.Join(p.Dirs, ",") != strings.Join(want, ",") {
+		t.Fatalf("dirs = %v, want %v (Docker would make the defaulted ones as root)", p.Dirs, want)
+	}
+}
+
 func TestPlanTwoPorts(t *testing.T) {
 	p, doc := plan(t, "files.yml", "pocket-homelab-files", "files")
 	got := toStrings(svc(doc, "pocket-files")["ports"])

@@ -340,12 +340,19 @@ func bindDirs(svc *yaml.Node, notes *[]string) []string {
 		src := ""
 		switch it.Kind {
 		case yaml.ScalarNode:
-			src, _, _ = strings.Cut(it.Value, ":")
+			src = volumeSource(it.Value)
 		case yaml.MappingNode:
 			if t := mapGet(it, "type"); t != nil && t.Value == "bind" {
 				if s := mapGet(it, "source"); s != nil {
 					src = s.Value
 				}
+			}
+		}
+		// ${MEDIA_DIR:-./media}: the .env this installer writes leaves such
+		// folders unset, so the default is what Docker mounts.
+		if strings.HasPrefix(src, "${") && strings.HasSuffix(src, "}") {
+			if _, def, ok := strings.Cut(src[2:len(src)-1], ":-"); ok && (strings.HasPrefix(def, "./") || strings.HasPrefix(def, "../")) {
+				src = def
 			}
 		}
 		switch {
