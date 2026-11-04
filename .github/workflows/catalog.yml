@@ -1,0 +1,48 @@
+name: App catalog
+# Rebuilds the signed app catalog installers read (docs/installer.md) and
+# publishes it as the asset apps.json of the "catalog" release:
+# https://github.com/abjelosevic88/pocket-homelab-core/releases/download/catalog/apps.json
+# Every 30 minutes it reads the app repos' newest vX.Y.Z tags; it only
+# republishes when a release changed.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - name: Build the CLI (no web UI needed)
+        run: |
+          mkdir -p web/dist && [ -f web/dist/index.html ] || echo '<!doctype html>' > web/dist/index.html
+          go build -o /tmp/pocket-core ./cmd/pocket-core
+      - name: Build and sign
+        id: build
+        env:
+          CATALOG_SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          /tmp/pocket-core catalog build -skip-unchanged \
+            -site-meta https://raw.githubusercontent.com/abjelosevic88/pocket-homelab-web/main/src/data/pocket-apps.json \
+            -previous https://github.com/${{ github.repository }}/releases/download/catalog/apps.json \
+            -out apps.json | tee build.log
+          if [ -f apps.json ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Publish
+        if: steps.build.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          /tmp/pocket-core catalog verify apps.json > /dev/null
+          if ! gh release view catalog >/dev/null 2>&1; then
+            gh release create catalog --prerelease --latest=false --title "App catalog" \
+              --notes "The signed list of installable Pocket apps, rebuilt by the App catalog workflow. Not a Pocket Core release."
+          fi
+          gh release upload catalog apps.json --clobber

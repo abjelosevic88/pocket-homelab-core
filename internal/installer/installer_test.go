@@ -262,7 +262,8 @@ func TestAgentAuthAndCatalog(t *testing.T) {
 	defer gh.Close()
 	cfg := &Config{Token: strings.Repeat("t", 32), Owner: "abjelosevic88", RepoPrefix: "pocket-homelab-", Protected: []string{"core"}}
 	a := NewAgent(cfg, nil)
-	a.gh.api, a.gh.git, a.gh.raw = gh.URL, gh.URL, gh.URL
+	g := a.src.(*GitHub)
+	g.api, g.git, g.raw = gh.URL, gh.URL, gh.URL
 	a.dk.Bin = "/nonexistent-docker"
 	h := a.Handler()
 

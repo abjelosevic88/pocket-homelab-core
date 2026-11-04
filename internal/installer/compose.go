@@ -120,7 +120,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		p.Dirs = append(p.Dirs, bindDirs(svc, &p.Notes)...)
 	}
 	svc := mapGet(svcs, mainName)
-	mapSet(svc, "image", str(rel.Image+":"+rel.Version))
+	mapSet(svc, "image", str(rel.ref()))
 	mapDel(svc, "build")
 	if mapGet(svc, "container_name") == nil {
 		mapSet(svc, "container_name", str(rel.Container))
@@ -148,6 +148,8 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		p.Port = mainPorts[0]
 	}
 	p.AppURL = fmt.Sprintf("http://host.docker.internal:%d", p.Port)
+	in.PublicURL = strings.ReplaceAll(in.PublicURL, "{port}", strconv.Itoa(p.Port))
+	p.PublicURL = in.PublicURL
 
 	secure := strings.HasPrefix(in.PublicURL, "https://")
 	for _, kv := range [][2]string{
@@ -177,7 +179,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 	}
 	fmt.Fprintf(&buf, "# %s — installed by Pocket Core on %s from %s (%s).\n", title, in.Now.Format("2006-01-02"), rel.RepoURL, rel.Tag)
 	fmt.Fprintf(&buf, "# %s, host port %d. Data lives next to this file; settings and secrets are in .env.\n", in.PublicURL, p.Port)
-	buf.WriteString("# Update: change the image tag below, then `docker compose up -d`.\n")
+	buf.WriteString("# Update: Pocket Core → Apps → Install app → Update, or change the image tag below and `docker compose up -d`.\n")
 	buf.WriteString("# Remove: Pocket Core → Apps → this app → Remove (stops it and archives this folder).\n")
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)

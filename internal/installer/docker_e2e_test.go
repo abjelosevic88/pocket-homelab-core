@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -39,12 +40,14 @@ func TestDockerEndToEnd(t *testing.T) {
 
 	// Fake GitHub: one repo whose compose names a container nobody uses.
 	compose := strings.ReplaceAll(string(fixture(t, "habits.yml")), "container_name: pocket-habits", "container_name: "+ctrName)
+	var tag atomic.Value
+	tag.Store("v0.4.5")
 	gh := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/users/"):
 			json.NewEncoder(w).Encode([]repo{{Name: "pocket-homelab-habit-tracker"}})
 		case strings.HasSuffix(r.URL.Path, "/info/refs"):
-			io.WriteString(w, "003faaaa refs/tags/v0.4.5\n0000")
+			io.WriteString(w, "003faaaa refs/tags/"+tag.Load().(string)+"\n0000")
 		case strings.HasSuffix(r.URL.Path, "/docker-compose.yml"):
 			io.WriteString(w, compose)
 		default:
@@ -95,7 +98,8 @@ func TestDockerEndToEnd(t *testing.T) {
 		Protected: []string{"core"}}
 	os.MkdirAll(cfg.AppsDir, 0o755)
 	a := NewAgent(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	a.gh.api, a.gh.git, a.gh.raw = ghURL, ghURL, ghURL
+	g := a.src.(*GitHub)
+	g.api, g.git, g.raw = ghURL, ghURL, ghURL
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -140,6 +144,24 @@ func TestDockerEndToEnd(t *testing.T) {
 	}
 	if code, body := get(); code != 200 || strings.Contains(body, "fallback") {
 		t.Fatalf("through caddy: %d %s", code, body)
+	}
+
+	// Update: a newer tag appears; only the image line changes and the app comes back up.
+	tag.Store("v0.4.6")
+	ju := &Job{}
+	if err := a.update(ctx, ju, UpdateRequest{Slug: "e2e-habits", URL: res.AppURL}); err != nil {
+		t.Fatalf("update: %v\n%s", err, strings.Join(ju.Log, "\n"))
+	}
+	t.Logf("update log:\n%s", strings.Join(ju.Log, "\n"))
+	cf, _ := os.ReadFile(filepath.Join(res.Dir, "docker-compose.yml"))
+	if !strings.Contains(string(cf), "pocket-homelab-habit-tracker:0.4.6") || strings.Contains(string(cf), ":0.4.5") {
+		t.Fatalf("compose after update:\n%s", cf)
+	}
+	if out, _ := exec.Command("docker", "inspect", "-f", "{{.Config.Image}}", ctrName).Output(); !strings.Contains(string(out), ":0.4.6") {
+		t.Fatalf("container runs %s", out)
+	}
+	if err := a.update(ctx, &Job{}, UpdateRequest{Slug: "e2e-habits", URL: res.AppURL}); err == nil || !strings.Contains(err.Error(), "already runs") {
+		t.Fatalf("second update: %v", err)
 	}
 
 	// Remove: containers gone, folder archived, site gone.

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/abjelosevic88/pocket-homelab-core/internal/appstore"
 )
 
 // Release is the newest release of one app repo: what Install would put on
@@ -27,19 +29,59 @@ type Release struct {
 	Container   string `json:"container"`
 	Present     bool   `json:"present"` // a container of that name exists here already
 
+	// From the signed catalog (empty when read straight from GitHub).
+	Name      string            `json:"name,omitempty"`
+	Category  string            `json:"category,omitempty"`
+	Icon      string            `json:"icon,omitempty"`
+	Page      string            `json:"page,omitempty"`
+	Digest    string            `json:"digest,omitempty"`
+	Platforms []string          `json:"platforms,omitempty"`
+	Requires  appstore.Requires `json:"requires"`
+
+	// About this server.
+	Available  bool   `json:"available"`             // the image runs on this machine
+	Running    string `json:"running,omitempty"`     // image tag the container here runs
+	Updatable  bool   `json:"updatable,omitempty"`   // Update can move it to Version
+	UpdateNote string `json:"update_note,omitempty"` // why it can't
+
 	compose    []byte
 	envExample []byte
+}
+
+// ref is the image Install and Update write: the release tag, pinned to
+// its digest when the catalog knows it.
+func (r *Release) ref() string {
+	ref := r.Image + ":" + r.Version
+	if r.Digest != "" {
+		ref += "@" + r.Digest
+	}
+	return ref
+}
+
+func releaseFrom(a *appstore.App) Release {
+	return Release{Slug: a.Slug, Repo: a.Repo, RepoURL: a.RepoURL, Description: a.Description, Version: a.Version, Tag: a.Tag,
+		Image: a.Image, Container: a.Container, Name: a.Name, Category: a.Category, Icon: a.Icon, Page: a.Page,
+		Digest: a.Digest, Platforms: a.Platforms, Requires: a.Requires, Available: true,
+		compose: []byte(a.Compose), envExample: []byte(a.EnvExample)}
+}
+
+// source is where the agent reads releases from: the signed catalog, or
+// GitHub directly (INSTALLER_CATALOG_URL=github).
+type source interface {
+	Catalog(ctx context.Context, refresh bool) ([]Release, error)
+	Find(ctx context.Context, slug string) (*Release, error)
 }
 
 // GitHub reads app releases. The repo list is one API call; tags come from
 // git's smart-HTTP ref advertisement and files from raw.githubusercontent.com,
 // neither of which counts against the API limit.
 type GitHub struct {
-	cfg  *Config
-	http *http.Client
-	api  string // overridable in tests
-	git  string
-	raw  string
+	cfg      *Config
+	http     *http.Client
+	api      string // overridable in tests
+	git      string
+	raw      string
+	registry string
 
 	mu      sync.Mutex
 	cached  []Release
@@ -48,7 +90,7 @@ type GitHub struct {
 
 func NewGitHub(cfg *Config) *GitHub {
 	return &GitHub{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second},
-		api: "https://api.github.com", git: "https://github.com", raw: "https://raw.githubusercontent.com"}
+		api: "https://api.github.com", git: "https://github.com", raw: "https://raw.githubusercontent.com", registry: "https://ghcr.io"}
 }
 
 const catalogTTL = 15 * time.Minute
@@ -172,7 +214,7 @@ func (g *GitHub) release(ctx context.Context, name, desc string) (*Release, erro
 		ctr = "pocket-" + slug
 	}
 	return &Release{Slug: slug, Repo: name, RepoURL: "https://github.com/" + g.cfg.Owner + "/" + name, Description: desc,
-		Version: strings.TrimPrefix(tag, "v"), Tag: tag, Image: image, Container: ctr, compose: compose, envExample: envEx}, nil
+		Version: strings.TrimPrefix(tag, "v"), Tag: tag, Image: image, Container: ctr, Available: true, compose: compose, envExample: envEx}, nil
 }
 
 var tagRe = regexp.MustCompile(`refs/tags/(v(\d+)\.(\d+)\.(\d+))[\n\x00^]`)

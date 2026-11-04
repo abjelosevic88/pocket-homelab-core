@@ -27,7 +27,7 @@ export default function Apps() {
         {status?.installer && <button type="button" className="btn primary" onClick={() => setInstalling(true)}><Icon name="download" size={15} />Install app</button>}
       </>} />
       {installing && <InstallModal onClose={() => setInstalling(false)} onInstalled={reload} />}
-      {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">{status?.installer ? <>Press <b>Install app</b> to add one from GitHub, or give</> : 'Give'} each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
+      {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">{status?.installer ? <>Press <b>Install app</b> to add one from the app catalog, or give</> : 'Give'} each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
         <div className="app-summary">
           <span className="pill">{apps.length} apps</span>
           <span className="pill ok">{up} up</span>

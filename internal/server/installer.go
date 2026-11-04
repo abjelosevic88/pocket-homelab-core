@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +29,7 @@ import (
 type installJob struct {
 	mu      sync.Mutex
 	ID      string            `json:"id"`
-	Kind    string            `json:"kind"`
+	Kind    string            `json:"kind"` // install | update | uninstall
 	Slug    string            `json:"slug"`
 	Name    string            `json:"name"`
 	State   string            `json:"state"` // running | done | failed
@@ -92,9 +93,16 @@ func (s *Server) installerOff(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func appName(slug string) string {
+// appName prefers Core's own catalog, then the app catalog's name (apps
+// released after this Core was built are only in the latter).
+func appName(slug string, fallback ...string) string {
 	if e, ok := catalog.Get(slug); ok && e.Name != "" {
 		return e.Name
+	}
+	for _, f := range fallback {
+		if f != "" {
+			return f
+		}
 	}
 	return "Pocket " + slug
 }
@@ -108,8 +116,8 @@ func (s *Server) installerErr(w http.ResponseWriter, err error) {
 	writeErr(w, http.StatusBadGateway, err.Error())
 }
 
-// handleInstallerCatalog lists the apps released on GitHub with whether each
-// is already registered here.
+// handleInstallerCatalog lists the released apps with whether each is
+// already registered here and whether Update can move it to the newest.
 func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) {
 	if s.installerOff(w, r) {
 		return
@@ -132,8 +140,11 @@ func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) 
 	}
 	out := make([]map[string]any, 0, len(rels))
 	for _, rel := range rels {
-		item := map[string]any{"slug": rel.Slug, "name": appName(rel.Slug), "description": rel.Description, "repo": rel.Repo,
-			"repo_url": rel.RepoURL, "version": rel.Version, "tag": rel.Tag, "container": rel.Container, "present": rel.Present}
+		item := map[string]any{"slug": rel.Slug, "name": appName(rel.Slug, rel.Name), "description": rel.Description, "repo": rel.Repo,
+			"repo_url": rel.RepoURL, "version": rel.Version, "tag": rel.Tag, "container": rel.Container, "present": rel.Present,
+			"category": rel.Category, "icon": rel.Icon, "page": rel.Page, "digest": rel.Digest, "platforms": rel.Platforms,
+			"requires": rel.Requires, "available": rel.Available, "running": rel.Running, "updatable": rel.Updatable,
+			"update_note": rel.UpdateNote}
 		if a := have[rel.Slug]; a != nil {
 			item["installed"], item["name"], item["installed_version"] = true, a.Name, a.Version
 		}
@@ -157,6 +168,7 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var in struct {
 		Slug string `json:"slug"`
+		Name string `json:"name"` // the catalog's, for apps this Core does not know yet
 	}
 	if err := decode(r, &in); err != nil || !slugRe.MatchString(in.Slug) {
 		writeErr(w, http.StatusBadRequest, "slug is required")
@@ -184,7 +196,7 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	name := appName(in.Slug)
+	name := appName(in.Slug, in.Name)
 	aj, err := s.inst.Install(ctx, installer.InstallRequest{Slug: in.Slug, Name: name, RegistrationKey: st.RegistrationKey,
 		AdminEmail: u.Email, AdminName: u.Name, Reserved: reserved})
 	if err != nil {
@@ -194,6 +206,38 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	j := &installJob{ID: aj.ID, Kind: "install", Slug: in.Slug, Name: name, State: "running", Started: time.Now().UTC()}
 	s.installs.Store(j.ID, j)
 	s.log.Info("app install started", "slug", in.Slug, "by", u.Email)
+	go s.followInstall(j)
+	writeJSON(w, http.StatusAccepted, j.snapshot())
+}
+
+// handleUpgradeApp moves an installed app to the catalog's newest release.
+func (s *Server) handleUpgradeApp(w http.ResponseWriter, r *http.Request) {
+	if s.installerOff(w, r) {
+		return
+	}
+	ctx := r.Context()
+	a, err := s.store.GetAppBySlug(ctx, chi.URLParam(r, "slug"))
+	if err != nil {
+		s.fail(w, err, "get app")
+		return
+	}
+	if a.Slug == "core" {
+		writeErr(w, http.StatusForbidden, "Pocket Core is updated on its own")
+		return
+	}
+	// The restart is on purpose: no "app down" event meanwhile.
+	s.removing.Store(a.Slug, true)
+	aj, err := s.inst.Update(ctx, installer.UpdateRequest{Slug: a.Slug, URL: a.URL})
+	if err != nil {
+		s.removing.Delete(a.Slug)
+		s.installerErr(w, err)
+		return
+	}
+	j := &installJob{ID: aj.ID, Kind: "update", Slug: a.Slug, Name: a.Name, State: "running", Started: time.Now().UTC()}
+	s.installs.Store(j.ID, j)
+	if u := userFrom(ctx); u != nil {
+		s.log.Info("app update started", "slug", a.Slug, "by", u.Email)
+	}
 	go s.followInstall(j)
 	writeJSON(w, http.StatusAccepted, j.snapshot())
 }
@@ -243,7 +287,7 @@ func (s *Server) followInstall(j *installJob) {
 	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
 	defer cancel()
 	defer s.pruneInstallJobs()
-	if j.Kind == "uninstall" {
+	if j.Kind == "uninstall" || j.Kind == "update" {
 		defer s.removing.Delete(j.Slug)
 	}
 	var aj *installer.Job
@@ -276,11 +320,14 @@ func (s *Server) followInstall(j *installJob) {
 		j.finish("failed", aj.Error)
 		return
 	}
-	if j.Kind == "uninstall" {
+	switch j.Kind {
+	case "uninstall":
 		s.unregister(ctx, j)
-		return
+	case "update":
+		s.awaitVersion(ctx, j, aj.Result)
+	default:
+		s.awaitRegistration(ctx, j)
 	}
-	s.awaitRegistration(ctx, j)
 }
 
 // awaitRegistration waits for the new app's first start: registering creates
@@ -324,6 +371,46 @@ func (s *Server) awaitRegistration(ctx context.Context, j *installJob) {
 	}
 	j.mu.Unlock()
 	j.finish("done", "")
+}
+
+// awaitVersion waits for the updated app to register again with its new
+// version (apps re-register on every start).
+func (s *Server) awaitVersion(ctx context.Context, j *installJob, res *installer.Result) {
+	want := ""
+	if res != nil {
+		want = strings.TrimPrefix(res.Version, "v")
+	}
+	j.logf("Waiting for the app to report %s to Pocket Core", formatVer(want))
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		if a, err := s.store.GetAppBySlug(ctx, j.Slug); err == nil && (want == "" || strings.TrimPrefix(a.Version, "v") == want) {
+			s.checkApp(ctx, a)
+			j.logf("%s runs %s", a.Name, formatVer(a.Version))
+			j.mu.Lock()
+			j.OpenURL = signedInURL(s.signInStarts(ctx), a.ID, a.EffectivePublicURL())
+			j.mu.Unlock()
+			j.finish("done", "")
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+	j.mu.Lock()
+	if j.Result != nil {
+		j.Result.Warnings = append(j.Result.Warnings, "The new version runs but has not reported to Pocket Core yet. Check its log: docker logs "+j.Result.Container)
+	}
+	j.mu.Unlock()
+	j.finish("done", "")
+}
+
+func formatVer(v string) string {
+	if v == "" {
+		return "its new version"
+	}
+	return "v" + strings.TrimPrefix(v, "v")
 }
 
 func (s *Server) unregister(ctx context.Context, j *installJob) {

@@ -12,8 +12,9 @@ import (
 )
 
 // runInstaller starts the installer agent: the host-side helper behind the
-// Install and Remove buttons. It runs on the host (not in Core's container)
-// as the user who owns the app folders, with access to Docker.
+// Install, Update and Remove buttons. It runs on the host as the user who
+// owns the app folders, with access to Docker — or in its own container
+// (the pocket-homelab-core-installer image) with the Docker socket.
 func runInstaller(args []string) {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
 		fmt.Println(`pocket-core installer — install and remove Pocket apps for Core (see docs/installer.md)
@@ -21,9 +22,14 @@ func runInstaller(args []string) {
 Runs on the Docker host, answers Core on INSTALLER_SOCKET. Settings (environment):
   INSTALLER_SOCKET         unix socket, mounted into Core's container (required)
   INSTALLER_TOKEN[_FILE]   shared secret Core sends, 24+ characters (required)
-  INSTALLER_PUBLIC_URL     address of a new app, e.g. https://{slug}.example.com (required)
+  INSTALLER_PUBLIC_URL     address of a new app: https://{slug}.example.com, or
+                           http://192.168.1.20:{port} without a domain (required)
+  INSTALLER_CATALOG_URL    signed app catalog(s), comma separated (the official one);
+                           "github" = read the repos straight from GitHub instead
+  INSTALLER_CATALOG_KEYS   extra trusted catalog keys, <id>:<base64>, comma separated
   INSTALLER_GITHUB_OWNER   GitHub account apps are released from (abjelosevic88)
   INSTALLER_REPO_PREFIX    only repos starting with this (pocket-homelab-)
+  INSTALLER_DOCKER_GID     the docker group's id, when the agent runs in a container
   INSTALLER_APPS_DIR       app folders go here as pocket-<slug> ($HOME)
   INSTALLER_ARCHIVE_DIR    removed apps' folders go here ($APPS_DIR/pocket-archive)
   INSTALLER_CORE_URL       Core as app containers reach it (http://host.docker.internal:8179)
