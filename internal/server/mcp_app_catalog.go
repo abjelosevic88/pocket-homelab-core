@@ -64,7 +64,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "renewals_renew": true,
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "renewals_renew": true, "wealth_update_value": true,
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
@@ -313,6 +313,25 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("renewals", "add", "Add something that runs out (a passport, an insurance policy, a warranty, a domain, a subscription). The usual term and reminders follow from the kind.", "POST", "/renewals", renewal(), "title")
 	write("renewals", "update", "Update supplied fields of a renewal this assistant added, or archive it.", "PUT", "/renewals/{id}", renewal().booleans("archived"), "")
 	write("renewals", "renew", "Mark a renewal renewed: the new end date (default one usual term on), what it cost and a note. Optionally books the cost in Pocket Money.", "POST", "/renewals/{id}/renew", textFields("renewed_on expires_on note number issued_on").integers("cost").booleans("money"), "")
+
+	// Pocket Wealth: everything owned and owed, net worth over time, investments, debts, the plan. Money is in minor units of the currency it is in.
+	read("wealth", "summary", "Get net worth in one call: what you own and owe, cash at hand, the change this month and this year, the groups (cash, investments, pension, property, vehicles, valuables, debts) and what needs an update or matures soon, in the person's currency. Linked Pocket Money balances are included once: never add Wealth and Money totals together.", "/summary", "")
+	read("wealth", "history", "Get net worth at each month end (months back, default 24) with what was owned and owed.", "/history", "months")
+	read("wealth", "assets", "List assets and debts with their value (whole and the person's share, own currency and the base currency), the change this month, when it was last updated, the gain, and whether it is linked to another app. group: cash, investments, pension, property, vehicles, valuables, other, debts.", "/assets", "q group closed")
+	read("wealth", "get", "Read one asset or debt: its values over time, holdings, activity, statements kept with it and, for a debt, when it is paid off.", "/assets/{id}", "")
+	read("wealth", "positions", "List investment holdings (funds, shares, bonds, coins) with units, price, value, cost and gain, the mix by kind and income from dividends and interest in the last 12 months.", "/positions", "")
+	read("wealth", "activity", "List buys, sells, dividends, interest, deposits and withdrawals, newest first.", "/activity", "asset kind from to limit")
+	read("wealth", "debts", "List debts with what is owed, the rate, the monthly payment and when each is paid off (with extra = minor units more a month: how much sooner and the interest saved).", "/debts", "extra")
+	read("wealth", "plan", "Get the projection: net worth year by year at the current saving and expected growth, the financial independence number, when it is reached (and at what age), what it would pay a month, how long cash at hand lasts, and the milestones.", "/plan", "")
+	read("wealth", "search", "Search assets, debts and holdings by name, bank, symbol or notes.", "/search", "q")
+	read("wealth", "maturing", "List deposits that mature, fixed rates that end and money due back, with the date and days left.", "/maturing", "days")
+	write("wealth", "add", "Add something owned or owed (a savings account, a pension, a flat, a car, a loan) with its current value. kind decides the group; value is minor units of currency; debts are what is still owed.", "POST", "/assets",
+		textFields("name currency institution number notes matures_on bought_on date").integers("value payment bought_price invested").numbers("rate share growth").booleans("include").
+			enum("kind", "cash", "savings", "deposit", "investment", "pension", "crypto", "property", "vehicle", "valuables", "business", "receivable", "other", "mortgage", "loan", "credit_card", "debt").
+			enum("value_mode", "manual", "positions", "estimate"), "name kind")
+	write("wealth", "update_value", "Type in what an asset is worth (or a debt still owes) on a day, from a statement: the whole of it in minor units of its currency; a second value the same day replaces the first.", "POST", "/assets/{id}/valuations", textFields("date note").integers("value"), "value")
+	write("wealth", "record", "Record a buy, sell, dividend, interest, deposit, withdrawal or fee on an asset. A buy or sell needs position_id and units and updates that holding; a deposit or withdrawal updates what was put in. amount is minor units, always positive.", "POST", "/activity",
+		textFields("date note currency").integers("asset_id position_id amount").numbers("units").enum("kind", "buy", "sell", "dividend", "interest", "deposit", "withdrawal", "fee"), "asset_id kind amount")
 
 	read("money", "accounts", "List financial accounts available to you.", "/accounts", "")
 	read("money", "categories", "List transaction categories.", "/categories", "")

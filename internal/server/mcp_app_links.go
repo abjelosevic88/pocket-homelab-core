@@ -48,6 +48,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"home/meters": {"/meters", "/meters/{id}"}, "home/pros": {"/pros", "/pros/{id}"}, "home/search": {"/", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
+	"wealth/summary": {"/", ""}, "wealth/history": {"/", ""}, "wealth/assets": {"/assets", "/a/{id}"}, "wealth/positions": {"/investments", ""},
+	"wealth/activity": {"/investments", ""}, "wealth/debts": {"/debts", "/a/{id}"}, "wealth/plan": {"/plan", ""}, "wealth/search": {"/assets", "/a/{id}"},
+	"wealth/maturing": {"/", ""}, "wealth/valuations": {"/assets", ""},
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
@@ -166,6 +169,30 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 		if r, ok := data["renewal"].(map[string]any); ok {
 			itemLink(r, "id", "/r/{id}")
+		}
+	}
+	// Pocket Wealth: assets, debts and what needs a look link to the asset; holdings and activity to theirs.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "wealth" {
+		for _, key := range []string{"assets", "debts", "stale", "maturing", "linked_errors", "items"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/a/{id}")
+					}
+				}
+			}
+		}
+		for _, key := range []string{"positions", "activity"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "asset_id", "/a/{id}")
+					}
+				}
+			}
+		}
+		if r, ok := data["asset"].(map[string]any); ok {
+			itemLink(r, "id", "/a/{id}")
 		}
 	}
 	if data, ok := envelope["result"].(map[string]any); ok && op.App == "home" && (op.Path == "/overview" || op.Path == "/due" || op.Path == "/search") {
