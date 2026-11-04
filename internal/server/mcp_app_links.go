@@ -46,6 +46,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"home/overview": {"/", ""}, "home/due": {"/upkeep", ""}, "home/homes": {"/homes", "/homes/{id}"}, "home/things": {"/things", "/things/{id}"},
 	"home/jobs": {"/upkeep", "/upkeep/{id}"}, "home/records": {"/log", "/log/{id}"}, "home/spending": {"/log", ""},
 	"home/meters": {"/meters", "/meters/{id}"}, "home/pros": {"/pros", "/pros/{id}"}, "home/search": {"/", ""},
+	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
+	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
@@ -142,6 +144,30 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 	}
 	// Pocket Home's overview, due list and search mix record kinds: each list has its own page.
+	// Pocket Renewals: every list in the overview and the due list holds renewals; history rows point at theirs.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "renewals" {
+		for _, key := range []string{"expired", "soon", "check", "later", "renewals", "history"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/r/{id}")
+					}
+				}
+			}
+		}
+		for _, key := range []string{"recent", "travel"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "renewal_id", "/r/{id}")
+					}
+				}
+			}
+		}
+		if r, ok := data["renewal"].(map[string]any); ok {
+			itemLink(r, "id", "/r/{id}")
+		}
+	}
 	if data, ok := envelope["result"].(map[string]any); ok && op.App == "home" && (op.Path == "/overview" || op.Path == "/due" || op.Path == "/search") {
 		routes := map[string]string{"attention": "/upkeep/{id}", "upcoming": "/upkeep/{id}", "overdue": "/upkeep/{id}", "due": "/upkeep/{id}", "soon": "/upkeep/{id}",
 			"recent": "/log/{id}", "jobs": "/upkeep/{id}", "records": "/log/{id}", "things": "/things/{id}", "homes": "/homes/{id}", "pros": "/pros/{id}", "meters": "/meters/{id}"}

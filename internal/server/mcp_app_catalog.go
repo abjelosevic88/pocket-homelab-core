@@ -64,7 +64,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true,
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "renewals_renew": true,
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
@@ -292,6 +292,27 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	}
 	write("home", "add_thing", "Add an appliance or part of the house to a home.", "POST", "/things", homeThing(), "name")
 	write("home", "update_thing", "Update supplied appliance fields.", "PUT", "/things/{id}", homeThing().booleans("archived"), "")
+
+	// Pocket Renewals: what runs out (passports, insurance, warranties, domains, subscriptions) and when. Costs are minor units.
+	read("renewals", "summary", "Get the renewals overview in one call: counts (expired, coming up, found automatically and waiting for a check), what has expired, what is coming up, what was found in other apps, trips a passport does not cover, recent renewals and the yearly cost. Renewal costs can overlap Money: confirmed bookings carry money_tx_id in history; never add Renewals and Money totals without verifying it.", "/overview", "")
+	read("renewals", "due", "List what runs out within the next days (default 30) and what has already run out, soonest first, each with status and days_left.", "/due", "days")
+	read("renewals", "list", "List renewals (passports, ID cards, insurance, vehicle registration, warranties, domains, certificates, subscriptions, contracts), soonest first. status: expired, soon, ok, undated, archived or check (found automatically). group: identity, insurance, vehicle, warranty, online, subscription, contract, health, other.", "/renewals", "q kind group holder status source before after archived")
+	read("renewals", "get", "Read one renewal: dates, reminders, the suggested next end date, its renewal history and travel warnings.", "/renewals/{id}", "")
+	read("renewals", "history", "Read renewals done, newest first, with the old and new date and what each cost (minor units).", "/history", "renewal_id limit")
+	read("renewals", "search", "Search renewals by name, whose, provider, number or notes.", "/search", "q")
+	read("renewals", "travel", "Check coming trips in Pocket Travel against passports, ID cards and visas: which run out before or soon after a trip.", "/travel", "")
+	renewal := func() mcpFields {
+		f := textFields("title holder provider number issued_on expires_on remind_days currency renew_url notes").integers("renew_n lead_days cost").booleans("auto_renews").
+			enum("kind", "passport", "id_card", "driving_licence", "visa", "insurance", "vehicle", "warranty", "domain", "certificate", "subscription", "membership", "contract", "health", "licence", "other").
+			enum("renew_unit", "day", "week", "month", "year")
+		f["expires_on"].(map[string]any)["description"] = "The day it runs out, YYYY-MM-DD; leave empty when unknown."
+		f["cost"].(map[string]any)["description"] = "What a renewal costs, minor units (5500 = 55.00)."
+		f["remind_days"].(map[string]any)["description"] = "Days before the date to remind, e.g. \"90,30,7\"; empty = the kind's usual reminders."
+		return f
+	}
+	write("renewals", "add", "Add something that runs out (a passport, an insurance policy, a warranty, a domain, a subscription). The usual term and reminders follow from the kind.", "POST", "/renewals", renewal(), "title")
+	write("renewals", "update", "Update supplied fields of a renewal this assistant added, or archive it.", "PUT", "/renewals/{id}", renewal().booleans("archived"), "")
+	write("renewals", "renew", "Mark a renewal renewed: the new end date (default one usual term on), what it cost and a note. Optionally books the cost in Pocket Money.", "POST", "/renewals/{id}/renew", textFields("renewed_on expires_on note number issued_on").integers("cost").booleans("money"), "")
 
 	read("money", "accounts", "List financial accounts available to you.", "/accounts", "")
 	read("money", "categories", "List transaction categories.", "/categories", "")
