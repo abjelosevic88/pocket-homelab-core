@@ -167,7 +167,7 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	var in struct {
-		Slug string `json:"slug"`
+		Slug        string `json:"slug"`
 		Name        string `json:"name"`         // the catalog's, for apps this Core does not know yet
 		RestoreFrom string `json:"restore_from"` // an archived folder whose data the install takes over
 	}
