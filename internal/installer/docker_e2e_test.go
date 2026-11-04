@@ -146,8 +146,32 @@ func TestDockerEndToEnd(t *testing.T) {
 		t.Fatalf("through caddy: %d %s", code, body)
 	}
 
-	// Update: a newer tag appears; only the image line changes and the app comes back up.
+	// A newer tag appears. First an update that fails its health check (wrong
+	// port): the data from before and the old version must come back.
 	tag.Store("v0.4.6")
+	os.WriteFile(filepath.Join(res.Dir, "data", "marker"), []byte("before"), 0o644)
+	a.healthWait = 6 * time.Second
+	jf := &Job{}
+	if err := a.update(ctx, jf, UpdateRequest{Slug: "e2e-habits", URL: "http://host.docker.internal:1"}); err == nil {
+		t.Fatal("update with a dead health check must fail")
+	}
+	a.healthWait = 3 * time.Minute
+	t.Logf("failed update log:\n%s", strings.Join(jf.Log, "\n"))
+	if cf, _ := os.ReadFile(filepath.Join(res.Dir, "docker-compose.yml")); !strings.Contains(string(cf), ":0.4.5") {
+		t.Fatalf("compose not restored:\n%s", cf)
+	}
+	if out, _ := exec.Command("docker", "inspect", "-f", "{{.Config.Image}} {{.State.Running}}", ctrName).Output(); !strings.Contains(string(out), ":0.4.5 true") {
+		t.Fatalf("after rollback the container runs %s", out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(res.Dir, "data", "marker")); string(b) != "before" {
+		t.Fatal("data not restored")
+	}
+	fails, _ := filepath.Glob(filepath.Join(cfg.ArchiveDir, "updates", ctrName, "*-0.4.5-0.4.6-failed", "data"))
+	if len(fails) != 1 {
+		t.Fatal("what the failed version left should be kept aside")
+	}
+
+	// Then the real update: data backed up, only the image line changes, the app comes back up.
 	ju := &Job{}
 	if err := a.update(ctx, ju, UpdateRequest{Slug: "e2e-habits", URL: res.AppURL}); err != nil {
 		t.Fatalf("update: %v\n%s", err, strings.Join(ju.Log, "\n"))
@@ -159,6 +183,10 @@ func TestDockerEndToEnd(t *testing.T) {
 	}
 	if out, _ := exec.Command("docker", "inspect", "-f", "{{.Config.Image}}", ctrName).Output(); !strings.Contains(string(out), ":0.4.6") {
 		t.Fatalf("container runs %s", out)
+	}
+	dbs, _ := filepath.Glob(filepath.Join(cfg.ArchiveDir, "updates", ctrName, "*-0.4.5", "data", "pocket-habits.db"))
+	if len(dbs) != 2 {
+		t.Fatalf("expected the database in both backups, got %v", dbs)
 	}
 	if err := a.update(ctx, &Job{}, UpdateRequest{Slug: "e2e-habits", URL: res.AppURL}); err == nil || !strings.Contains(err.Error(), "already runs") {
 		t.Fatalf("second update: %v", err)

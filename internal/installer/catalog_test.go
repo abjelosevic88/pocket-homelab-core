@@ -188,3 +188,63 @@ func TestCheckAndRewriteUpdate(t *testing.T) {
 		t.Fatal("semverLess")
 	}
 }
+
+func TestDataBackupRestore(t *testing.T) {
+	wd := t.TempDir()
+	os.WriteFile(filepath.Join(wd, "docker-compose.yml"), []byte("services:\n  app:\n    image: x\n    volumes:\n      - ./data:/data\n      - ./data/cache:/cache\n      - ${MEDIA:-/srv}:/media\n      - dbdata:/db\n      - /var/run/docker.sock:/var/run/docker.sock\n  side:\n    image: y\n    volumes:\n      - ./config:/config:ro\n      - ./missing:/m\n"), 0o644)
+	os.MkdirAll(filepath.Join(wd, "data/cache"), 0o755)
+	os.MkdirAll(filepath.Join(wd, "config"), 0o755)
+	os.WriteFile(filepath.Join(wd, "data/app.db"), []byte("v1"), 0o600)
+	os.Symlink("app.db", filepath.Join(wd, "data/link"))
+	os.WriteFile(filepath.Join(wd, "config/c.yml"), []byte("c"), 0o644)
+
+	dirs, notes := dataDirs([]string{filepath.Join(wd, "docker-compose.yml")}, wd)
+	if strings.Join(dirs, ",") != "config,data" || len(notes) != 1 || !strings.Contains(notes[0], "dbdata") {
+		t.Fatalf("dirs %v notes %v", dirs, notes)
+	}
+	backup := filepath.Join(t.TempDir(), "b")
+	os.Mkdir(backup, 0o755)
+	if err := backupData(wd, dirs, backup); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(filepath.Join(backup, "data/app.db")); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("backup copy: %v", err)
+	}
+	if l, _ := os.Readlink(filepath.Join(backup, "data/link")); l != "app.db" {
+		t.Fatal("symlink not kept")
+	}
+
+	// The new version "migrates" the database, then fails.
+	os.WriteFile(filepath.Join(wd, "data/app.db"), []byte("v2-migrated"), 0o600)
+	os.WriteFile(filepath.Join(wd, "data/new.wal"), []byte("x"), 0o600)
+	failed := backup + "-failed"
+	if err := restoreData(wd, dirs, backup, failed); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(wd, "data/app.db")); string(b) != "v1" {
+		t.Fatalf("restored db = %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(wd, "data/new.wal")); err == nil {
+		t.Fatal("the failed version's files must not stay in the restored folder")
+	}
+	if b, _ := os.ReadFile(filepath.Join(failed, "data/app.db")); string(b) != "v2-migrated" {
+		t.Fatal("what the failed version left must be kept aside")
+	}
+	if b, _ := os.ReadFile(filepath.Join(backup, "data/app.db")); string(b) != "v1" {
+		t.Fatal("the backup itself must stay")
+	}
+
+	parent := t.TempDir()
+	for _, n := range []string{"20260101-000000-0.1.0", "20260102-000000-0.1.1", "20260103-000000-0.1.2", "20260103-000000-0.1.2-0.1.3-failed", "20260104-000000-0.1.3"} {
+		os.Mkdir(filepath.Join(parent, n), 0o755)
+	}
+	pruneBackups(parent, 3)
+	es, _ := os.ReadDir(parent)
+	var left []string
+	for _, e := range es {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, ",") != "20260102-000000-0.1.1,20260103-000000-0.1.2,20260103-000000-0.1.2-0.1.3-failed,20260104-000000-0.1.3" {
+		t.Fatalf("pruned to %v", left)
+	}
+}

@@ -86,10 +86,18 @@ The list marks installed apps whose registered version is older than the catalog
    release image;
 2. refuses apps that follow a moving tag (`latest`, `edge` — something else keeps those current),
    are built from source on this server (`build:`), or run the image more than once;
-3. rewrites **only that line** to `:<new version>@<digest>` (comments and everything else stay; a
-   backup `docker-compose.yml.bak-update-<time>` is kept), pulls, `up -d`, and waits for `/healthz`;
-4. if the new version does not come up, puts the old line back and starts the old image again;
-5. Core waits for the app to register with its new version (health checks are paused meanwhile).
+3. downloads the new image while the old version still runs;
+4. **backs up the data**: stops the app and copies its data folders (the stack's relative bind
+   mounts, e.g. `./data`) to `INSTALLER_ARCHIVE_DIR/updates/<container>/<time>-<old version>/`,
+   with the compose file. Host folders mounted by absolute path (media, documents) are not copied;
+   named volumes are reported, not copied. It refuses to start without room for the copy. The
+   newest 3 backups per app are kept;
+5. rewrites **only the image line** to `:<new version>@<digest>` (comments and everything else
+   stay) and starts the app; the new version migrates its database on start;
+6. waits for `/healthz`. If the new version does not come up, it stops it, moves the data it left
+   to `…-<new version>-failed` (kept for reading), copies the backup back, restores the old line
+   and starts the old version, so the old version never meets a database it doesn't know;
+7. Core waits for the app to register with its new version (health checks are paused meanwhile).
 
 ## What Remove does
 

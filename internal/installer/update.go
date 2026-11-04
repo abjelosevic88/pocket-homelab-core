@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -15,11 +17,12 @@ import (
 	"github.com/abjelosevic88/pocket-homelab-core/internal/appstore"
 )
 
-// Update moves an installed app to the catalog's newest release: it edits
-// only the image line of the app's compose file (everything else, comments
-// included, stays), pulls, restarts, and waits for /healthz. If the new
-// version does not come up, the old line goes back and the old image runs
-// again. Apps that follow a moving tag (latest, edge) or are built from
+// Update moves an installed app to the catalog's newest release: it pulls
+// the new image, stops the app and backs up its data folders (see
+// databackup.go), edits only the image line of the compose file (everything
+// else, comments included, stays), starts it and waits for /healthz. If the
+// new version does not come up, the data from before and the old line go
+// back and the old image runs again. Apps that follow a moving tag (latest, edge) or are built from
 // source on this server are left alone.
 
 func supports(platforms []string) bool {
@@ -154,30 +157,79 @@ func (a *Agent) update(ctx context.Context, j *Job, req UpdateRequest) error {
 		m := re.FindStringSubmatch(line)
 		return m[1] + rel.ref() + m[3] + m[4]
 	})
-	backup := fmt.Sprintf("%s.bak-update-%s", chk.file, time.Now().Format("20060102-150405"))
-	if err := os.WriteFile(backup, old, fi.Mode().Perm()); err != nil {
+	args := loc.composeArgs()
+
+	// Download first, while the old version still runs.
+	a.logf(j, "Downloading %s", rel.ref())
+	if _, err := a.dk.run(ctx, "", "pull", "--quiet", rel.ref()); err != nil {
+		return err
+	}
+
+	// Back up the data with the app stopped (SQLite must not be copied live).
+	dirs, notes := dataDirs(loc.files, loc.wd)
+	for _, n := range notes {
+		res.Warnings = append(res.Warnings, "Backup: "+n+".")
+	}
+	var size int64
+	for _, d := range dirs {
+		size += treeSize(filepath.Join(loc.wd, d))
+	}
+	appBackups := filepath.Join(a.cfg.ArchiveDir, "updates", loc.c.Name)
+	if err := os.MkdirAll(appBackups, 0o755); err != nil {
+		return err
+	}
+	a.cfg.FilesOwner.chown(filepath.Join(a.cfg.ArchiveDir, "updates"))
+	a.cfg.FilesOwner.chown(appBackups)
+	if free, err := freeBytes(appBackups); err == nil && free < size+size/10+64<<20 {
+		return fmt.Errorf("not enough disk space to back up %s first (%s needed, %s free)", loc.c.Name, humanBytes(size), humanBytes(free))
+	}
+	stamp := time.Now().Format("20060102-150405")
+	backup := filepath.Join(appBackups, stamp+"-"+chk.current)
+	if err := os.Mkdir(backup, 0o755); err != nil {
 		return err
 	}
 	a.cfg.FilesOwner.chown(backup)
-	if err := os.WriteFile(chk.file, []byte(next), fi.Mode().Perm()); err != nil {
+	a.logf(j, "Stopping %s to back up its data", loc.c.Name)
+	if _, err := a.dk.run(ctx, loc.wd, append(args, "stop")...); err != nil {
 		return err
 	}
-	a.logf(j, "Compose file backup: %s", backup)
-	args := loc.composeArgs()
+	if err := backupData(loc.wd, dirs, backup); err != nil {
+		_, _ = a.dk.run(context.WithoutCancel(ctx), loc.wd, append(args, "up", "-d")...)
+		return fmt.Errorf("backup failed, %s is unchanged and running again: %w", loc.c.Name, err)
+	}
+	if err := os.WriteFile(filepath.Join(backup, filepath.Base(chk.file)), old, fi.Mode().Perm()); err != nil {
+		_, _ = a.dk.run(context.WithoutCancel(ctx), loc.wd, append(args, "up", "-d")...)
+		return err
+	}
+	a.cfg.FilesOwner.chown(filepath.Join(backup, filepath.Base(chk.file)))
+	if len(dirs) == 0 {
+		a.logf(j, "No data folders to back up; kept the compose file in %s", backup)
+	} else {
+		a.logf(j, "Backed up %s (%s) to %s", strings.Join(dirs, ", "), humanBytes(size), backup)
+	}
+
 	restore := func(cause error) error {
-		a.logf(j, "Update failed; going back to %s", chk.current)
+		a.logf(j, "Update failed; going back to %s with the data from before", chk.current)
 		ctx := context.WithoutCancel(ctx)
+		_, _ = a.dk.run(ctx, loc.wd, append(args, "stop")...)
 		_ = os.WriteFile(chk.file, old, fi.Mode().Perm())
+		failed := backup + "-" + rel.Version + "-failed"
+		if err := restoreData(loc.wd, dirs, backup, failed); err != nil {
+			return fmt.Errorf("%w; restoring the data failed too, nothing was started (backup: %s): %v", cause, backup, err)
+		}
+		a.cfg.FilesOwner.chown(failed)
+		if len(dirs) > 0 {
+			a.logf(j, "Data restored; what %s left is in %s", rel.Version, failed)
+		}
 		if _, err := a.dk.run(ctx, loc.wd, append(args, "up", "-d")...); err != nil {
 			return fmt.Errorf("%w; starting the old version failed too: %v", cause, err)
 		}
 		return cause
 	}
-	a.logf(j, "Downloading %s", rel.ref())
-	if _, err := a.dk.run(ctx, loc.wd, append(args, "pull", "--quiet")...); err != nil {
+	if err := os.WriteFile(chk.file, []byte(next), fi.Mode().Perm()); err != nil {
 		return restore(err)
 	}
-	a.logf(j, "Restarting %s", loc.c.Name)
+	a.logf(j, "Starting %s %s", loc.c.Name, rel.Version)
 	if _, err := a.dk.run(ctx, loc.wd, append(args, "up", "-d")...); err != nil {
 		return restore(err)
 	}
@@ -186,6 +238,7 @@ func (a *Agent) update(ctx context.Context, j *Job, req UpdateRequest) error {
 			return restore(err)
 		}
 	}
+	pruneBackups(appBackups, keepUpdateBackups)
 	a.logf(j, "%s %s is up", loc.c.Name, rel.Version)
 	return nil
 }
