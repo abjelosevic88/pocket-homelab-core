@@ -114,6 +114,25 @@ func TestPlanDefaultedBindDirs(t *testing.T) {
 	if strings.Join(p.Dirs, ",") != strings.Join(want, ",") {
 		t.Fatalf("dirs = %v, want %v (Docker would make the defaulted ones as root)", p.Dirs, want)
 	}
+	if strings.Contains(string(p.envFile()), "COMPOSE_PROFILES") {
+		t.Fatal("the sample .env sets no profiles here")
+	}
+}
+
+func TestPlanComposeProfiles(t *testing.T) {
+	// the sample .env switches the bundled Jellyfin on: an install gets it too
+	rel := &Release{Slug: "watch", Repo: "pocket-homelab-watch", RepoURL: "https://github.com/abjelosevic88/pocket-homelab-watch", Version: "1.2.3", Tag: "v1.2.3",
+		Image: "ghcr.io/abjelosevic88/pocket-homelab-watch", Container: "pocket-watch", compose: fixture(t, "watch.yml"),
+		envExample: []byte("TZ=Europe/Berlin\n# MOVIES_DIR=/srv/media/movies\nCOMPOSE_PROFILES=jellyfin\n")}
+	p, err := BuildPlan(PlanInput{Release: rel, PublicURL: "https://watch.example.org", CoreURL: "http://host.docker.internal:8179",
+		AdminEmail: "me@example.org", TZ: "Europe/Sarajevo", NextPort: ports(8300), Now: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envf := string(p.envFile())
+	if !strings.Contains(envf, "\nCOMPOSE_PROFILES=jellyfin\n") || strings.Contains(envf, "MOVIES_DIR") {
+		t.Fatalf(".env:\n%s", envf)
+	}
 }
 
 func TestPlanTwoPorts(t *testing.T) {

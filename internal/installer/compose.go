@@ -227,6 +227,11 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 			p.Env = append(p.Env, envVar{v, in.DockerGID})
 		case v == "TZ":
 			p.Env = append(p.Env, envVar{v, in.TZ})
+		case v == "COMPOSE_PROFILES":
+			// the stack's optional parts that are on by default (Pocket Watch's own Jellyfin)
+			if val := envExampleValue(rel.envExample, v); val != "" {
+				p.Env = append(p.Env, envVar{v, val})
+			}
 		case looksSecret(v):
 			p.Env = append(p.Env, envVar{v, randHex(24)})
 		default:
@@ -268,6 +273,18 @@ func composeVars(compose, envExample []byte) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// envExampleValue is the value the sample .env gives key ("" when it doesn't).
+func envExampleValue(envExample []byte, key string) string {
+	sc := bufio.NewScanner(bytes.NewReader(envExample))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if k, v, ok := strings.Cut(line, "="); ok && !strings.HasPrefix(line, "#") && strings.TrimSpace(strings.TrimPrefix(k, "export ")) == key {
+			return strings.Trim(strings.TrimSpace(v), `"'`)
+		}
+	}
+	return ""
 }
 
 func looksSecret(k string) bool {

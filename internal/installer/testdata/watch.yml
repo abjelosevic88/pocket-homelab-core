@@ -1,13 +1,14 @@
 # Pocket Watch — films and shows for the household on top of Jellyfin. Go + SQLite.
-# `docker compose up -d` starts both: the app, and Jellyfin, which Pocket Watch
-# sets up by itself on the first start (an administrator, an API key, Films and
-# Shows libraries over the two folders below) and where everyone who uses
-# Pocket Watch gets an account of their own. Jellyfin has no port of its own:
-# only the app reaches it.
 #
-# Already have a Jellyfin? Delete the `jellyfin` service and `depends_on`, set
-# JELLYFIN_BUNDLED to "false" and JELLYFIN_URL to yours; everyone then signs in
-# with their own Jellyfin account under Settings → Jellyfin.
+# With its own Jellyfin:  COMPOSE_PROFILES=jellyfin docker compose up -d
+#   (or COMPOSE_PROFILES=jellyfin in .env, as in .env.example and Pocket Core's installer)
+#   starts the app and Jellyfin, which Pocket Watch sets up by itself on the first
+#   start (an administrator, an API key, Films and Shows libraries over the two
+#   folders below); everyone who uses Pocket Watch gets an account of their own on
+#   it. Jellyfin has no port of its own: only the app reaches it.
+# With your Jellyfin:     JELLYFIN_URL=http://your-jellyfin:8096 docker compose up -d
+#   starts only the app; everyone signs in with their own Jellyfin account under
+#   Settings → Jellyfin. A Jellyfin that is already set up is never changed.
 services:
   pocket-watch:
     image: ghcr.io/abjelosevic88/pocket-homelab-watch:latest
@@ -19,9 +20,10 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       BASE_URL: ${BASE_URL:-http://localhost:8080}
       # SECURE_COOKIES: "true"          # behind HTTPS
-      # The Jellyfin below (or yours, see the top of this file).
+      # The Jellyfin below, or yours (see the top of this file).
       JELLYFIN_URL: ${JELLYFIN_URL:-http://jellyfin:8096}
-      JELLYFIN_BUNDLED: ${JELLYFIN_BUNDLED:-true}
+      # auto: set up a fresh Jellyfin (the one below); leave one that is set up alone
+      JELLYFIN_BUNDLED: ${JELLYFIN_BUNDLED:-auto}
       # What a browser opens for "Open in Jellyfin", if you publish its port:
       JELLYFIN_PUBLIC_URL: ${JELLYFIN_PUBLIC_URL:-}
       # First admin (only used while the database has no users):
@@ -49,14 +51,17 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - jellyfin
+      jellyfin:
+        condition: service_started
+        required: false   # only with the jellyfin profile
 
-  # Jellyfin, the official image. Put films in MOVIES_DIR and shows in SHOWS_DIR
-  # (default: media/movies and media/shows next to this file); Jellyfin notices
-  # new files by itself.
+  # Jellyfin, the official image (the "jellyfin" profile). Put films in MOVIES_DIR
+  # and shows in SHOWS_DIR (default: media/movies and media/shows next to this
+  # file); Jellyfin notices new files by itself.
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: pocket-watch-jellyfin
+    profiles: [jellyfin]
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Europe/Berlin}
