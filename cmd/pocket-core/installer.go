@@ -30,6 +30,8 @@ Runs on the Docker host, answers Core on INSTALLER_SOCKET. Settings (environment
   INSTALLER_GITHUB_OWNER   GitHub account apps are released from (abjelosevic88)
   INSTALLER_REPO_PREFIX    only repos starting with this (pocket-homelab-)
   INSTALLER_DOCKER_GID     the docker group's id, when the agent runs in a container
+  INSTALLER_APP_OWNER      run as root: new apps' data folders go to this uid:gid (1000:1000)
+  INSTALLER_FILES_OWNER    run as root: app folders, compose files, .env and the socket go to this uid:gid
   INSTALLER_APPS_DIR       app folders go here as pocket-<slug> ($HOME)
   INSTALLER_ARCHIVE_DIR    removed apps' folders go here ($APPS_DIR/pocket-archive)
   INSTALLER_CORE_URL       Core as app containers reach it (http://host.docker.internal:8179)

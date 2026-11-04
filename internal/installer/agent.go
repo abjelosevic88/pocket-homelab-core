@@ -142,6 +142,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 		l.Close()
 		return err
 	}
+	a.cfg.FilesOwner.chown(a.cfg.Socket) // Core runs as the person, not root
 	srv := &http.Server{Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { <-ctx.Done(); srv.Shutdown(context.Background()) }()
 	a.log.Info("installer listening", "socket", a.cfg.Socket, "apps", a.cfg.AppsDir, "owner", a.cfg.Owner)
@@ -345,7 +346,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return err
 	}
 	public := plan.PublicURL
-	if err := writePlan(dir, plan); err != nil {
+	if err := writePlan(dir, plan, a.cfg.AppOwner, a.cfg.FilesOwner); err != nil {
 		return err
 	}
 	res := &Result{Dir: dir, Container: plan.Container, AppURL: plan.AppURL, PublicURL: public, Port: plan.Port, Version: rel.Version}
@@ -567,6 +568,7 @@ func (a *Agent) archive(dir, tag string) (string, error) {
 	if err := os.MkdirAll(a.cfg.ArchiveDir, 0o755); err != nil {
 		return "", err
 	}
+	a.cfg.FilesOwner.chown(a.cfg.ArchiveDir)
 	name := filepath.Base(dir) + "-" + time.Now().Format("20060102-150405")
 	if tag != "" {
 		name += "-" + tag
@@ -604,6 +606,7 @@ func (a *Agent) editCaddy(ctx context.Context, j *Job, slug string, change func(
 	if err := os.WriteFile(backup, old, fi.Mode().Perm()); err != nil {
 		return "", err
 	}
+	a.cfg.FilesOwner.chown(backup)
 	if err := os.WriteFile(path, []byte(next), fi.Mode().Perm()); err != nil {
 		return "", err
 	}

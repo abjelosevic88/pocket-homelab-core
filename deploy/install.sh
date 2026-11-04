@@ -167,13 +167,12 @@ services:
       - "host.docker.internal:host-gateway"
 
   # Does the Docker work behind Install / Update / Remove. Core never sees the Docker socket.
+  # Root inside (the Docker socket is root-equivalent anyway), so it can give each app's data
+  # folders to the uid Pocket images run as (1000) and everything else to you (FILES_OWNER).
   installer:
     image: ghcr.io/abjelosevic88/pocket-homelab-core-installer:${POCKET_VERSION}
     container_name: pocket-core-installer
     restart: unless-stopped
-    user: "${PUID}:${PGID}"
-    group_add:
-      - "${DOCKER_GID}"
     network_mode: host # sees which ports are free and checks new apps on 127.0.0.1
     environment:
       TZ: ${TZ}
@@ -183,6 +182,7 @@ services:
       INSTALLER_APPS_DIR: ${POCKET_DIR}/apps
       INSTALLER_CORE_URL: http://host.docker.internal:${CORE_PORT}
       INSTALLER_DOCKER_GID: ${DOCKER_GID}
+      INSTALLER_FILES_OWNER: ${PUID}:${PGID}
       INSTALLER_CADDYFILE: ${INSTALLER_CADDYFILE}
       INSTALLER_CADDY_CONTAINER: pocket-caddy
     volumes:
@@ -232,6 +232,6 @@ say
 
 step "Pocket Core $VERSION is running"
 say "Open $CORE_URL to create your account, then Apps → Install app."
-[ -n "$DOMAIN" ] && say "(core.$DOMAIN needs DNS pointing here and ports 80/443 open; until then use http://$HOST:$PORT)"
+[ -n "$DOMAIN" ] && say "(core.$DOMAIN must point here with ports 80/443 open before you can sign in: Core expects HTTPS.)"
 [ "$DOCKER" = docker ] || say "Tip: log out and back in once, so Docker works without sudo."
 say "Files: $DIR · update: run this script again · logs: cd $DIR && docker compose logs -f"

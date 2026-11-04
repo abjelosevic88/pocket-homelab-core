@@ -35,6 +35,12 @@ type Config struct {
 	CatalogKeys []string // trusted "<id>:<base64>" keys: the official ones plus INSTALLER_CATALOG_KEYS
 	DockerGID   string   // the docker group, when /etc/group can't tell (the agent in a container)
 
+	// Ownership when the agent runs as root (the installer container):
+	// apps' data folders go to AppOwner (the uid Pocket images run as), the
+	// folder, compose file, .env and the socket to FilesOwner (the person).
+	AppOwner   owner
+	FilesOwner owner
+
 	AppsDir    string // each app gets AppsDir/pocket-<slug>
 	ArchiveDir string // removed apps' folders are moved here
 	PublicURL  string // template: https://{slug}.example.com, or http://192.168.1.20:{port} without a domain
@@ -95,6 +101,13 @@ func LoadConfig() (*Config, error) {
 		Leftovers:      list(env("INSTALLER_LEFTOVER_FILES", "")),
 		Protected:      append([]string{"core"}, list(env("INSTALLER_PROTECTED", ""))...),
 	}
+	var err error
+	if c.AppOwner, err = parseOwner(env("INSTALLER_APP_OWNER", "1000:1000")); err != nil {
+		return nil, fmt.Errorf("INSTALLER_APP_OWNER: %w", err)
+	}
+	if c.FilesOwner, err = parseOwner(env("INSTALLER_FILES_OWNER", "")); err != nil {
+		return nil, fmt.Errorf("INSTALLER_FILES_OWNER: %w", err)
+	}
 	if u := env("INSTALLER_CATALOG_URL", appstore.DefaultURL); u != "github" {
 		c.CatalogURLs = list(u)
 	}
@@ -142,6 +155,33 @@ func (c *Config) protected(slug string) bool {
 		}
 	}
 	return false
+}
+
+// owner is a uid:gid; set=false leaves files as the agent made them.
+type owner struct {
+	uid, gid int
+	set      bool
+}
+
+func parseOwner(v string) (owner, error) {
+	if v == "" {
+		return owner{}, nil
+	}
+	u, g, ok := strings.Cut(v, ":")
+	uid, err1 := strconv.Atoi(u)
+	gid, err2 := strconv.Atoi(g)
+	if !ok || err1 != nil || err2 != nil || uid < 0 || gid < 0 {
+		return owner{}, fmt.Errorf("want uid:gid, got %q", v)
+	}
+	return owner{uid, gid, true}, nil
+}
+
+// chown hands a path to o, only when the agent runs as root (otherwise it
+// can't, and the files already belong to the agent's own user).
+func (o owner) chown(path string) {
+	if o.set && os.Geteuid() == 0 {
+		_ = os.Lchown(path, o.uid, o.gid)
+	}
 }
 
 func localZone() string {

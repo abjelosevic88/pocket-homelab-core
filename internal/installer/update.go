@@ -158,6 +158,7 @@ func (a *Agent) update(ctx context.Context, j *Job, req UpdateRequest) error {
 	if err := os.WriteFile(backup, old, fi.Mode().Perm()); err != nil {
 		return err
 	}
+	a.cfg.FilesOwner.chown(backup)
 	if err := os.WriteFile(chk.file, []byte(next), fi.Mode().Perm()); err != nil {
 		return err
 	}

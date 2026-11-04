@@ -439,20 +439,32 @@ func mapDel(m *yaml.Node, key string) {
 }
 
 // writePlan creates the app folder. It refuses to touch one that exists.
-func writePlan(dir string, p *Plan) error {
+// Run as root, it gives the data folders to the app's uid and the rest to
+// the person (see Config.AppOwner/FilesOwner).
+func writePlan(dir string, p *Plan, app, files owner) error {
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("%s already exists", dir)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	files.chown(dir)
 	for _, d := range p.Dirs {
-		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+		full := filepath.Join(dir, d)
+		if err := os.MkdirAll(full, 0o755); err != nil {
 			return err
+		}
+		for x := full; x != dir && strings.HasPrefix(x, dir); x = filepath.Dir(x) {
+			app.chown(x)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(dir, ".env"), p.envFile(), 0o600); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "docker-compose.yml"), p.Compose, 0o644)
+	files.chown(filepath.Join(dir, ".env"))
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), p.Compose, 0o644); err != nil {
+		return err
+	}
+	files.chown(filepath.Join(dir, "docker-compose.yml"))
+	return nil
 }

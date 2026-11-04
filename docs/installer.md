@@ -122,20 +122,22 @@ find (one that runs outside Docker) can still be removed from Core only.
 The agent ships as its own image, `ghcr.io/abjelosevic88/pocket-homelab-core-installer:<version>`
 (Core's binary plus the docker CLI and compose plugin). It runs next to Core with the Docker socket,
 host networking (to see free ports and check new apps on 127.0.0.1) and the apps folder mounted at
-the **same path** inside and out, as the same uid as Core:
+the **same path** inside and out. It runs as root (the socket is root-equivalent anyway) so it can
+hand each new app's data folders to the uid the Pocket images run as (`INSTALLER_APP_OWNER`,
+1000:1000) and the folder, compose file, `.env` and its socket to you (`INSTALLER_FILES_OWNER`,
+the uid Core's container runs as). Run as a normal user, it leaves everything owned by that user,
+which only works when that user is uid 1000.
 
 ```yaml
   installer:
     image: ghcr.io/abjelosevic88/pocket-homelab-core-installer:${POCKET_VERSION}
-    user: "${PUID}:${PGID}"
-    group_add: ["${DOCKER_GID}"]
     network_mode: host
     environment:
       INSTALLER_SOCKET: /run/pocket-installer/installer.sock
       INSTALLER_TOKEN: ${INSTALLER_TOKEN}
       INSTALLER_PUBLIC_URL: http://192.168.1.20:{port}
       INSTALLER_APPS_DIR: /home/you/pocket/apps
-      INSTALLER_DOCKER_GID: ${DOCKER_GID}
+      INSTALLER_FILES_OWNER: ${PUID}:${PGID}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /home/you/pocket:/home/you/pocket
