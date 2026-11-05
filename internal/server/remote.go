@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -591,7 +592,9 @@ func (h *remoteHub) connect(ctx context.Context, target, secret string) error {
 		typ, msg, err := c.Read(cctx)
 		if err != nil {
 			var ce websocket.CloseError
-			if errors.As(err, &ce) && ce.Code == websocket.StatusNormalClosure {
+			// Our own close (a settings change, switching off) is not a failure to show.
+			if (errors.As(err, &ce) && ce.Code == websocket.StatusNormalClosure) || errors.Is(err, net.ErrClosed) ||
+				strings.Contains(err.Error(), "use of closed network connection") || cctx.Err() != nil {
 				return nil
 			}
 			return err
