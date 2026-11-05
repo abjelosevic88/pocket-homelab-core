@@ -64,7 +64,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "renewals_renew": true, "wealth_update_value": true,
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true,
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
@@ -337,6 +337,44 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	}
 	write("pets", "add_pet", "Add a pet.", "POST", "/pets", petFields(), "name")
 	write("pets", "update_pet", "Update supplied pet fields (passed_on stops its reminders).", "PUT", "/pets/{id}", petFields().booleans("archived"), "")
+
+	// Pocket Places: restaurants, cafés, bars, sights, parks… you love or want to try, your visits with ratings and what they cost, plans, lists, and visits Movement/Money noticed. Costs are minor units.
+	read("places", "summary", "Get a short overview of your places: how many (want to try, been, favourites), how many visits wait for a rating, the next plans, visits and spending this month and the last visit.", "/summary", "")
+	read("places", "overview", "Get the places overview: visits to rate (noticed in Pocket Movement and Pocket Money) and plans whose day passed, coming plans, recent visits, favourites, places waiting to be tried, coming trips with your places at the destination, visits and spending this year, top towns and lists. Visit costs can overlap Money: linked payments carry money_tx_id; never add Places and Money totals without verifying it.", "/overview", "")
+	read("places", "places", "List or filter your places. status want|been; group eat|see|shop|stay|other; kind e.g. restaurant, cafe, bar, bakery, museum, park, viewpoint; sort name|rating|recent|added|visits|near; near=lat,lng with radius_km for places around a spot (each then has distance_m); q searches name, cuisine, town, tags and notes, accents ignored. Each place has rating, price (1-4), visits, last_visit, next_plan, spent and lists.", "/places", "status kind group city country tag q list_id favourite open sort near radius_km limit")
+	read("places", "get_place", "Read one place: details (address, hours, website, notes, who recommended it), every visit with rating, who came and what it cost, plans, the lists it is on, your places close by, open \"how was it?\" and how often Pocket Movement saw you there.", "/places/{id}", "")
+	read("places", "visits", "Read visits, newest first (planned=false for real ones, planned=true for plans), each with the place, rating, with_whom, minutes, spent and currency (minor units) and money_tx_id when linked to Pocket Money.", "/visits", "place_id from to planned trip_id q limit offset")
+	read("places", "lists", "List your lists of places (date night, coffee, a trip) with how many places and how many visited.", "/lists", "")
+	read("places", "get_list", "Read one list with its places and the note kept for each.", "/lists/{id}", "status")
+	read("places", "to_rate", "Read what waits for an answer: stays (Pocket Movement) and payments (Pocket Money) at your places, one per place and day, and plans whose day passed (\"did you go?\").", "/inbox", "")
+	read("places", "search", "Search places, visits and lists (accents ignored).", "/search", "q limit")
+	read("places", "day", "Read one day: visits, plans and places added that day.", "/day/{date}", "")
+	read("places", "spending", "Get what visits cost per currency and per month between two days. State the range and currency; avoid double counting linked Money payments.", "/spending", "from to")
+	read("places", "trips", "List Pocket Travel trips (coming, and with back=N days past ones) with how many of your places are at each destination (want and been) and the lists made for it.", "/trips", "days back")
+	placeFields := func() mcpFields {
+		f := textFields("name cuisine address city country phone website map_url hours tags notes recommended_by currency").numbers("rating lat lng").integers("price").
+			booleans("favourite closed").enum("status", "want", "been").
+			enum("kind", "restaurant", "cafe", "bar", "bakery", "street_food", "dessert", "market", "shop", "museum", "sight", "park", "viewpoint", "beach", "nature", "activity", "hotel", "other")
+		f["price"].(map[string]any)["description"] = "1 cheap to 4 expensive, 0 unknown."
+		f["rating"].(map[string]any)["description"] = "1 to 5 (halves allowed), 0 none; rating a place marks it been."
+		f["country"].(map[string]any)["description"] = "ISO 3166 two-letter code, e.g. BA, AT."
+		return f
+	}
+	write("places", "add_place", "Save a place to your list (\"save Kibe Mahala, the restaurant with the view\"): want to go by default, or been with a rating.", "POST", "/places", placeFields().field("list_ids", arraySchema(map[string]any{"type": "integer"})), "name")
+	write("places", "update_place", "Update supplied place fields (favourite, closed for good, a new address, notes).", "PUT", "/places/{id}", placeFields(), "")
+	visitFields := func() mcpFields {
+		f := textFields("date time notes with_whom currency").integers("place_id minutes spent").numbers("rating").booleans("planned money calendar")
+		f["spent"].(map[string]any)["description"] = "What it cost, minor units (2400 = 24.00)."
+		f["planned"].(map[string]any)["description"] = "A plan rather than a visit (default: true for a day in the future)."
+		f["money"].(map[string]any)["description"] = "Also book the cost as a Pocket Money transaction (default: the person's setting; leave off when the card payment comes into Money anyway)."
+		f["calendar"].(map[string]any)["description"] = "Put a plan on Pocket Calendar (default: the person's setting)."
+		return f
+	}
+	write("places", "log_visit", "Log a visit to one of your places (\"we had dinner at Dveri, 5 stars, 64 KM\") or plan one (planned true, a day and a time: it goes on the calendar).", "POST", "/visits", visitFields(), "place_id")
+	write("places", "update_visit", "Update a visit or a plan: rate it, add what it cost or who came, or turn a past plan into a visit (planned false).", "PUT", "/visits/{id}", visitFields(), "")
+	write("places", "rate_noticed", "Answer a \"how was it?\" from to_rate: logs that visit with its time, how long and the payment linked, and the rating.", "POST", "/inbox/{id}/accept", textFields("notes with_whom").numbers("rating").integers("spent"), "")
+	write("places", "add_list", "Make a new list of places, optionally with place_ids.", "POST", "/lists", textFields("name emoji description trip_name").integers("trip_id").field("place_ids", arraySchema(map[string]any{"type": "integer"})), "name")
+	write("places", "add_to_list", "Put one of your places on one of your lists (id = the list).", "POST", "/lists/{id}/places", textFields("note").integers("place_id"), "place_id")
 
 	// Pocket Renewals: what runs out (passports, insurance, warranties, domains, subscriptions) and when. Costs are minor units.
 	read("renewals", "summary", "Get the renewals overview in one call: counts (expired, coming up, found automatically and waiting for a check), what has expired, what is coming up, what was found in other apps, trips a passport does not cover, recent renewals and the yearly cost. Renewal costs can overlap Money: confirmed bookings carry money_tx_id in history; never add Renewals and Money totals without verifying it.", "/overview", "")

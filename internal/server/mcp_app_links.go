@@ -48,6 +48,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"home/meters": {"/meters", "/meters/{id}"}, "home/pros": {"/pros", "/pros/{id}"}, "home/search": {"/", ""}, "home/plants": {"/plants", "/plants/{id}"},
 	"pets/overview": {"/", ""}, "pets/due": {"/care", ""}, "pets/pets": {"/pets", "/pets/{id}"}, "pets/care": {"/care", "/care/{id}"}, "pets/records": {"/log", "/log/{id}"},
 	"pets/weights": {"/pets", ""}, "pets/spending": {"/log", ""}, "pets/pros": {"/pros", "/pros/{id}"}, "pets/search": {"/", ""},
+	"places/summary": {"/", ""}, "places/overview": {"/", ""}, "places/places": {"/places", "/places/{id}"}, "places/visits": {"/visits", ""},
+	"places/lists": {"/lists", "/lists/{id}"}, "places/inbox": {"/", ""}, "places/search": {"/places", ""}, "places/day": {"/visits", ""},
+	"places/spending": {"/visits", ""}, "places/trips": {"/", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
 	"wealth/summary": {"/", ""}, "wealth/history": {"/", ""}, "wealth/assets": {"/assets", "/a/{id}"}, "wealth/positions": {"/investments", ""},
@@ -242,6 +245,37 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					}
 				}
 			}
+		}
+	}
+	// Pocket Places: places link to their page; visits, plans and "how was it?" link to their place's page.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "places" {
+		for _, key := range []string{"favourites", "want", "places", "nearby", "been", "added"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/places/{id}")
+					}
+				}
+			}
+		}
+		for _, key := range []string{"recent", "planned", "past_plans", "visits", "items", "inbox"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "place_id", "/places/{id}")
+					}
+				}
+			}
+		}
+		if rows, ok := data["lists"].([]any); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					itemLink(m, "id", "/lists/{id}")
+				}
+			}
+		}
+		if m, ok := data["last_visit"].(map[string]any); ok {
+			itemLink(m, "place_id", "/places/{id}")
 		}
 	}
 	// Pocket Parcels: every list in the summary, overview, search and a day holds parcels; a day's steps point at theirs.
