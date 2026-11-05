@@ -354,7 +354,7 @@ function passkeyStep(s, c) {
   return new Promise(resolve => {
     const setup = c.t === 'passkey-setup'
     const render = (err = '') => {
-      show(`<div class="card"><div class="lock">🔒</div><h1>${esc(c.app)}</h1>
+      show(`<div class="card"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor"/></svg><h1>${esc(c.app)}</h1>
         <p class="muted">${setup ? 'This app needs a passkey on this device. Create one with Face ID, Touch ID or your device PIN.' : 'Unlock with Face ID, Touch ID or your device PIN.'}</p>
         ${err ? `<p class="err">${esc(err)}</p>` : ''}
         <button class="btn" id="pk">${setup ? 'Create passkey' : 'Unlock'}</button><br><button class="btn ghost" id="pkc">Cancel</button></div>`)

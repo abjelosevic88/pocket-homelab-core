@@ -35,11 +35,13 @@ export function Sidebar({ data, onPair, onNavigate }: { data: ShellData; onPair:
     { to: '/events', label: 'Events', icon: 'activity', badge: pending ? <span className="badge warn" title={`${pending} webhook deliveries pending`}>{pending}</span> : null },
     { to: '/links', label: 'Links', icon: 'nodes' },
     { to: '/devices', label: 'Devices', icon: 'smartphone', badge: ov?.devices.length ? <span className="sb-count">{ov.devices.length}</span> : null },
+    { to: '/remote', label: 'Remote access', icon: 'globe' },
     { to: '/users', label: 'People', icon: 'users' },
     { to: '/ai-connections', label: 'AI connections', icon: 'sparkles' },
   ] : [
     { to: '/', label: 'Overview', icon: 'hub', end: true },
     { to: '/devices', label: 'Devices', icon: 'smartphone', badge: ov?.devices.length ? <span className="sb-count">{ov.devices.length}</span> : null },
+    { to: '/remote', label: 'Remote access', icon: 'globe' },
     { to: '/ai-connections', label: 'AI connections', icon: 'sparkles' },
   ]
   const pocket = data.services.filter(s => s.pocket)

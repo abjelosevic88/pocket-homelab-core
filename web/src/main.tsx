@@ -15,6 +15,7 @@ import Apps from './pages/Apps'
 import Services from './pages/Services'
 import Events from './pages/Events'
 import Devices from './pages/Devices'
+import Remote from './pages/Remote'
 import Users from './pages/Users'
 import Settings from './pages/Settings'
 import Links from './pages/Links'
@@ -49,6 +50,7 @@ function App() {
         <Route path="/events" element={<Events />} />
         <Route path="/links" element={<Links />} />
         <Route path="/devices" element={<Devices />} />
+        <Route path="/remote" element={<Remote />} />
         <Route path="/users" element={<Users />} />
         <Route path="/ai-connections" element={<AIConnections />} />
         <Route path="/ai-connections/pair" element={<AIPairing />} />

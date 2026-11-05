@@ -1,0 +1,225 @@
+import { useEffect, useState } from 'react'
+import { api, V1 } from '../lib/api'
+import { ago, when } from '../lib/format'
+import { useApp } from '../lib/app-context'
+import { Card, Confirm, CopyField, Empty, Field, Loading, Modal, PageHeader, Segmented, SettingRow, Switch, errMsg, useAsync, useToast } from '../components/ui'
+import { Icon } from '../components/icons'
+
+interface RemoteApp { slug: string; name: string; address: string; exposed: boolean; device_default: boolean; passkey: boolean; sensitive: boolean }
+interface RemoteKey { id: number; app: string; created_at: string; last_seen_at: string; has_passkey: boolean }
+interface RemoteDevice { id: number; user_id: number; user_name: string; user_email: string; name: string; created_at: string; last_seen_at: string; last_ip: string; apps: Record<string, boolean>; keys: RemoteKey[] }
+interface RemoteStatus { connected: boolean; since?: string; last_error?: string; sessions: number }
+interface RemoteAdmin {
+  enabled: boolean; provider: 'cloudflare' | 'custom'; pattern: string; relay_url: string; has_secret: boolean
+  cf_account: string; cf_worker: string; has_cf_token: boolean; cf_deployed: boolean; cf_current: boolean; cf_domains: string[] | null
+  portal: string; box_url: string; status: RemoteStatus; apps: RemoteApp[]; devices: RemoteDevice[]
+}
+interface RemoteMine { enabled: boolean; connected: boolean; portal: string; apps: RemoteApp[]; devices: RemoteDevice[] }
+
+export default function Remote() {
+  const { user } = useApp()
+  const admin = user?.role === 'admin'
+  const { data: adm, reload: reloadAdmin } = useAsync(() => admin ? api.get<RemoteAdmin>(`${V1}/remote`) : Promise.resolve(null), [admin])
+  const { data: mine, loading, reload: reloadMine } = useAsync(() => api.get<RemoteMine>(`${V1}/me/remote`), [])
+  const [pair, setPair] = useState(false)
+  const reload = () => { reloadMine(); if (admin) reloadAdmin() }
+  if (loading && !mine) return <Loading />
+  if (admin && !adm) return <Loading />
+  const enabled = admin ? !!adm?.enabled : !!mine?.enabled
+  const apps = admin ? (adm?.apps || []) : (mine?.apps || [])
+  const devices = admin ? (adm?.devices || []) : (mine?.devices || [])
+  return (
+    <>
+      <PageHeader title="Remote access" sub="Use your apps from anywhere without Tailscale. Traffic goes through a relay you control and is encrypted end to end between your browser and Core: the relay never sees what you do."
+        actions={enabled ? <button type="button" className="btn primary" onClick={() => setPair(true)}><Icon name="qr" size={15} />Pair a device</button> : undefined} />
+      {admin && adm && <RelayCard d={adm} onChange={reloadAdmin} />}
+      {admin && adm && <AppsCard d={adm} onChange={reloadAdmin} />}
+      {!admin && !enabled && <Card><Empty icon="globe" title="Remote access is off">An admin can switch it on here in Core.</Empty></Card>}
+      {enabled && <DevicesCard devices={devices} apps={apps.filter(a => a.exposed)} admin={admin} portal={admin ? adm!.portal : mine!.portal} onChange={reload} onPair={() => setPair(true)} />}
+      {pair && <RemotePairModal onClose={() => { setPair(false); reload() }} />}
+    </>
+  )
+}
+
+function StatusPill({ d }: { d: RemoteAdmin }) {
+  if (!d.enabled) return <span className="pill">Off</span>
+  if (d.status.connected) return <span className="pill ok" title={d.status.since ? `Since ${when(d.status.since)}` : undefined}>Connected · {d.status.sessions} open</span>
+  return <span className="pill err" title={d.status.last_error}>Not connected</span>
+}
+
+function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
+  const { toast } = useToast()
+  const [provider, setProvider] = useState(d.provider)
+  const [pattern, setPattern] = useState(d.pattern)
+  const [relayURL, setRelayURL] = useState(d.relay_url)
+  const [account, setAccount] = useState(d.cf_account)
+  const [token, setToken] = useState('')
+  const [worker, setWorker] = useState(d.cf_worker)
+  const [busy, setBusy] = useState('')
+  const [secret, setSecret] = useState('')
+  const [reset, setReset] = useState(false)
+  useEffect(() => { setProvider(d.provider); setPattern(d.pattern); setRelayURL(d.relay_url); setAccount(d.cf_account); setWorker(d.cf_worker) }, [d])
+  const dirty = provider !== d.provider || pattern !== d.pattern || relayURL !== d.relay_url || account !== d.cf_account || worker !== d.cf_worker || token !== ''
+  const run = async (what: string, f: () => Promise<unknown>, ok?: string) => {
+    setBusy(what)
+    try { await f(); if (ok) toast(ok); onChange() } catch (e) { toast(errMsg(e), 'err') } finally { setBusy('') }
+  }
+  const save = () => run('save', async () => { await api.put(`${V1}/remote`, { provider, pattern, relay_url: relayURL, cf_account: account, cf_worker: worker, cf_token: token }); setToken('') }, 'Saved.')
+  const example = (pattern || '{app}.remote.example.org')
+  const showSecret = () => run('secret', async () => setSecret((await api.get<{ secret: string }>(`${V1}/remote/secret`)).secret))
+  const portalHost = d.portal.replace(/^https:\/\//, '')
+  return (
+    <Card title="Relay" actions={<StatusPill d={d} />}>
+      <SettingRow title="Remote access" help={d.enabled ? 'On. Paired devices reach the apps switched on below.' : 'Off. Nothing on this box is reachable through the relay.'}>
+        <Switch on={d.enabled} label="Remote access" disabled={!!busy || (!d.enabled && !d.pattern)} title={!d.pattern ? 'Set the address pattern first' : undefined}
+          onChange={on => run('enable', () => api.put(`${V1}/remote`, { enabled: on }), on ? 'Remote access is on.' : 'Remote access is off. Open sessions were closed.')} />
+      </SettingRow>
+      {d.status.last_error && d.enabled && !d.status.connected && <div className="callout danger mt-sm">{d.status.last_error}</div>}
+      <div className="grid mt" style={{ gap: 14 }}>
+        <Field label="Where the relay runs" group>
+          <Segmented value={provider} onChange={v => setProvider(v)} options={[{ value: 'cloudflare', label: 'Cloudflare' }, { value: 'custom', label: 'Self-hosted' }]} />
+        </Field>
+        <Field label="Address pattern" help={<>Each app gets its own address, {'{app}'} is replaced by its name: <span className="mono">{example.replace('{app}', 'money')}</span>. The launcher is <span className="mono">{example.replace('{app}', 'pocket')}</span>.</>}>
+          <input value={pattern} onChange={e => setPattern(e.target.value)} placeholder="{app}.remote.example.org" spellCheck={false} autoComplete="off" />
+        </Field>
+        {provider === 'cloudflare' ? <>
+          <p className="muted small">Core uploads a small Worker to <b>your own</b> Cloudflare account (the free Workers plan is enough) and adds one address per app you switch on. The API token needs <i>Account · Workers Scripts · Edit</i> and, on the zone, <i>Workers Routes · Edit</i>, <i>DNS · Edit</i> and <i>Zone · Read</i>.</p>
+          <div className="grid" style={{ gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+            <Field label="Account ID"><input value={account} onChange={e => setAccount(e.target.value)} spellCheck={false} autoComplete="off" /></Field>
+            <Field label="API token"><input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder={d.has_cf_token ? '•••••••• stored' : ''} autoComplete="new-password" /></Field>
+            <Field label="Worker name"><input value={worker} onChange={e => setWorker(e.target.value)} spellCheck={false} /></Field>
+          </div>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" className="btn" disabled={!!busy || dirty || !d.pattern || !d.has_cf_token} title={dirty ? 'Save first' : undefined}
+              onClick={() => run('deploy', () => api.post(`${V1}/remote/deploy`), 'Uploaded to Cloudflare.')}>
+              <Icon name="upload" size={15} />{busy === 'deploy' ? 'Uploading…' : d.cf_deployed ? 'Upload again' : 'Deploy to Cloudflare'}</button>
+            {d.cf_deployed && <span className={`pill ${d.cf_current ? 'ok' : 'warn'}`}>{d.cf_current ? 'Worker up to date' : 'Newer Worker available'}</span>}
+          </div>
+          {!!d.cf_domains?.length && <p className="muted small">Addresses at Cloudflare: {d.cf_domains.map(h => <span key={h} className="mono" style={{ marginRight: 8 }}>{h}</span>)}</p>}
+        </> : <>
+          <p className="muted small">Run the relay on any server with a public address, behind a TLS proxy that answers for the whole pattern (a wildcard certificate). It is the same image as Core:</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{`docker run -d --name pocket-relay --restart unless-stopped -p 8080:8080 \\
+  -e RELAY_SECRET=${secret || '<relay secret>'} \\
+  -e RELAY_PORTAL=${d.portal || 'https://pocket.remote.example.org'} \\
+  ghcr.io/abjelosevic88/pocket-homelab-core relay`}</pre>
+          <Field label="Relay address (where Core connects)" help={<>Leave empty to use the launcher address{portalHost ? <> (<span className="mono">{portalHost}</span>)</> : ''}.</>}>
+            <input value={relayURL} onChange={e => setRelayURL(e.target.value)} placeholder={d.portal || 'https://pocket.remote.example.org'} spellCheck={false} />
+          </Field>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {secret ? <div className="grow"><CopyField value={secret} label="Relay secret" /></div> : <button type="button" className="btn" disabled={!d.has_secret || !!busy} onClick={showSecret}><Icon name="key" size={15} />Show relay secret</button>}
+            <button type="button" className="btn ghost" disabled={!!busy} onClick={() => run('rotate', async () => setSecret((await api.post<{ secret: string }>(`${V1}/remote/secret`)).secret), 'New secret. Restart the relay with it.')}>New secret</button>
+          </div>
+        </>}
+        <div className="form-actions">
+          <button type="button" className="btn ghost danger-ghost" disabled={!!busy} onClick={() => setReset(true)}>Reset remote access…</button>
+          <span className="grow" />
+          <button type="button" className="btn primary" disabled={!dirty || !!busy} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+      {reset && <Confirm title="Reset remote access" confirmLabel="Reset"
+        message={<>Core makes a new key and forgets <b>every paired device</b>. Everyone pairs again. Use this if a device or the relay may be compromised.</>}
+        onConfirm={() => { setReset(false); run('reset', () => api.post(`${V1}/remote/reset`), 'Reset. Every device must pair again.') }} onCancel={() => setReset(false)} />}
+    </Card>
+  )
+}
+
+function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
+  const { toast } = useToast()
+  const [busy, setBusy] = useState('')
+  const set = async (a: RemoteApp, patch: Partial<RemoteApp>) => {
+    setBusy(a.slug)
+    try {
+      const r = await api.put<{ warning?: string }>(`${V1}/remote/apps/${a.slug}`, patch)
+      if (r?.warning) toast(r.warning, 'err')
+      onChange()
+    } catch (e) { toast(errMsg(e), 'err') } finally { setBusy('') }
+  }
+  const exposed = d.apps.filter(a => a.exposed).length
+  return (
+    <Card title="Apps" sub={`${exposed} of ${d.apps.length} reachable remotely. Off means the app has no remote address at all. “New devices” is the starting switch for devices paired from now on; each device can be switched on its own.`} className="mt">
+      <div className="remote-apps">{d.apps.map(a => <div key={a.slug} className="remote-app">
+        <div className="remote-app-name"><b>{a.name}</b>{a.sensitive && <span className="badge warn" title={a.slug === 'ai' ? 'Runs commands on this server' : 'Manages the whole box'}>sensitive</span>}
+          {a.exposed && a.address && <div className="muted small mono">{a.address.replace(/^https:\/\//, '')}</div>}</div>
+        <div className="remote-app-switches">
+          <label title="Reachable through the relay at all"><Switch size="sm" on={a.exposed} disabled={busy === a.slug || !d.pattern} label={`${a.name} reachable`} onChange={v => set(a, { exposed: v })} />Reachable</label>
+          <label title="On for devices paired from now on"><Switch size="sm" on={a.device_default} disabled={busy === a.slug} label={`${a.name} on for new devices`} onChange={v => set(a, { device_default: v })} />New devices</label>
+          <label title="Ask for Face ID, Touch ID or the device PIN when opening it"><Switch size="sm" on={a.passkey} disabled={busy === a.slug} label={`${a.name} asks for a passkey`} onChange={v => set(a, { passkey: v })} />Passkey</label>
+        </div>
+      </div>)}</div>
+    </Card>
+  )
+}
+
+function DevicesCard({ devices, apps, admin, portal, onChange, onPair }: { devices: RemoteDevice[]; apps: RemoteApp[]; admin: boolean; portal: string; onChange: () => void; onPair: () => void }) {
+  const { toast } = useToast()
+  const [del, setDel] = useState<RemoteDevice | null>(null)
+  const [rename, setRename] = useState<{ d: RemoteDevice; name: string } | null>(null)
+  const [busy, setBusy] = useState(0)
+  const setApp = async (d: RemoteDevice, slug: string, on: boolean) => {
+    setBusy(d.id)
+    try { await api.put(`${V1}/me/remote/devices/${d.id}`, { apps: { [slug]: on } }); onChange() } catch (e) { toast(errMsg(e), 'err') } finally { setBusy(0) }
+  }
+  const appName = (slug: string) => slug === 'pocket' ? 'Launcher' : apps.find(a => a.slug === slug)?.name || slug
+  return (
+    <Card title={admin ? 'Devices' : 'Your devices'} sub={<>Open <a href={portal} target="_blank" rel="noreferrer" className="mono">{portal.replace(/^https:\/\//, '')}</a> on a paired device to see your apps.</>} className="mt">
+      {devices.length === 0 ? <Empty icon="smartphone" title="No devices paired">Tap “Pair a device” and scan the code with your phone. Each device gets its own key, one per app address, that never leaves it.</Empty> :
+        <div className="grid" style={{ gap: 12 }}>
+          {devices.map(d => <div key={d.id} className="card" style={{ margin: 0 }}>
+            <div className="card-head remote-device-head"><div className="grow">
+              <h2 style={{ fontSize: 15 }}>{d.name}</h2>
+              <p className="muted small">{admin && <>{d.user_name || d.user_email} · </>}paired {when(d.created_at)}{d.last_seen_at && <> · last seen {ago(d.last_seen_at)}{d.last_ip && <> from {d.last_ip}</>}</>}</p>
+            </div><div className="row">
+              <button type="button" className="btn sm ghost" onClick={() => setRename({ d, name: d.name })}>Rename</button>
+              <button type="button" className="btn sm danger" onClick={() => setDel(d)}>Remove</button>
+            </div></div>
+            <div className="card-body">
+              {apps.length === 0 ? <p className="muted small">No apps are reachable remotely yet.</p> :
+                apps.map(a => {
+                  const on = d.apps[a.slug] ?? a.device_default
+                  const key = d.keys.find(k => k.app === a.slug)
+                  return <SettingRow key={a.slug} title={a.name}
+                    help={key ? <>Opened {ago(key.last_seen_at || key.created_at)}{key.has_passkey ? ' · passkey set up' : ''}</> : a.passkey ? 'Asks for a passkey' : undefined}>
+                    <Switch size="sm" on={on} disabled={busy === d.id} label={`${a.name} on ${d.name}`} onChange={v => setApp(d, a.slug, v)} />
+                  </SettingRow>
+                })}
+              {d.keys.some(k => k.app !== 'pocket' && !apps.find(a => a.slug === k.app)) && <p className="muted small mt-sm">Also paired: {d.keys.filter(k => k.app !== 'pocket' && !apps.find(a => a.slug === k.app)).map(k => appName(k.app)).join(', ')} (not reachable now).</p>}
+            </div>
+          </div>)}
+        </div>}
+      <div className="form-actions mt"><button type="button" className="btn" onClick={onPair}><Icon name="qr" size={15} />Pair a device</button></div>
+      {del && <Confirm title="Remove device" message={<>Remove <b>{del.name}</b>? Every key it holds stops working at once and open sessions close. Pair again to restore.</>}
+        onConfirm={async () => { try { await api.del(`${V1}/me/remote/devices/${del.id}`) } catch (e) { toast(errMsg(e), 'err') } setDel(null); onChange() }} onCancel={() => setDel(null)} />}
+      {rename && <Modal title="Rename device" size="sm" onClose={() => setRename(null)} footer={<>
+        <button type="button" className="btn" onClick={() => setRename(null)}>Cancel</button>
+        <button type="button" className="btn primary" disabled={!rename.name.trim()} onClick={async () => {
+          try { await api.put(`${V1}/me/remote/devices/${rename.d.id}`, { name: rename.name.trim() }); setRename(null); onChange() } catch (e) { toast(errMsg(e), 'err') }
+        }}>Save</button></>}>
+        <Field label="Name"><input autoFocus value={rename.name} maxLength={60} onChange={e => setRename({ ...rename, name: e.target.value })} /></Field>
+      </Modal>}
+    </Card>
+  )
+}
+
+function RemotePairModal({ onClose }: { onClose: () => void }) {
+  const [p, setP] = useState<{ url: string; qr_svg: string; expires_at: string } | null>(null)
+  const [err, setErr] = useState('')
+  const [left, setLeft] = useState(600)
+  useEffect(() => { api.post<{ url: string; qr_svg: string; expires_at: string }>(`${V1}/me/remote/pair`).then(setP).catch(e => setErr(errMsg(e))) }, [])
+  useEffect(() => {
+    if (!p) return
+    const t = setInterval(() => setLeft(Math.max(0, Math.round((new Date(p.expires_at).getTime() - Date.now()) / 1000))), 1000)
+    return () => clearInterval(t)
+  }, [p])
+  return (
+    <Modal title="Pair a device for remote access" onClose={onClose}>
+      {err && <div className="callout danger">{err}</div>}
+      {!p && !err && <p className="muted">Making a code…</p>}
+      {p && <div className="grid" style={{ gap: 14, justifyItems: 'center' }}>
+        <div className="qr"><img src={p.qr_svg} alt="Pairing QR code" /></div>
+        <p className="muted small" style={{ textAlign: 'center', maxWidth: 400 }}>Scan with the phone's camera, or open the link on the device you want to pair. The page creates a key that never leaves that device. {left > 0 ? <>The code works once and expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}.</> : <b>The code expired; close and make a new one.</b>}</p>
+        <div style={{ width: '100%' }}><CopyField value={p.url} label="Pairing link" /></div>
+        <p className="muted small" style={{ textAlign: 'center', maxWidth: 400 }}>Tip: on iPhone, add the launcher and each app to the Home Screen from Safari's Share menu.</p>
+      </div>}
+    </Modal>
+  )
+}
