@@ -56,6 +56,9 @@ func main() {
 		case "credentials":
 			runCredentials(os.Args[2:])
 			return
+		case "relay":
+			runRelay(os.Args[2:])
+			return
 		case "installer":
 			runInstaller(os.Args[2:])
 			return

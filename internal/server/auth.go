@@ -131,6 +131,14 @@ func (s *Server) resolveToken(ctx context.Context, tok, ip string) (*Principal, 
 	case strings.HasPrefix(tok, "pcx_"):
 		// Link tokens are for the target app only, never for Core's own API.
 		return nil, store.ErrNotFound
+	case strings.HasPrefix(tok, "pcu_rly_"):
+		// Remote-access tokens open Core's API only when Core itself is the
+		// remote app (Core's UI over the relay).
+		acc, err := s.remoteTokenAccess(ctx, tok, coreSlug)
+		if err != nil {
+			return nil, store.ErrNotFound
+		}
+		return &Principal{Kind: "user", User: acc.User}, nil
 	case strings.HasPrefix(tok, "pca_"):
 		a, err := s.store.GetAppByToken(ctx, tok)
 		if err != nil {
@@ -490,6 +498,10 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(in.Token, "pcx_") {
 		s.introspectLinkToken(w, r, caller, in.Token)
+		return
+	}
+	if strings.HasPrefix(in.Token, "pcu_rly_") {
+		s.introspectRemoteToken(w, r, caller, in.Token)
 		return
 	}
 	p, err := s.resolveToken(r.Context(), in.Token, "")

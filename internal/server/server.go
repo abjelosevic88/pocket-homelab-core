@@ -70,12 +70,14 @@ type Server struct {
 	loginLimit *limiter // per IP and per email: 10 failures / 15 min
 	pairLimit  *limiter // per IP: 10 bad codes / 15 min
 	regLimit   *limiter // per IP: 10 bad registration keys / 15 min
+
+	remote *remoteHub // remote access through the relay (remote.go)
 }
 
 // New creates a server.
 func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Server {
 	ua := "PocketCore/" + Version + " (+https://github.com/abjelosevic88/pocket-homelab-core)"
-	return &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(),
+	s := &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(),
 		hub:        events.New(st, log, cfg.WebhookAttempts, ua),
 		http:       &http.Client{Timeout: 8 * time.Second},
 		connHTTP:   &http.Client{Timeout: 30 * time.Second},
@@ -83,6 +85,8 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute),
 		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute),
 		box: newBoxAgent(cfg.BoxAgent), inst: installer.NewClient(cfg.InstallerSocket, cfg.InstallerToken)}
+	s.remote = newRemoteHub(s)
+	return s
 }
 
 // warnStaleAdminEnv logs when ADMIN_* no longer describe a working sign-in. The
@@ -162,6 +166,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	go s.hub.Run(ctx)
 	go s.janitor(ctx)
 	go s.connectorScheduler(ctx)
+	go s.remote.run(ctx)
 	if s.inst != nil {
 		go s.autoUpdater(ctx)
 	}
@@ -267,6 +272,11 @@ func (s *Server) Router() http.Handler {
 			r.Get("/me/ai-connections", s.handleMCPConnections)
 			r.Post("/me/ai-connections/token", s.handleMCPConnectionToken)
 			r.Delete("/me/ai-connections/{id}", s.handleMCPDisconnect)
+			r.Get("/me/remote", s.handleMyRemote)
+			r.Post("/me/remote/pair", s.handleRemotePair)
+			r.Put("/me/remote/devices/{id}", s.handleUpdateRemoteDevice)
+			r.Delete("/me/remote/devices/{id}", s.handleDeleteRemoteDevice)
+			r.Delete("/me/remote/devices/{id}/keys/{kid}", s.handleDeleteRemoteKey)
 
 			r.Get("/users/{id}/credentials", s.handleListCredentials)
 			r.Put("/users/{id}/credentials/{sid}", s.handlePutCredential)
@@ -361,6 +371,13 @@ func (s *Server) Router() http.Handler {
 				r.Put("/settings", s.handlePutSettings)
 				r.Post("/settings/registration-key", s.handleRotateRegistrationKey)
 				r.Get("/backup", s.handleBackup)
+				r.Get("/remote", s.handleGetRemote)
+				r.Put("/remote", s.handlePutRemote)
+				r.Get("/remote/secret", s.handleRemoteSecret)
+				r.Post("/remote/secret", s.handleRotateRemoteSecret)
+				r.Post("/remote/reset", s.handleResetRemote)
+				r.Post("/remote/deploy", s.handleDeployRemote)
+				r.Put("/remote/apps/{slug}", s.handlePutRemoteApp)
 			})
 		})
 	})

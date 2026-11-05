@@ -151,6 +151,8 @@ func (s *Store) PurgeExpired(ctx context.Context) error {
 		`DELETE FROM oidc_tokens WHERE expires_at < ?`,
 		`DELETE FROM link_tokens WHERE expires_at < ?`,
 		`DELETE FROM pairings WHERE claimed_at IS NULL AND expires_at < ?`,
+		`DELETE FROM remote_codes WHERE expires_at < ?`,
+		`DELETE FROM remote_tokens WHERE expires_at < ?`,
 	} {
 		if _, err := s.DB.ExecContext(ctx, q, now); err != nil {
 			return err

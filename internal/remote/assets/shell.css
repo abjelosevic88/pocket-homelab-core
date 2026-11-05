@@ -1,0 +1,31 @@
+:root { --bg: #f5f6f8; --fg: #14161b; --muted: #5d6470; --card: #fff; --line: #e3e6eb; --accent: #4f46e5; --err: #c0262d; font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color-scheme: light dark }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f1115; --fg: #eceef2; --muted: #9aa1ad; --card: #181b22; --line: #2a2f39; --accent: #8b85ff; --err: #ff6b6b } }
+* { box-sizing: border-box }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg) }
+body { overflow: hidden }
+.screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px); overflow: auto }
+.screen.top { align-items: flex-start }
+.card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px 22px; text-align: center }
+.card h1 { font-size: 20px; margin: 4px 0 8px }
+.card p { margin: 8px 0 }
+.muted { color: var(--muted) }
+.err { color: var(--err) }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; padding: 11px 18px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line) }
+.spinner { width: 26px; height: 26px; margin: 4px auto 10px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite }
+@keyframes spin { to { transform: rotate(360deg) } }
+.lock { font-size: 34px; line-height: 1 }
+iframe#app { position: fixed; top: env(safe-area-inset-top); left: env(safe-area-inset-left); right: env(safe-area-inset-right); bottom: env(safe-area-inset-bottom); width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right)); height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom)); border: 0; background: var(--bg) }
+.banner { position: fixed; z-index: 10; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 8px); padding: 7px 14px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 4px 18px rgba(0,0,0,.18); font-size: 13px; display: flex; align-items: center; gap: 8px }
+.banner .spinner { width: 14px; height: 14px; margin: 0; border-width: 2px }
+.launcher { width: 100%; max-width: 760px }
+.launcher header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 6px 4px 18px }
+.launcher h1 { font-size: 22px; margin: 0 }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); color: inherit; font: inherit; cursor: pointer; text-align: center }
+.tile:disabled { opacity: .45; cursor: default }
+.tile img, .tile .ph { width: 52px; height: 52px; border-radius: 13px }
+.tile .ph { display: flex; align-items: center; justify-content: center; background: var(--line); font-weight: 700; font-size: 20px }
+.tile span { font-size: 13px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical }
+.tile small { font-size: 11px; color: var(--muted) }
+.note { margin: 22px 4px 0; font-size: 13px }
