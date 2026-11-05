@@ -521,7 +521,7 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .remote-app:first-child { border-top: 0; padding-top: 0; }
 .remote-app-name { flex: 1 1 200px; min-width: 0; }
 .remote-app-name .badge { margin-left: 6px; }
-.remote-app-switches { display: flex; gap: 8px 18px; flex-wrap: wrap; }
-.remote-app-switches label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.remote-app-switches { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.remote-passkey { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); cursor: pointer; }
 .remote-device-head { flex-wrap: wrap; row-gap: 8px; }
 .remote-device-head .grow { min-width: 200px; }

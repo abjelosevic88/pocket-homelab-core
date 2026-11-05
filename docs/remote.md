@@ -30,9 +30,9 @@ apps that are switched on, so an app that is off has no address at all.
 ## Switches
 
 - **Remote access** (box-wide, admin): off disconnects Core from the relay.
-- **Per app** (admin): *Reachable remotely*, *New devices get it* and *Ask for
-  Face ID / passkey*. Pocket AI and Core start with "new devices get it" off
-  and the passkey check on.
+- **Per app** (admin): one on/off switch, and *Passkey* (ask for Face ID, Touch ID
+  or the device PIN when the app opens). Pocket AI and Core start with the
+  passkey check on. Switching an app on gives it to every paired device.
 - **Per device** (owner or admin): one switch per app; *Remove* revokes every
   key of the device at once.
 

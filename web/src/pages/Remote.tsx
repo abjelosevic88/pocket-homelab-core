@@ -144,14 +144,15 @@ function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   }
   const exposed = d.apps.filter(a => a.exposed).length
   return (
-    <Card title="Apps" sub={`${exposed} of ${d.apps.length} reachable remotely. Off means the app has no remote address at all. “New devices” is the starting switch for devices paired from now on; each device can be switched on its own.`} className="mt">
+    <Card title="Apps" sub={`${exposed} of ${d.apps.length} on. Switch on the apps you want away from home; every paired device gets them (switch one off for a single device under Devices). An app that is off has no remote address at all.`} className="mt">
       <div className="remote-apps">{d.apps.map(a => <div key={a.slug} className="remote-app">
         <div className="remote-app-name"><b>{a.name}</b>{a.sensitive && <span className="badge warn" title={a.slug === 'ai' ? 'Runs commands on this server' : 'Manages the whole box'}>sensitive</span>}
           {a.exposed && a.address && <div className="muted small mono">{a.address.replace(/^https:\/\//, '')}</div>}</div>
         <div className="remote-app-switches">
-          <label title="Reachable through the relay at all"><Switch size="sm" on={a.exposed} disabled={busy === a.slug || !d.pattern} label={`${a.name} reachable`} onChange={v => set(a, { exposed: v })} />Reachable</label>
-          <label title="On for devices paired from now on"><Switch size="sm" on={a.device_default} disabled={busy === a.slug} label={`${a.name} on for new devices`} onChange={v => set(a, { device_default: v })} />New devices</label>
-          <label title="Ask for Face ID, Touch ID or the device PIN when opening it"><Switch size="sm" on={a.passkey} disabled={busy === a.slug} label={`${a.name} asks for a passkey`} onChange={v => set(a, { passkey: v })} />Passkey</label>
+          {a.exposed && <label className="remote-passkey" title="Ask for Face ID, Touch ID or the device PIN when the app is opened (again after 15 minutes without use)">
+            <input type="checkbox" checked={a.passkey} disabled={busy === a.slug} onChange={e => set(a, { passkey: e.target.checked })} />Passkey</label>}
+          <Switch on={a.exposed} disabled={busy === a.slug || !d.pattern} label={`${a.name} remotely`} title={!d.pattern ? 'Set the address pattern first' : a.exposed ? 'On' : 'Off'}
+            onChange={v => set(a, v ? { exposed: true, device_default: true } : { exposed: false })} />
         </div>
       </div>)}</div>
     </Card>
