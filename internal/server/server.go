@@ -167,6 +167,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	go s.janitor(ctx)
 	go s.connectorScheduler(ctx)
 	go s.remote.run(ctx)
+	go s.remote.cfSyncer(ctx)
 	if s.inst != nil {
 		go s.autoUpdater(ctx)
 	}

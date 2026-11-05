@@ -523,5 +523,6 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .remote-app-name .badge { margin-left: 6px; }
 .remote-app-switches { display: flex; align-items: center; gap: 16px; margin-left: auto; }
 .remote-passkey { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.remote-pending { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; }
 .remote-device-head { flex-wrap: wrap; row-gap: 8px; }
 .remote-device-head .grow { min-width: 200px; }

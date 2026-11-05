@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import { useApp } from '../lib/app-context'
@@ -11,7 +11,7 @@ interface RemoteDevice { id: number; user_id: number; user_name: string; user_em
 interface RemoteStatus { connected: boolean; since?: string; last_error?: string; sessions: number }
 interface RemoteAdmin {
   enabled: boolean; provider: 'cloudflare' | 'custom'; pattern: string; relay_url: string; has_secret: boolean
-  cf_account: string; cf_worker: string; has_cf_token: boolean; cf_deployed: boolean; cf_current: boolean; cf_domains: string[] | null
+  cf_account: string; cf_worker: string; has_cf_token: boolean; cf_deployed: boolean; cf_current: boolean; cf_domains: string[] | null; cf_syncing: boolean; cf_error: string
   portal: string; box_url: string; status: RemoteStatus; apps: RemoteApp[]; devices: RemoteDevice[]
 }
 interface RemoteMine { enabled: boolean; connected: boolean; portal: string; apps: RemoteApp[]; devices: RemoteDevice[] }
@@ -133,25 +133,53 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
 
 function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   const { toast } = useToast()
-  const [busy, setBusy] = useState('')
+  // Switches flip at once; the server answers fast and Cloudflare catches up
+  // in the background. Overrides hold the new value until a reload shows it.
+  const [local, setLocal] = useState<Record<string, Partial<RemoteApp>>>({})
+  const firstSeen = useRef<Record<string, number>>({})
+  useEffect(() => {
+    setLocal(prev => {
+      const next: typeof prev = {}
+      for (const [slug, o] of Object.entries(prev)) {
+        const a = d.apps.find(x => x.slug === slug)
+        if (a && Object.entries(o).some(([k, v]) => a[k as keyof RemoteApp] !== v)) next[slug] = o
+      }
+      return next
+    })
+    const now = Date.now()
+    for (const h of d.cf_domains || []) if (!firstSeen.current[h]) firstSeen.current[h] = now
+  }, [d])
   const set = async (a: RemoteApp, patch: Partial<RemoteApp>) => {
-    setBusy(a.slug)
+    setLocal(prev => ({ ...prev, [a.slug]: { ...prev[a.slug], ...patch } }))
     try {
-      const r = await api.put<{ warning?: string }>(`${V1}/remote/apps/${a.slug}`, patch)
-      if (r?.warning) toast(r.warning, 'err')
+      await api.put(`${V1}/remote/apps/${a.slug}`, patch)
       onChange()
-    } catch (e) { toast(errMsg(e), 'err') } finally { setBusy('') }
+    } catch (e) {
+      setLocal(prev => { const { [a.slug]: _, ...rest } = prev; return rest })
+      toast(errMsg(e), 'err')
+    }
   }
-  const exposed = d.apps.filter(a => a.exposed).length
+  const apps = d.apps.map(a => ({ ...a, ...local[a.slug] }))
+  const exposed = apps.filter(a => a.exposed).length
+  const cf = d.provider === 'cloudflare' && d.cf_deployed
+  const where = (a: RemoteApp) => {
+    const host = a.address.replace(/^https:\/\//, '')
+    if (!cf) return <div className="muted small mono">{host}</div>
+    if (!(d.cf_domains || []).includes(host)) return <div className="muted small remote-pending"><span className="spinner" style={{ width: 11, height: 11 }} />Setting up {host}…</div>
+    const seen = firstSeen.current[host]
+    if (seen && Date.now() - seen < 150_000) return <div className="muted small remote-pending"><span className="spinner" style={{ width: 11, height: 11 }} />{host} works in about 2 minutes</div>
+    return <div className="muted small mono">{host}</div>
+  }
   return (
-    <Card title="Apps" sub={`${exposed} of ${d.apps.length} on. Switch on the apps you want away from home; every paired device gets them (switch one off for a single device under Devices). An app that is off has no remote address at all.`} className="mt">
-      <div className="remote-apps">{d.apps.map(a => <div key={a.slug} className="remote-app">
+    <Card title="Apps" sub={`${exposed} of ${apps.length} on. Switch on the apps you want away from home; every paired device gets them (switch one off for a single device under Devices). An app that is off has no remote address at all.`} className="mt">
+      {d.cf_error && !d.cf_syncing && <div className="callout danger" style={{ marginBottom: 12 }}>Cloudflare did not update the addresses: {d.cf_error}</div>}
+      <div className="remote-apps">{apps.map(a => <div key={a.slug} className="remote-app">
         <div className="remote-app-name"><b>{a.name}</b>{a.sensitive && <span className="badge warn" title={a.slug === 'ai' ? 'Runs commands on this server' : 'Manages the whole box'}>sensitive</span>}
-          {a.exposed && a.address && <div className="muted small mono">{a.address.replace(/^https:\/\//, '')}</div>}</div>
+          {a.exposed && a.address && where(a)}</div>
         <div className="remote-app-switches">
           {a.exposed && <label className="remote-passkey" title="Ask for Face ID, Touch ID or the device PIN when the app is opened (again after 15 minutes without use)">
-            <input type="checkbox" checked={a.passkey} disabled={busy === a.slug} onChange={e => set(a, { passkey: e.target.checked })} />Passkey</label>}
-          <Switch on={a.exposed} disabled={busy === a.slug || !d.pattern} label={`${a.name} remotely`} title={!d.pattern ? 'Set the address pattern first' : a.exposed ? 'On' : 'Off'}
+            <input type="checkbox" checked={a.passkey} onChange={e => set(a, { passkey: e.target.checked })} />Passkey</label>}
+          <Switch on={a.exposed} disabled={!d.pattern} label={`${a.name} remotely`} title={!d.pattern ? 'Set the address pattern first' : a.exposed ? 'On' : 'Off'}
             onChange={v => set(a, v ? { exposed: true, device_default: true } : { exposed: false })} />
         </div>
       </div>)}</div>

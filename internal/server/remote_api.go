@@ -106,6 +106,7 @@ func (s *Server) handleGetRemote(w http.ResponseWriter, r *http.Request) {
 		"has_secret": rs.Secret != "", "cf_account": rs.CFAccount, "cf_worker": rs.CFWorker, "has_cf_token": rs.CFToken != "",
 		"cf_deployed": rs.CFDeployed != "", "cf_current": cfSynced, "cf_domains": rs.CFDomains,
 		"portal": portal, "box_url": rs.boxURL(), "status": s.remote.snapshot(), "apps": apps, "devices": devices,
+		"cf_syncing": s.remote.cfPending.Load(), "cf_error": derefStr(s.remote.cfErr.Load()),
 	})
 }
 
@@ -242,6 +243,8 @@ func (s *Server) remoteHosts(ctx context.Context, rs remoteSettings) ([]string, 
 
 // deployCloudflare uploads the Worker (when it changed) and syncs domains.
 func (s *Server) deployCloudflare(ctx context.Context, force bool) error {
+	s.remote.cfMu.Lock()
+	defer s.remote.cfMu.Unlock()
 	rs := s.remoteSettings(ctx)
 	if rs.Provider != "cloudflare" {
 		return errors.New("the relay is not on Cloudflare")
@@ -329,16 +332,11 @@ func (s *Server) handlePutRemoteApp(w http.ResponseWriter, r *http.Request) {
 	}
 	s.remote.recheck(ctx)
 	rs := s.remoteSettings(ctx)
-	out := map[string]any{"ok": true}
 	if in.Exposed != nil && rs.Provider == "cloudflare" && rs.CFDeployed != "" {
-		// The address appears or disappears at Cloudflare too.
-		dctx, cancel := context.WithTimeout(ctx, time.Minute)
-		defer cancel()
-		if err := s.deployCloudflare(dctx, false); err != nil {
-			out["warning"] = "Saved, but Cloudflare did not update: " + err.Error()
-		}
+		// The address appears or disappears at Cloudflare in the background.
+		s.remote.syncAddresses()
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // ---- everyone: own devices ----
@@ -481,4 +479,11 @@ func (s *Server) handleDeleteRemoteKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -298,10 +299,15 @@ type remoteHub struct {
 
 	passMu sync.Mutex
 	passOK map[int64]time.Time // key id → passkey verified until (rolling)
+
+	cfMu      sync.Mutex  // one Cloudflare deploy or sync at a time
+	cfKick    chan struct{} // an app was switched on or off: sync addresses
+	cfPending atomic.Bool
+	cfErr     atomic.Pointer[string]
 }
 
 func newRemoteHub(s *Server) *remoteHub {
-	return &remoteHub{s: s, kickC: make(chan struct{}, 1), chans: map[uint32]*remoteChan{}, passOK: map[int64]time.Time{}}
+	return &remoteHub{s: s, kickC: make(chan struct{}, 1), cfKick: make(chan struct{}, 1), chans: map[uint32]*remoteChan{}, passOK: map[int64]time.Time{}}
 }
 
 // kick makes the loop re-read the settings (reconnect or disconnect).
@@ -318,6 +324,48 @@ func (h *remoteHub) kick() {
 	select {
 	case h.kickC <- struct{}{}:
 	default:
+	}
+}
+
+// syncAddresses asks for the Cloudflare addresses to follow the app switches.
+// Switching apps answers at once; the sync runs here, once for a burst of flips.
+func (h *remoteHub) syncAddresses() {
+	h.cfPending.Store(true)
+	select {
+	case h.cfKick <- struct{}{}:
+	default:
+	}
+}
+
+func (h *remoteHub) cfSyncer(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-h.cfKick:
+		}
+		// Let a burst of flips settle into one sync.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(1500 * time.Millisecond):
+		}
+		for len(h.cfKick) > 0 {
+			<-h.cfKick
+		}
+		sctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		err := h.s.deployCloudflare(sctx, false)
+		cancel()
+		if err != nil {
+			msg := err.Error()
+			h.cfErr.Store(&msg)
+			h.s.log.Warn("remote: Cloudflare addresses did not update", "err", err)
+		} else {
+			h.cfErr.Store(nil)
+		}
+		if len(h.cfKick) == 0 {
+			h.cfPending.Store(false)
+		}
 	}
 }
 
