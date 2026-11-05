@@ -51,6 +51,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"places/summary": {"/", ""}, "places/overview": {"/", ""}, "places/places": {"/places", "/places/{id}"}, "places/visits": {"/visits", ""},
 	"places/lists": {"/lists", "/lists/{id}"}, "places/inbox": {"/", ""}, "places/search": {"/places", ""}, "places/day": {"/visits", ""},
 	"places/spending": {"/visits", ""}, "places/trips": {"/", ""},
+	"wallet/summary": {"/", ""}, "wallet/overview": {"/", ""}, "wallet/cards": {"/cards", "/cards/{id}"}, "wallet/passes": {"/passes", "/cards/{id}"},
+	"wallet/expiring": {"/ids", "/cards/{id}"}, "wallet/search": {"/cards", "/cards/{id}"}, "wallet/day": {"/passes", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -249,6 +251,21 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 	}
 	// Pocket Places: places link to their page; visits, plans and "how was it?" link to their place's page.
+	// Pocket Wallet: cards, passes and IDs in a summary or a day link to their page.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "wallet" {
+		for _, key := range []string{"today", "expiring", "gift_cards", "cards", "ids", "next", "passes"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/cards/{id}")
+					}
+				}
+			}
+		}
+		if m, ok := data["next"].(map[string]any); ok {
+			itemLink(m, "id", "/cards/{id}")
+		}
+	}
 	if data, ok := envelope["result"].(map[string]any); ok && op.App == "places" {
 		for _, key := range []string{"favourites", "want", "places", "nearby", "been", "added"} {
 			if rows, ok := data[key].([]any); ok {

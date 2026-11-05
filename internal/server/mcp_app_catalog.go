@@ -67,7 +67,7 @@ func arraySchema(item any) map[string]any {
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
-	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true,
+	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true,
 	"voice_tidy_memo": true, "voice_send_memo": true, // send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
@@ -381,6 +381,31 @@ func buildMCPAppCatalog() []*mcpAppTool {
 
 	// Pocket Voice: voice memos recorded on the phone, written out on the server (whisper.cpp) and tidied by Pocket AI (title, summary, cleaned text, kind and actions:
 	// tasks, events, journal lines and expenses found in the memo), then sent to Pocket Notes, Tasks, Calendar or Money. Expense amounts here are major units (12.5 = 12.50).
+	// Pocket Wallet: loyalty, membership and gift cards, tickets and boarding passes, ID papers (ID card, passport, driving licence, insurance). Pass times are local where they happen; amounts are minor units.
+	read("wallet", "summary", "Get a short overview of the wallet: how many cards, passes and IDs, today's tickets and flights, the next pass, what runs out soon (IDs, memberships, gift cards, with days_left) and gift cards with money left.", "/summary", "")
+	read("wallet", "overview", "Get the wallet home page: cards in the person's order, ID papers, the next passes, what runs out in 60 days, counts.", "/overview", "")
+	read("wallet", "cards", "List or filter the wallet. group cards|passes|ids; kind loyalty|membership|gift|ticket|boarding|id|passport|licence|insurance|other; q searches name, shop, number, holder, place, booking reference; archived only|all; from/to filter passes by day; trip_id a Pocket Travel trip; expiring=YYYY-MM-DD runs out on or before; sort used|name|recent|starts|expires. Each card has number, holder, code_format/code_value (the barcode), seat, gate, ref (flight or booking), starts_at, venue, destination, expires_on, balance and points.", "/cards", "group kind q tag archived from to trip_id expiring sort limit")
+	read("wallet", "get_card", "Read one card, pass or ID with everything on it.", "/cards/{id}", "")
+	read("wallet", "passes", "List tickets and boarding passes: from now on by default, or between from and to, or a Pocket Travel trip's (trip_id).", "/passes", "from to trip_id limit")
+	read("wallet", "expiring", "List what runs out within days (default the person's reminder days), with days_left; group ids for documents only.", "/expiring", "days group")
+	read("wallet", "search", "Search the wallet by name, shop, number, holder, place or booking reference.", "/search", "q limit")
+	read("wallet", "day", "Read one day's tickets and flights.", "/day/{date}", "")
+	read("wallet", "balance", "Read a gift card's history: what was spent or added and what was left.", "/cards/{id}/balance", "")
+	cardFields := func() mcpFields {
+		f := textFields("name issuer number holder code_value color note tags valid_from expires_on starts_at ends_at venue destination seat gate ref currency source_ref").
+			integers("balance points trip_id").booleans("pinned archived").
+			enum("kind", "loyalty", "membership", "gift", "ticket", "boarding", "id", "passport", "licence", "insurance", "other").
+			enum("code_format", "", "qr", "code128", "ean13", "aztec", "pdf417", "datamatrix", "ean8", "upca", "upce", "code39", "code93", "itf", "codabar")
+		f["starts_at"].(map[string]any)["description"] = "Local time where it happens, YYYY-MM-DDTHH:MM (or YYYY-MM-DD)."
+		f["code_value"].(map[string]any)["description"] = "What the barcode carries; defaults to the number when a code_format is given."
+		f["balance"].(map[string]any)["description"] = "Gift cards: what is on it, minor units (5000 = 50.00)."
+		f["venue"].(map[string]any)["description"] = "Where it is, or where a flight or train leaves from (\"SJJ Sarajevo\")."
+		f["ref"].(map[string]any)["description"] = "Flight or train number, or booking reference."
+		return f
+	}
+	write("wallet", "add_card", "Add a card, ticket, boarding pass or ID to the wallet (\"add my Lidl card 4012345\", \"my flight OS 784 on 1 Dec at 06:40, seat 14C\"). Passes go on the calendar and with their trip by the person's settings.", "POST", "/cards", cardFields(), "kind")
+	write("wallet", "update_card", "Update supplied fields of a card this assistant added (a new gate, seat or end date).", "PUT", "/cards/{id}", cardFields(), "")
+	write("wallet", "spend_gift_card", "Record spending from a gift card (delta negative, minor units: -1250 = 12.50 spent) or money added (positive).", "POST", "/cards/{id}/balance", textFields("note").integers("delta"), "delta")
 	read("voice", "summary", "Get a short overview of your voice memos: how many (all, in the inbox waiting to be filed, starred, still being written out, failed), minutes recorded, how many today, and the latest inbox memos with their summary and how many suggested actions wait to be sent.", "/summary", "")
 	read("voice", "memos", "List or filter your voice memos, newest first (oldest=1 reverses). q searches titles and words (accents ignored); kind note|todo|idea|journal|meeting|shopping|reminder; tag; inbox=1 only memos not filed yet; starred=1; status queued|working|done|failed; from and to YYYY-MM-DD (the day it was recorded). Each memo has title, recorded_at, duration_ms, status, summary, tidy (the cleaned text), transcript, kind, tags, actions (what the AI found, with sent_to once sent) and sent (what was made from it in other apps); counts has the totals.", "/memos", "q kind tag inbox starred status from to limit offset oldest")
 	read("voice", "get_memo", "Read one voice memo: transcript (the words as written out, with timed segments), tidy (the cleaned text), summary, kind, tags, language, status (queued|working|done|failed, with error), actions the AI found (a list: type task|event|journal|expense with title, due, start, end, location, text, amount in major units, currency, date and notes; sent_to and sent_url once sent, skipped when dismissed) and sent (every item made from it in Notes, Tasks, Calendar or Money).", "/memos/{id}", "")
