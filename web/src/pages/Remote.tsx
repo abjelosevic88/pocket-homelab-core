@@ -103,7 +103,8 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
             {d.cf_deployed && <span className={`pill ${d.cf_current ? 'ok' : 'warn'}`}>{d.cf_current ? 'Worker up to date' : 'Newer Worker available'}</span>}
           </div>
           {deployBlock && !busy && <p className="muted small">{deployBlock}</p>}
-          {!!d.cf_domains?.length && <p className="muted small">Addresses at Cloudflare: {d.cf_domains.map(h => <span key={h} className="mono" style={{ marginRight: 8 }}>{h}</span>)}</p>}
+          {!!d.cf_domains?.length && <div><div className="muted small" style={{ marginBottom: 6 }}>Addresses at Cloudflare</div>
+            <div className="chips">{d.cf_domains.map(h => <a key={h} className="chip sm mono" href={`https://${h}`} target="_blank" rel="noreferrer">{h}</a>)}</div></div>}
         </> : <>
           <p className="muted small">Run the relay on any server with a public address, behind a TLS proxy that answers for the whole pattern (a wildcard certificate). It is the same image as Core:</p>
           <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{`docker run -d --name pocket-relay --restart unless-stopped -p 8080:8080 \\
@@ -118,12 +119,14 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
             <button type="button" className="btn ghost" disabled={!!busy} onClick={() => run('rotate', async () => setSecret((await api.post<{ secret: string }>(`${V1}/remote/secret`)).secret), 'New secret. Restart the relay with it.')}>New secret</button>
           </div>
         </>}
-        <div className="form-actions">
-          <button type="button" className="btn ghost danger-ghost" disabled={!!busy} onClick={() => setReset(true)}>Reset remote access…</button>
-          <span className="grow" />
-          <button type="button" className="btn primary" disabled={!dirty || !!busy} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save'}</button>
-        </div>
+        {dirty && <div className="form-actions">
+          <button type="button" className="btn primary" disabled={!!busy} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save changes'}</button>
+        </div>}
       </div>
+      <div style={{ marginTop: 14 }} />
+      <SettingRow title="Reset remote access" help="Core gets a new key and forgets every paired device; everyone pairs again. For when a device or the relay may be compromised.">
+        <button type="button" className="btn sm danger-ghost" disabled={!!busy} onClick={() => setReset(true)}>Reset…</button>
+      </SettingRow>
       {reset && <Confirm title="Reset remote access" confirmLabel="Reset"
         message={<>Core makes a new key and forgets <b>every paired device</b>. Everyone pairs again. Use this if a device or the relay may be compromised.</>}
         onConfirm={() => { setReset(false); run('reset', () => api.post(`${V1}/remote/reset`), 'Reset. Every device must pair again.') }} onCancel={() => setReset(false)} />}
