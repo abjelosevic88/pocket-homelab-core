@@ -106,7 +106,7 @@ func (s *Server) handleGetRemote(w http.ResponseWriter, r *http.Request) {
 		"has_secret": rs.Secret != "", "cf_account": rs.CFAccount, "cf_worker": rs.CFWorker, "has_cf_token": rs.CFToken != "",
 		"cf_deployed": rs.CFDeployed != "", "cf_current": cfSynced, "cf_domains": rs.CFDomains,
 		"portal": portal, "box_url": rs.boxURL(), "status": s.remote.snapshot(), "apps": apps, "devices": devices,
-		"cf_syncing": s.remote.cfPending.Load(), "cf_error": derefStr(s.remote.cfErr.Load()),
+		"cf_syncing": s.remote.cfPending.Load(), "cf_ready": s.remote.readyHosts(), "cf_error": derefStr(s.remote.cfErr.Load()),
 	})
 }
 

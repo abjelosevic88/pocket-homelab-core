@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -304,6 +305,8 @@ type remoteHub struct {
 	cfKick    chan struct{} // an app was switched on or off: sync addresses
 	cfPending atomic.Bool
 	cfErr     atomic.Pointer[string]
+	cfReady   sync.Map    // host → true once its address answers over TLS
+	cfWatch   atomic.Bool // a readiness check is running
 }
 
 func newRemoteHub(s *Server) *remoteHub {
@@ -338,6 +341,7 @@ func (h *remoteHub) syncAddresses() {
 }
 
 func (h *remoteHub) cfSyncer(ctx context.Context) {
+	go h.watchReady(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -362,11 +366,67 @@ func (h *remoteHub) cfSyncer(ctx context.Context) {
 			h.s.log.Warn("remote: Cloudflare addresses did not update", "err", err)
 		} else {
 			h.cfErr.Store(nil)
+			go h.watchReady(ctx)
 		}
 		if len(h.cfKick) == 0 {
 			h.cfPending.Store(false)
 		}
 	}
+}
+
+// watchReady checks each Cloudflare address until it answers: a new custom
+// domain needs a minute or two for its certificate.
+func (h *remoteHub) watchReady(ctx context.Context) {
+	if !h.cfWatch.CompareAndSwap(false, true) {
+		return
+	}
+	defer h.cfWatch.Store(false)
+	client := &http.Client{Timeout: 8 * time.Second}
+	for range 40 {
+		rs := h.s.remoteSettings(ctx)
+		if rs.Provider != "cloudflare" || rs.CFDeployed == "" {
+			return
+		}
+		want := map[string]bool{}
+		for _, host := range rs.CFDomains {
+			want[host] = true
+		}
+		h.cfReady.Range(func(k, _ any) bool { // an address taken away starts over
+			if !want[k.(string)] {
+				h.cfReady.Delete(k)
+			}
+			return true
+		})
+		waiting := 0
+		for _, host := range rs.CFDomains {
+			if _, ok := h.cfReady.Load(host); ok {
+				continue
+			}
+			req, _ := http.NewRequestWithContext(ctx, "GET", "https://"+host+"/__pocket/config.json", nil)
+			if res, err := client.Do(req); err == nil {
+				res.Body.Close()
+				if res.StatusCode == 200 {
+					h.cfReady.Store(host, true)
+					continue
+				}
+			}
+			waiting++
+		}
+		if waiting == 0 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
+		}
+	}
+}
+
+func (h *remoteHub) readyHosts() []string {
+	out := []string{}
+	h.cfReady.Range(func(k, _ any) bool { out = append(out, k.(string)); return true })
+	return out
 }
 
 func (h *remoteHub) snapshot() remoteStatus {

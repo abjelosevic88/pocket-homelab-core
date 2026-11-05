@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import { useApp } from '../lib/app-context'
@@ -11,7 +11,7 @@ interface RemoteDevice { id: number; user_id: number; user_name: string; user_em
 interface RemoteStatus { connected: boolean; since?: string; last_error?: string; sessions: number }
 interface RemoteAdmin {
   enabled: boolean; provider: 'cloudflare' | 'custom'; pattern: string; relay_url: string; has_secret: boolean
-  cf_account: string; cf_worker: string; has_cf_token: boolean; cf_deployed: boolean; cf_current: boolean; cf_domains: string[] | null; cf_syncing: boolean; cf_error: string
+  cf_account: string; cf_worker: string; has_cf_token: boolean; cf_deployed: boolean; cf_current: boolean; cf_domains: string[] | null; cf_syncing: boolean; cf_error: string; cf_ready: string[] | null
   portal: string; box_url: string; status: RemoteStatus; apps: RemoteApp[]; devices: RemoteDevice[]
 }
 interface RemoteMine { enabled: boolean; connected: boolean; portal: string; apps: RemoteApp[]; devices: RemoteDevice[] }
@@ -139,7 +139,6 @@ function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   // Switches flip at once; the server answers fast and Cloudflare catches up
   // in the background. Overrides hold the new value until a reload shows it.
   const [local, setLocal] = useState<Record<string, Partial<RemoteApp>>>({})
-  const firstSeen = useRef<Record<string, number>>({})
   useEffect(() => {
     setLocal(prev => {
       const next: typeof prev = {}
@@ -149,8 +148,6 @@ function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
       }
       return next
     })
-    const now = Date.now()
-    for (const h of d.cf_domains || []) if (!firstSeen.current[h]) firstSeen.current[h] = now
   }, [d])
   const set = async (a: RemoteApp, patch: Partial<RemoteApp>) => {
     setLocal(prev => ({ ...prev, [a.slug]: { ...prev[a.slug], ...patch } }))
@@ -168,9 +165,8 @@ function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   const where = (a: RemoteApp) => {
     const host = a.address.replace(/^https:\/\//, '')
     if (!cf) return <div className="muted small mono">{host}</div>
-    if (!(d.cf_domains || []).includes(host)) return <div className="muted small remote-pending"><span className="spinner" style={{ width: 11, height: 11 }} />Setting up {host}…</div>
-    const seen = firstSeen.current[host]
-    if (seen && Date.now() - seen < 150_000) return <div className="muted small remote-pending"><span className="spinner" style={{ width: 11, height: 11 }} />{host} works in about 2 minutes</div>
+    if (!(d.cf_domains || []).includes(host)) return <div className="muted small remote-pending"><span className="spinner" style={{ width: 11, height: 11 }} />Adding {host} at Cloudflare…</div>
+    if (!(d.cf_ready || []).includes(host)) return <div className="muted small remote-pending"><span className="spinner" style={{ width: 11, height: 11 }} />Waiting for the certificate of {host} (a minute or two)</div>
     return <div className="muted small mono">{host}</div>
   }
   return (
