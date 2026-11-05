@@ -55,6 +55,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"wealth/maturing": {"/", ""}, "wealth/valuations": {"/assets", ""},
 	"parcels/summary": {"/", ""}, "parcels/overview": {"/", ""}, "parcels/parcels": {"/parcels", "/parcels/{id}"}, "parcels/search": {"/parcels", ""},
 	"parcels/day": {"/", ""}, "parcels/stats": {"/", ""},
+	"sign/summary": {"/", ""}, "sign/overview": {"/", ""}, "sign/documents": {"/documents", "/documents/{id}"}, "sign/templates": {"/templates", "/templates/{id}/edit"},
+	"sign/inbox": {"/", ""}, "sign/search": {"/documents", ""}, "sign/day": {"/", ""}, "sign/stats": {"/", ""},
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
@@ -271,6 +273,42 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					itemLink(m, "parcel_id", "/parcels/{id}")
 				}
 			}
+		}
+	}
+	// Pocket Sign: documents link to their page, what waits for the person to their signing page (/inbox/<recipient>), history lines to their document.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "sign" && (op.Path == "/summary" || op.Path == "/overview" || op.Path == "/inbox" || op.Path == "/search" || op.Path == "/day/{date}") {
+		each := func(key string, fn func(map[string]any)) {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						fn(m)
+					}
+				}
+			}
+		}
+		for _, key := range []string{"waiting", "drafts", "recent", "documents", "sent", "completed"} {
+			if op.Path == "/inbox" {
+				break
+			}
+			each(key, func(m map[string]any) { itemLink(m, "id", "/documents/{id}") })
+		}
+		for _, key := range []string{"to_sign", "signed_by_me"} {
+			each(key, func(m map[string]any) { itemLink(m, "recipient_id", "/inbox/{id}") })
+		}
+		if op.Path == "/inbox" {
+			for _, key := range []string{"waiting", "done"} {
+				each(key, func(m map[string]any) { itemLink(m, "recipient_id", "/inbox/{id}") })
+			}
+		}
+		for _, key := range []string{"activity", "signed"} {
+			each(key, func(m map[string]any) { itemLink(m, "document_id", "/documents/{id}") })
+		}
+	}
+	// A draft made from a template opens on its own page (send it from there), not the template's.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "sign" && op.Path == "/templates/{id}/use" {
+		itemLink(data, "id", "/documents/{id}")
+		if u, ok := data["item_url"].(string); ok {
+			envelope["source_url"] = u
 		}
 	}
 	if op.App == "garage" && op.Path == "/reminders" {

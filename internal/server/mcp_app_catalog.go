@@ -66,6 +66,7 @@ func arraySchema(item any) map[string]any {
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true,
+	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
@@ -401,6 +402,24 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		textFields("description location at").enum("status", "info_received", "in_transit", "out_for_delivery", "pickup", "delivered", "exception", "returned"), "description")
 	write("parcels", "mark_delivered", "Mark a parcel delivered (it arrived). at: when, YYYY-MM-DD or a full time; send today's date when unsure.", "POST", "/parcels/{id}/delivered", textFields("at"), "")
 	write("parcels", "check", "Ask the parcel's tracking service for news now (normally checked by itself every few hours).", "POST", "/parcels/{id}/check", nil, "")
+
+	// Pocket Sign: PDFs sent to people to sign (contracts, quotes, consent forms) and what others sent the person to sign.
+	read("sign", "summary", "Get what needs attention about signing in ONE call: documents waiting for the person's own signature (to_sign, sent by someone on this box), documents waiting for others (waiting: who it waits for in next, progress done/total), drafts, recently completed and the latest activity, plus counts per status.", "/summary", "")
+	read("sign", "overview", "Get the Pocket Sign home screen: to_sign (waiting for the person), waiting (sent, waiting for others), drafts, recent (completed) and activity (the history across documents), with counts.", "/overview", "")
+	read("sign", "list", "List documents sent for signing (templates are separate). status: draft, pending (sent, waiting for people), completed, declined, expired, voided, ended (any finished one) or all. Each has its people (recipients with role signer/approver/viewer/cc and status draft/waiting/sent/opened/done/declined), progress, next (who it waits for) and sent_at/completed_at/expires_at.", "/documents", "status q limit offset")
+	read("sign", "get", "Read one document: its people (with ids, status, when they opened and signed, and why someone declined), the boxes to fill in, the message, expiry and reminders, the signed PDF if done, and the AI summary when one was made.", "/documents/{id}", "")
+	read("sign", "audit", "Read a document's history, oldest first: created, sent, emailed, opened, signed, approved, declined, reminded, completed, voided, with who, when and from which IP. This is what the signing certificate prints.", "/documents/{id}/audit", "")
+	read("sign", "templates", "List the person's templates (reusable PDFs with people and boxes placed): each has roles (recipient_id, role_name like Client or Tenant, role, and a fixed name/email if any), how often it was used and its public link if switched on.", "/templates", "")
+	read("sign", "to_sign", "List what others on this box sent the person to sign: waiting (their turn now) and done (already signed), with title, who sent it, role and expiry. The person signs in Pocket Sign under To sign.", "/inbox", "")
+	read("sign", "search", "Search documents and templates by title, people's names or emails, and the words in the PDF.", "/search", "q")
+	read("sign", "day", "Read one day of signing: documents sent, completed, signed by others (signed) and signed by the person (signed_by_me).", "/day/{date}", "")
+	read("sign", "stats", "Get documents sent, completed and declined per month, the completion rate and the average hours from sending to the last signature.", "/stats", "months")
+	// No tool sends a document out (that publishes it to other people, like /send and /share): use_template makes a draft the person sends in Pocket Sign.
+	write("sign", "remind", "Email one person a reminder to sign now (only someone whose turn it is: status sent or opened). recipient_id comes from pocket_sign_get. Pocket Sign also reminds by itself every few days when the document says so.", "POST", "/documents/{id}/remind",
+		mcpFields{}.integers("recipient_id"), "recipient_id")
+	write("sign", "void", "Cancel a document that is still waiting for signatures. The links stop working and the people who had one are told by email. reason: a short plain reason they will see.", "POST", "/documents/{id}/void", textFields("reason"), "reason")
+	write("sign", "use_template", "Make a DRAFT document from a template and fill in its people: people lists each role of the template (recipient_id from pocket_sign_templates roles) with the name and email of who takes it. Nothing is sent: give the person the draft's link (item_url) so they check it and press Send in Pocket Sign. title and message are optional (the template's own are used).", "POST", "/templates/{id}/use",
+		textFields("title message").field("people", arraySchema(objectSchema(mcpFields{}.integers("recipient_id").field("name", map[string]any{"type": "string", "maxLength": 200}).field("email", map[string]any{"type": "string", "maxLength": 320}), "recipient_id email"))), "people")
 
 	read("money", "accounts", "List financial accounts available to you.", "/accounts", "")
 	read("money", "categories", "List transaction categories.", "/categories", "")

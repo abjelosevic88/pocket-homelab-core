@@ -29,6 +29,13 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"documents", "/documents/{id}/text", `{"id":9}`, `"document text"`, "/documents/9", ""},
 		{"day", "/days/{date}", `{"date":"2026-10-22"}`, `{"date":"2026-10-22"}`, "/day/2026-10-22", ""},
 		{"office", "/recent", `{}`, `[]`, "/", ""},
+		{"sign", "/documents", `{}`, `{"items":[{"id":5}],"total":1}`, "/documents", "/documents/5"},
+		{"sign", "/documents/{id}/audit", `{"id":5}`, `[{"id":99,"document_id":5}]`, "/documents/5", ""},
+		{"sign", "/inbox", `{}`, `{"waiting":[{"recipient_id":7,"document_id":5}],"done":[]}`, "/", "/inbox/7"},
+		{"sign", "/overview", `{}`, `{"to_sign":[{"recipient_id":7}],"waiting":[]}`, "/", "/inbox/7"},
+		{"sign", "/summary", `{}`, `{"to_sign":[],"waiting":[{"id":5,"next":"Ana"}]}`, "/", "/documents/5"},
+		{"sign", "/day/{date}", `{"date":"2026-11-05"}`, `{"signed":[{"document_id":5,"name":"Ana"}]}`, "/", "/documents/5"},
+		{"sign", "/templates/{id}/use", `{"id":2}`, `{"id":11,"kind":"document","status":"draft"}`, "/documents/11", "/documents/11"},
 		{"notes", "/notes", `{}`, `{"id":"../../bad","item_url":"https://evil.test"}`, "/", ""},
 	}
 	for _, tc := range cases {
