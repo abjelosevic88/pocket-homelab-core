@@ -65,6 +65,7 @@ func arraySchema(item any) map[string]any {
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "renewals_renew": true, "wealth_update_value": true,
+	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true,
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
@@ -375,6 +376,31 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("wealth", "update_value", "Type in what an asset is worth (or a debt still owes) on a day, from a statement: the whole of it in minor units of its currency; a second value the same day replaces the first.", "POST", "/assets/{id}/valuations", textFields("date note").integers("value"), "value")
 	write("wealth", "record", "Record a buy, sell, dividend, interest, deposit, withdrawal or fee on an asset. A buy or sell needs position_id and units and updates that holding; a deposit or withdrawal updates what was put in. amount is minor units, always positive.", "POST", "/activity",
 		textFields("date note currency").integers("asset_id position_id amount").numbers("units").enum("kind", "buy", "sell", "dividend", "interest", "deposit", "withdrawal", "fee"), "asset_id kind amount")
+
+	// Pocket Parcels: deliveries on their way (in) and parcels sent (out), with each one's tracking timeline. Prices are minor units of currency.
+	read("parcels", "summary", "Get what needs attention about parcels in ONE call: what arrives today or is out for delivery, what waits at a pick-up point, problems (failed attempts, customs, no news for days), what is on the way, return deadlines in the next 7 days and what was delivered today, plus how many shipping emails wait to be added.", "/summary", "")
+	read("parcels", "overview", "Get the parcels home screen: needs_you (out for delivery, ready to pick up, expected today), on_the_way, problems, recent deliveries, returns and counts.", "/overview", "")
+	read("parcels", "list", "List parcels. view: active (default, on their way), delivered, archived, returns (a return deadline that is still open), problems, all. Each has status (pending, info_received, in_transit, out_for_delivery, pickup, delivered, exception, returned, expired), status_text (latest step), location, expected_on/expected_until, carrier_name and tracking_url.", "/parcels", "view q shop carrier direction status limit offset")
+	read("parcels", "get", "Read one parcel with its whole tracking timeline (events, newest first), papers and links to the payment, wish, inventory item and tasks in the other Pocket apps.", "/parcels/{id}", "")
+	read("parcels", "search", "Search parcels by name, tracking number, shop, order number, recipient or latest step.", "/search", "q limit")
+	read("parcels", "day", "Read one day of parcels: delivered, sent, added, expected that day, and every tracking step of the day.", "/day/{date}", "")
+	read("parcels", "stats", "Get parcels per month, how many days deliveries took (overall, per shop and per carrier) and what orders and extra costs (customs, postage) came to per currency. Prices can overlap Pocket Money: a linked payment carries money_tx_id; never add Parcels and Money totals without verifying it.", "/stats", "months")
+	parcel := func() mcpFields {
+		f := textFields("tracking_number carrier title shop order_number ordered_on currency expected_on expected_until return_by notes contact_name").
+			integers("price extra_cost").enum("direction", "in", "out")
+		f["tracking_number"].(map[string]any)["description"] = "As printed; spaces are fine. The carrier is recognised from it when it can be (China Post, UPS, DHL, Cainiao…)."
+		f["carrier"].(map[string]any)["description"] = "Carrier key when the number alone does not say: dhl-express, dhl-paket, ups, fedex, dpd, gls, hermes, amazon, postnl, inpost, cainiao, yunexpress, 4px, euroexpress, x-express, overseas, post-<country code> (post-ba, post-de…) or other."
+		f["price"].(map[string]any)["description"] = "What the order cost, minor units of currency (4999 = 49.99)."
+		f["direction"].(map[string]any)["description"] = "in = coming to you (default), out = a parcel you sent."
+		return f
+	}
+	write("parcels", "add", "Add a parcel to follow: a tracking number, or at least a title for a delivery without one. Parcels then follows it (17TRACK with the person's key, or Cainiao for AliExpress parcels) and sends pushes when it is out for delivery, ready to pick up or delivered.", "POST", "/parcels", parcel(), "")
+	write("parcels", "update", "Update supplied parcel fields (title, shop, expected day, return deadline, notes, archived…). return_state: keeping, returning (a task to send it back is added when the person wants that) or returned.", "PUT", "/parcels/{id}", parcel().booleans("archived").
+		enum("status", "pending", "info_received", "in_transit", "out_for_delivery", "pickup", "delivered", "exception", "returned", "expired").enum("return_state", "", "keeping", "returning", "returned"), "")
+	write("parcels", "add_step", "Add a step to a parcel's timeline (a call from the courier, picked up from the neighbour, customs charged). The status follows from the words unless given.", "POST", "/parcels/{id}/events",
+		textFields("description location at").enum("status", "info_received", "in_transit", "out_for_delivery", "pickup", "delivered", "exception", "returned"), "description")
+	write("parcels", "mark_delivered", "Mark a parcel delivered (it arrived). at: when, YYYY-MM-DD or a full time; send today's date when unsure.", "POST", "/parcels/{id}/delivered", textFields("at"), "")
+	write("parcels", "check", "Ask the parcel's tracking service for news now (normally checked by itself every few hours).", "POST", "/parcels/{id}/check", nil, "")
 
 	read("money", "accounts", "List financial accounts available to you.", "/accounts", "")
 	read("money", "categories", "List transaction categories.", "/categories", "")

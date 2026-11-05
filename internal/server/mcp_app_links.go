@@ -53,6 +53,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"wealth/summary": {"/", ""}, "wealth/history": {"/", ""}, "wealth/assets": {"/assets", "/a/{id}"}, "wealth/positions": {"/investments", ""},
 	"wealth/activity": {"/investments", ""}, "wealth/debts": {"/debts", "/a/{id}"}, "wealth/plan": {"/plan", ""}, "wealth/search": {"/assets", "/a/{id}"},
 	"wealth/maturing": {"/", ""}, "wealth/valuations": {"/assets", ""},
+	"parcels/summary": {"/", ""}, "parcels/overview": {"/", ""}, "parcels/parcels": {"/parcels", "/parcels/{id}"}, "parcels/search": {"/parcels", ""},
+	"parcels/day": {"/", ""}, "parcels/stats": {"/", ""},
 }
 
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
@@ -236,6 +238,37 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					if m, ok := row.(map[string]any); ok {
 						itemLink(m, "pet_id", "/pets/{id}")
 					}
+				}
+			}
+		}
+	}
+	// Pocket Parcels: every list in the summary, overview, search and a day holds parcels; a day's steps point at theirs.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "parcels" && (op.Path == "/summary" || op.Path == "/overview" || op.Path == "/search" || op.Path == "/day/{date}") {
+		lists := []any{}
+		for _, key := range []string{"needs_you", "on_the_way", "problems", "recent", "returns", "delivered", "sent", "added", "expected"} {
+			lists = append(lists, data[key])
+		}
+		switch ps := data["parcels"].(type) {
+		case []any:
+			lists = append(lists, ps)
+		case map[string]any:
+			for _, l := range ps {
+				lists = append(lists, l)
+			}
+		}
+		for _, l := range lists {
+			if rows, ok := l.([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/parcels/{id}")
+					}
+				}
+			}
+		}
+		if rows, ok := data["steps"].([]any); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					itemLink(m, "parcel_id", "/parcels/{id}")
 				}
 			}
 		}
