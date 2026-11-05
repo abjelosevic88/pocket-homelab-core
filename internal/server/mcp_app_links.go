@@ -45,7 +45,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"movement/visits": {"/timeline", ""}, "movement/search": {"/places", "/places/{id}"},
 	"home/overview": {"/", ""}, "home/due": {"/upkeep", ""}, "home/homes": {"/homes", "/homes/{id}"}, "home/things": {"/things", "/things/{id}"},
 	"home/jobs": {"/upkeep", "/upkeep/{id}"}, "home/records": {"/log", "/log/{id}"}, "home/spending": {"/log", ""},
-	"home/meters": {"/meters", "/meters/{id}"}, "home/pros": {"/pros", "/pros/{id}"}, "home/search": {"/", ""},
+	"home/meters": {"/meters", "/meters/{id}"}, "home/pros": {"/pros", "/pros/{id}"}, "home/search": {"/", ""}, "home/plants": {"/plants", "/plants/{id}"},
+	"pets/overview": {"/", ""}, "pets/due": {"/care", ""}, "pets/pets": {"/pets", "/pets/{id}"}, "pets/care": {"/care", "/care/{id}"}, "pets/records": {"/log", "/log/{id}"},
+	"pets/weights": {"/pets", ""}, "pets/spending": {"/log", ""}, "pets/pros": {"/pros", "/pros/{id}"}, "pets/search": {"/", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
 	"wealth/summary": {"/", ""}, "wealth/history": {"/", ""}, "wealth/assets": {"/assets", "/a/{id}"}, "wealth/positions": {"/investments", ""},
@@ -211,6 +213,29 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			for _, row := range rows {
 				if m, ok := row.(map[string]any); ok {
 					itemLink(m, "thing_id", "/things/{id}")
+				}
+			}
+		}
+	}
+	// Pocket Pets' overview, due list and search mix record kinds too.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "pets" && (op.Path == "/overview" || op.Path == "/due" || op.Path == "/search") {
+		routes := map[string]string{"attention": "/care/{id}", "upcoming": "/care/{id}", "overdue": "/care/{id}", "due": "/care/{id}", "soon": "/care/{id}",
+			"recent": "/log/{id}", "care": "/care/{id}", "records": "/log/{id}", "pets": "/pets/{id}", "pros": "/pros/{id}"}
+		for key, r := range routes {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", r)
+					}
+				}
+			}
+		}
+		for _, key := range []string{"ending", "birthdays"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "pet_id", "/pets/{id}")
+					}
 				}
 			}
 		}

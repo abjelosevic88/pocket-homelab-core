@@ -64,7 +64,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "renewals_renew": true, "wealth_update_value": true,
+	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "renewals_renew": true, "wealth_update_value": true,
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
@@ -292,6 +292,49 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	}
 	write("home", "add_thing", "Add an appliance or part of the house to a home.", "POST", "/things", homeThing(), "name")
 	write("home", "update_thing", "Update supplied appliance fields.", "PUT", "/things/{id}", homeThing().booleans("archived"), "")
+
+	// Pocket Home's house plants: a plant's care is upkeep (jobs with plant_id and care), done care is a log entry of kind plant.
+	read("home", "plants", "List house plants with their care (water, fertilise, mist, rotate, prune, pests, repot), what is due and when each was last watered. Gone plants only with archived=1.", "/plants", "home_id room q archived")
+	read("home", "get_plant", "Read one house plant: details, its care schedule and status, and its care log.", "/plants/{id}", "")
+	write("home", "plant_done", "Mark one care done for one plant (default care water: \"I watered the monstera\"). Moves that care to its next date and writes the log; care not on the schedule is only logged.", "POST", "/plants/{id}/done",
+		textFields("date notes title").integers("cost").enum("care", "water", "fertilise", "mist", "rotate", "prune", "pests", "repot"), "")
+	write("home", "water_plants", "Mark care done for several plants at once (default water). With no plant_ids it does every plant whose care is due today or overdue (\"I watered everything\").", "POST", "/plants/done",
+		textFields("date").integers("home_id").field("plant_ids", arraySchema(map[string]any{"type": "integer"})).enum("care", "water", "fertilise", "mist", "rotate", "prune", "pests", "repot"), "")
+
+	// Pocket Pets: pets, their care (vaccines, worming, flea and tick, nails, medicine), the health log, weights, vets and sitters. Costs are minor units of the pet's currency.
+	read("pets", "summary", "Get the pets overview in one call: counts of overdue, due and soon care, what needs doing, the next two months, recent log entries, vaccines and insurance that run out, birthdays, coming trips with the care due while away, and spending this year vs last year to date. Log costs can overlap Money: confirmed bookings carry money_tx_id; never add Pets and Money totals without verifying it.", "/overview", "pet_id")
+	read("pets", "due", "Get care that is overdue, due today, due soon and coming in the next days (default 30) across your pets, each with status and days_left.", "/due", "days pet_id")
+	read("pets", "pets", "List your pets with species, breed, age, latest weight, vet, insurance end date and open, overdue and soon care.", "/pets", "")
+	read("pets", "get_pet", "Read one pet: profile (microchip, passport, food, allergies, health, vet, insurance), its care, health log, weights, the latest vaccine of each name with how long it holds, and papers.", "/pets/{id}", "")
+	read("pets", "care", "List care (vaccines, worming, flea and tick, check-ups, nails, medicine) with status (overdue, due, soon, ok, paused, done), due_on and how often it repeats.", "/care", "pet_id kind q all")
+	read("pets", "get_care", "Read one piece of care and the log entries written when it was done.", "/care/{id}", "")
+	read("pets", "records", "Read the health log (vet visits, vaccines with valid_until, treatments, medicine, grooming, symptoms, tests, surgery, food and supplies), newest first. cost is minor units; money_tx_id is the confirmed Pocket Money booking.", "/records", "pet_id pro_id kind from to q limit offset")
+	read("pets", "weights", "Read weighings, newest first, each with the change in kg since the one before.", "/weights", "pet_id limit")
+	read("pets", "spending", "Get what the pets cost per month, per kind, per pet and per year. State the range and currency; avoid double counting linked Money transactions.", "/spending", "months pet_id")
+	read("pets", "pros", "List vets (with 24/7 emergency clinics), groomers, sitters, walkers and boarding with their visits and what they cost.", "/pros", "q")
+	read("pets", "search", "Search pets, care, health log entries and vets/sitters.", "/search", "q limit")
+	petRecord := textFields("title date notes valid_until").integers("pet_id care_id pro_id cost").booleans("money").enum("kind", "vet_visit", "vaccine", "treatment", "medication", "grooming", "symptom", "test", "surgery", "purchase", "other")
+	petRecord["cost"].(map[string]any)["description"] = "Minor units of the pet's currency (4500 = 45.00)."
+	petRecord["valid_until"].(map[string]any)["description"] = "For a vaccine or treatment: until when it holds (YYYY-MM-DD)."
+	petRecord["money"].(map[string]any)["description"] = "Also create a Pocket Money transaction when the person has Money connected (default: their setting)."
+	write("pets", "log_visit", "Add to a pet's health log: a vet visit, a vaccine (with valid_until), a treatment, medicine, grooming, a symptom, a test, surgery or a purchase.", "POST", "/records", petRecord, "title")
+	write("pets", "complete_care", "Mark care done (\"Luna got her rabies shot\"): writes a log entry (log: false to skip) and moves recurring care to its next date, counted from date. A vaccine holds until the next due date unless valid_until says otherwise.", "POST", "/care/{id}/done",
+		textFields("date notes valid_until").integers("cost pro_id").booleans("log money"), "")
+	write("pets", "add_weight", "Add a weighing for a pet, in kilograms.", "POST", "/pets/{id}/weights", textFields("weighed_on note").numbers("kg"), "kg")
+	petCare := func() mcpFields {
+		f := textFields("title notes due_on last_done").integers("pet_id pro_id every_n soon_days est_cost").enum("every_unit", "day", "week", "month", "year").
+			enum("kind", "vaccine", "worming", "flea_tick", "checkup", "dental", "grooming", "nails", "medication", "other")
+		f["every_n"].(map[string]any)["description"] = "Repeat every N units; 0 = once."
+		return f
+	}
+	write("pets", "add_care", "Add care for a pet: something to do every N days, weeks, months or years (or once, every_n 0), first due on due_on.", "POST", "/care", petCare(), "title")
+	write("pets", "update_care", "Update supplied care fields, or pause it.", "PUT", "/care/{id}", petCare().booleans("paused"), "")
+	petFields := func() mcpFields {
+		return textFields("name breed born_on color microchip passport_no food allergies conditions insurer policy_no insured_until notes passed_on").integers("vet_id").booleans("neutered").
+			enum("species", "dog", "cat", "rabbit", "rodent", "bird", "fish", "reptile", "horse", "other").enum("sex", "male", "female", "")
+	}
+	write("pets", "add_pet", "Add a pet.", "POST", "/pets", petFields(), "name")
+	write("pets", "update_pet", "Update supplied pet fields (passed_on stops its reminders).", "PUT", "/pets/{id}", petFields().booleans("archived"), "")
 
 	// Pocket Renewals: what runs out (passports, insurance, warranties, domains, subscriptions) and when. Costs are minor units.
 	read("renewals", "summary", "Get the renewals overview in one call: counts (expired, coming up, found automatically and waiting for a check), what has expired, what is coming up, what was found in other apps, trips a passport does not cover, recent renewals and the yearly cost. Renewal costs can overlap Money: confirmed bookings carry money_tx_id in history; never add Renewals and Money totals without verifying it.", "/overview", "")
