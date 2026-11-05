@@ -55,6 +55,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"wallet/expiring": {"/ids", "/cards/{id}"}, "wallet/search": {"/cards", "/cards/{id}"}, "wallet/day": {"/passes", ""},
 	"weather/summary": {"/", ""}, "weather/forecast": {"/", ""}, "weather/warnings": {"/warnings", ""}, "weather/day": {"/diary", ""},
 	"weather/diary": {"/diary", ""}, "weather/locations": {"/places", ""},
+	"fitness/summary": {"/", ""}, "fitness/week": {"/", ""}, "fitness/day": {"/history", ""}, "fitness/workouts": {"/history", "/workouts/{id}"},
+	"fitness/records": {"/progress", ""}, "fitness/progress": {"/progress", ""}, "fitness/routines": {"/routines", "/routines/{id}"},
+	"fitness/plan": {"/routines", ""}, "fitness/exercises": {"/progress", "/exercises/{id}"},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -295,6 +298,55 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					placeLink(m, "id")
 				}
 			}
+		}
+	}
+	// Pocket Fitness: workouts link to their page (a logged one opens there), planned sessions and the plan to their routine,
+	// records to their exercise, an exercise's history to its workouts. Pocket Health's runs in a week have no page here.
+	if op.App == "fitness" {
+		each := func(list any, field, route string) {
+			if rows, ok := list.([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						if health, _ := m["health"].(bool); !health {
+							itemLink(m, field, route)
+						}
+					}
+				}
+			}
+		}
+		one := func(v any, field, route string) {
+			if m, ok := v.(map[string]any); ok {
+				itemLink(m, field, route)
+			}
+		}
+		if data, ok := envelope["result"].(map[string]any); ok {
+			for _, key := range []string{"last_workout", "in_progress", "workout"} {
+				one(data[key], "id", "/workouts/{id}")
+			}
+			one(data["routine"], "id", "/routines/{id}")
+			one(data["exercise"], "id", "/exercises/{id}")
+			one(data["today"], "routine_id", "/routines/{id}")
+			one(data["planned"], "routine_id", "/routines/{id}")
+			each(data["workouts"], "id", "/workouts/{id}")
+			each(data["records"], "exercise_id", "/exercises/{id}")
+			each(data["recent"], "exercise_id", "/exercises/{id}")
+			each(data["history"], "workout_id", "/workouts/{id}")
+			if days, ok := data["days"].([]any); ok {
+				for _, d := range days {
+					if m, ok := d.(map[string]any); ok {
+						each(m["items"], "id", "/workouts/{id}")
+						one(m["planned"], "routine_id", "/routines/{id}")
+					}
+				}
+			}
+			if w, ok := data["workout"].(map[string]any); ok && op.Path == "/workouts/log" {
+				if u, ok := w["item_url"].(string); ok {
+					envelope["source_url"] = u
+				}
+			}
+		}
+		if op.Path == "/plan" {
+			each(envelope["result"], "routine_id", "/routines/{id}")
 		}
 	}
 	// Pocket Wallet: cards, passes and IDs in a summary or a day link to their page.

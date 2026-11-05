@@ -50,6 +50,21 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"weather", "/diary", `{}`, `{"location":{"id":4},"days":[]}`, "/diary", "/places/4"},
 		{"weather", "/locations", `{}`, `[{"id":1,"is_home":true},{"id":4,"lat":48.2}]`, "/places", "/places/4"},
 		{"weather", "/locations", `{}`, `{"id":5,"name":"Vienna","lat":48.2,"lon":16.4}`, "/places", "/places/5"},
+		{"fitness", "/summary", `{}`, `{"last_workout":{"id":96},"today":{"routine_id":3},"records":[{"exercise_id":10}]}`, "/", "/workouts/96"},
+		{"fitness", "/summary", `{}`, `{"today":{"routine_id":3},"last_workout":null}`, "/", "/routines/3"},
+		{"fitness", "/summary", `{}`, `{"records":[{"exercise_id":10,"workout_id":96}]}`, "/", "/exercises/10"},
+		{"fitness", "/week", `{}`, `{"days":[{"items":[{"id":1793664000,"health":true},{"id":95}],"planned":null}]}`, "/", "/workouts/95"},
+		{"fitness", "/week", `{}`, `{"days":[{"items":[],"planned":{"routine_id":4}}]}`, "/", "/routines/4"},
+		{"fitness", "/day/{date}", `{"date":"2026-11-04"}`, `{"workouts":[{"id":96}],"planned":{"routine_id":2}}`, "/history", "/workouts/96"},
+		{"fitness", "/workouts", `{"query":{"limit":"3"}}`, `[{"id":96,"sets":[{"id":1520,"exercise_id":10}]}]`, "/history", "/workouts/96"},
+		{"fitness", "/workouts/{id}", `{"id":96}`, `{"workout":{"id":96},"routine":{"id":2},"exercises":{"10":{"id":10}}}`, "/workouts/96", "/routines/2"},
+		{"fitness", "/workouts/log", `{}`, `{"workout":{"id":97},"records":[{"exercise":"Bench Press (Barbell)"}],"week":{"done":4,"goal":5}}`, "/workouts/97", "/workouts/97"},
+		{"fitness", "/records", `{"query":{"exercise":"10"}}`, `{"records":[{"exercise_id":10,"kind":"weight"}],"recent":[]}`, "/progress", "/exercises/10"},
+		{"fitness", "/progress", `{}`, `{"weeks":[],"records":[{"exercise_id":1}]}`, "/progress", "/exercises/1"},
+		{"fitness", "/routines", `{}`, `[{"id":1,"items":[{"id":1,"exercise_id":1}]}]`, "/routines", "/routines/1"},
+		{"fitness", "/plan", `{}`, `[{"weekday":1,"routine_id":1,"routine":"Push day"}]`, "/routines", "/routines/1"},
+		{"fitness", "/exercises", `{}`, `[{"id":60,"name":"Ab Wheel"}]`, "/progress", "/exercises/60"},
+		{"fitness", "/exercises/{id}", `{"id":10}`, `{"exercise":{"id":10},"history":[{"workout_id":96}]}`, "/exercises/10", "/workouts/96"},
 		{"notes", "/notes", `{}`, `{"id":"../../bad","item_url":"https://evil.test"}`, "/", ""},
 	}
 	for _, tc := range cases {
@@ -70,6 +85,12 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 				t.Fatal("child ID mistaken for review")
 			}
 		})
+	}
+	// Pocket Health's runs in a Pocket Fitness week have no page in Fitness.
+	r := addMCPAppLinks(mcpAppResult(map[string]any{"result": map[string]any{"days": []any{map[string]any{"items": []any{map[string]any{"id": 1793664000.0, "health": true}}}}}}, false),
+		"https://fitness.example", &mcpAppTool{App: "fitness", Path: "/week"}, nil)
+	if strings.Contains(r.Content[0].(*mcp.TextContent).Text, "/workouts/1793664000") {
+		t.Fatal("a Pocket Health run linked as a workout")
 	}
 	for _, base := range []string{"javascript:alert(1)", "https://user:secret@example.com", "https://example.com/?token=secret", "//example.com"} {
 		r := addMCPAppLinks(mcpAppResult(map[string]any{"result": nil}, false), base, &mcpAppTool{App: "notes", Path: "/notes"}, nil)
