@@ -517,6 +517,8 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 
 /* Remote access */
 .remote-apps { display: grid; }
+.remote-group + .remote-group { margin-top: 18px; }
+.remote-group-title { font-size: 13px; font-weight: 650; margin: 0 0 8px; text-transform: none; }
 .remote-app { display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--border); }
 .remote-app:first-child { border-top: 0; padding-top: 0; }
 .remote-app-name { flex: 1 1 200px; min-width: 0; }

@@ -620,6 +620,47 @@ func TestRemotePasskey(t *testing.T) {
 	}
 }
 
+// A third-party service gets the login the device brings, and its cookies.
+func TestRemoteServicePassthrough(t *testing.T) {
+	rig := newRemoteRig(t)
+	seen := make(chan http.Header, 2)
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- r.Header.Clone()
+		http.SetCookie(w, &http.Cookie{Name: "jf", Value: "1"})
+		w.Write([]byte("jellyfin"))
+	}))
+	t.Cleanup(svc.Close)
+	var created map[string]any
+	if c := rig.e.do("POST", "/api/v1/services", "", map[string]any{"type": "jellyfin", "name": "Jellyfin", "url": svc.URL, "public_url": "https://jellyfin.home.test", "audience": "all", "enabled": true}, &created); c != 201 && c != 200 {
+		t.Fatalf("create service %d %v", c, created)
+	}
+	if c := rig.e.do("PUT", "/api/v1/remote/apps/jellyfin", "", map[string]any{"exposed": true}, nil); c != 200 {
+		t.Fatalf("expose service %d", c)
+	}
+	code := rig.pairLink()
+	portal, _ := rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": code})
+	r := portal.do("GET", "/__pocket/api/apps", nil, nil)
+	if !bytes.Contains(r.body, []byte(`"direct":"https://jellyfin.home.test"`)) || !bytes.Contains(r.body, []byte(`"kind":"service"`)) {
+		t.Fatalf("launcher list lacks the service: %s", r.body)
+	}
+	r = portal.do("POST", "/__pocket/api/open", nil, []byte(`{"app":"jellyfin"}`))
+	var open map[string]string
+	json.Unmarshal(r.body, &open)
+	hcode, _ := fragment(t, open["url"])
+	app, ready := rig.dial(t, "jellyfin.remote.test", newKey(t), map[string]any{"t": "pair", "code": hcode})
+	if ready["t"] != "ready" {
+		t.Fatalf("service session: %v", ready)
+	}
+	r = app.do("GET", "/Users/Me", [][2]string{{"X-Emby-Token", "abc"}, {"Authorization", "MediaBrowser Token=\"abc\""}, {"X-Remote-User", "mallory"}}, nil)
+	h := <-seen
+	if r.status != 200 || h.Get("X-Emby-Token") != "abc" || !strings.HasPrefix(h.Get("Authorization"), "MediaBrowser") || h.Get("X-Remote-User") != "" {
+		t.Fatalf("service got %d %v", r.status, h)
+	}
+	if r.h.Get("Set-Cookie") == "" {
+		t.Fatal("a service's cookie must reach the device")
+	}
+}
+
 func TestRemoteHeaderFilter(t *testing.T) {
 	for k, want := range map[string]bool{"Accept": true, "Range": true, "X-Custom-Thing": true, "Cookie": false, "Authorization": false,
 		"X-Remote-User": false, "X-Forwarded-For": false, "Remote-User": false, "X-Auth-Request-Email": false, "X-Api-Key": false, "Origin": false} {

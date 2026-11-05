@@ -5,7 +5,7 @@ import { useApp } from '../lib/app-context'
 import { Card, Confirm, CopyField, Empty, Field, Loading, Modal, PageHeader, Segmented, SettingRow, Switch, errMsg, useAsync, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
 
-interface RemoteApp { slug: string; name: string; address: string; exposed: boolean; device_default: boolean; passkey: boolean; sensitive: boolean }
+interface RemoteApp { slug: string; name: string; kind: 'app' | 'service'; direct: string; address: string; exposed: boolean; device_default: boolean; passkey: boolean; sensitive: boolean }
 interface RemoteKey { id: number; app: string; created_at: string; last_seen_at: string; has_passkey: boolean }
 interface RemoteDevice { id: number; user_id: number; user_name: string; user_email: string; name: string; created_at: string; last_seen_at: string; last_ip: string; apps: Record<string, boolean>; keys: RemoteKey[] }
 interface RemoteStatus { connected: boolean; since?: string; last_error?: string; sessions: number }
@@ -172,7 +172,12 @@ function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   return (
     <Card title="Apps" sub={`${exposed} of ${apps.length} on. Switch on the apps you want away from home; every paired device gets them (switch one off for a single device under Devices). An app that is off has no remote address at all.`} className="mt">
       {d.cf_error && !d.cf_syncing && <div className="callout danger" style={{ marginBottom: 12 }}>Cloudflare did not update the addresses: {d.cf_error}</div>}
-      <div className="remote-apps">{apps.map(a => <div key={a.slug} className="remote-app">
+      {([['app', 'Pocket apps'], ['service', 'Services']] as const).map(([kind, title]) => {
+        const list = apps.filter(a => (a.kind || 'app') === kind)
+        if (!list.length) return null
+        return <div key={kind} className="remote-group">
+          <h3 className="remote-group-title">{title}{kind === 'service' && <span className="muted small"> · devices sign in with their own login for each service</span>}</h3>
+          <div className="remote-apps">{list.map(a => <div key={a.slug} className="remote-app">
         <div className="remote-app-name"><b>{a.name}</b>{a.sensitive && <span className="badge warn" title={a.slug === 'ai' ? 'Runs commands on this server' : 'Manages the whole box'}>sensitive</span>}
           {a.exposed && a.address && where(a)}</div>
         <div className="remote-app-switches">
@@ -182,6 +187,8 @@ function AppsCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
             onChange={v => set(a, v ? { exposed: true, device_default: true } : { exposed: false })} />
         </div>
       </div>)}</div>
+        </div>
+      })}
     </Card>
   )
 }

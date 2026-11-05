@@ -277,7 +277,7 @@ func (c *remoteChan) run(parent context.Context) {
 		}
 		c.h.passkeyTouch(k.ID)
 	}
-	if acc.App != nil {
+	if acc.App != nil && acc.App.Kind != "service" { // services get the device's own login instead
 		tok, err := s.store.CreateRemoteToken(ctx, k.ID, c.slug, remoteTokenTTL)
 		if err != nil {
 			c.fail("error", "Core could not start the session.")
@@ -574,6 +574,31 @@ func remoteHeaderAllowed(k string) bool {
 	return true
 }
 
+// A third-party service gets the login the device brings (its API key, token or
+// cookie); identity headers a proxy in front of it might trust still never pass.
+var remoteSvcAuth = map[string]bool{"Authorization": true, "Cookie": true, "X-Api-Key": true, "X-Plex-Token": true}
+
+func remoteServiceHeaderAllowed(k string) bool {
+	k = http.CanonicalHeaderKey(k)
+	if remoteReqAllow[k] || remoteSvcAuth[k] {
+		return true
+	}
+	lk := strings.ToLower(k)
+	for _, p := range []string{"x-emby-", "x-mediabrowser-", "x-immich-", "x-nd-", "x-navidrome-", "x-requested-"} {
+		if strings.HasPrefix(lk, p) {
+			return true
+		}
+	}
+	return remoteHeaderAllowed(k)
+}
+
+func (a *remoteApp) headerAllowed(k string) bool {
+	if a.Kind == "service" {
+		return remoteServiceHeaderAllowed(k)
+	}
+	return remoteHeaderAllowed(k)
+}
+
 var remoteResDrop = map[string]bool{"Set-Cookie": true, "Set-Cookie2": true, "Connection": true, "Keep-Alive": true,
 	"Transfer-Encoding": true, "Upgrade": true, "Proxy-Authenticate": true, "Trailer": true, "Te": true,
 	"X-Frame-Options": true, "Strict-Transport-Security": true, "Alt-Svc": true, "Clear-Site-Data": true}
@@ -590,7 +615,7 @@ func (c *remoteChan) proxy(ctx context.Context, id uint32, rq remoteReq, body io
 		return
 	}
 	for _, kv := range rq.H {
-		if remoteHeaderAllowed(kv[0]) {
+		if acc.App.headerAllowed(kv[0]) {
 			req.Header.Add(kv[0], kv[1])
 		}
 		if strings.EqualFold(kv[0], "Content-Length") {
@@ -602,10 +627,12 @@ func (c *remoteChan) proxy(ctx context.Context, id uint32, rq remoteReq, body io
 	if body == nil {
 		req.ContentLength = 0
 	}
-	c.mu.Lock()
-	tok := c.token
-	c.mu.Unlock()
-	req.Header.Set("Authorization", "Bearer "+tok)
+	if acc.App.Kind != "service" {
+		c.mu.Lock()
+		tok := c.token
+		c.mu.Unlock()
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-For", c.ip)
 	res, err := remoteHTTP.Do(req)
@@ -618,7 +645,7 @@ func (c *remoteChan) proxy(ctx context.Context, id uint32, rq remoteReq, body io
 	defer res.Body.Close()
 	h := [][2]string{}
 	for k, vs := range res.Header {
-		if remoteResDrop[k] || (res.Uncompressed && (k == "Content-Length" || k == "Content-Encoding")) {
+		if (remoteResDrop[k] && !(acc.App.Kind == "service" && (k == "Set-Cookie" || k == "Set-Cookie2"))) || (res.Uncompressed && (k == "Content-Length" || k == "Content-Encoding")) {
 			continue
 		}
 		for _, v := range vs {
@@ -686,6 +713,9 @@ func (s *Server) remoteRewriteURL(ctx context.Context, v string, app *remoteApp)
 	if t, err := url.Parse(app.Target); err == nil && strings.EqualFold(t.Host, u.Host) {
 		return path
 	}
+	if d, err := url.Parse(app.Direct); err == nil && app.Direct != "" && strings.EqualFold(d.Hostname(), host) {
+		return path
+	}
 	rs := s.remoteSettings(ctx)
 	apps, _ := s.store.ListApps(ctx)
 	for _, a := range apps {
@@ -723,12 +753,20 @@ func (c *remoteChan) startWS(id uint32, p []byte) {
 		defer c.endStream(id)
 		target := strings.TrimRight(acc.App.Target, "/") + rq.U
 		target = "ws" + strings.TrimPrefix(target, "http")
-		c.mu.Lock()
-		tok := c.token
-		c.mu.Unlock()
+		hdr := http.Header{"X-Forwarded-Proto": {"https"}, "X-Forwarded-For": {c.ip}}
+		if acc.App.Kind == "service" {
+			for _, kv := range rq.H {
+				if remoteServiceHeaderAllowed(kv[0]) {
+					hdr.Add(kv[0], kv[1])
+				}
+			}
+		} else {
+			c.mu.Lock()
+			hdr.Set("Authorization", "Bearer "+c.token)
+			c.mu.Unlock()
+		}
 		dctx, dcancel := context.WithTimeout(sctx, 20*time.Second)
-		conn, _, err := websocket.Dial(dctx, target, &websocket.DialOptions{Subprotocols: rq.P,
-			HTTPHeader: http.Header{"Authorization": {"Bearer " + tok}, "X-Forwarded-Proto": {"https"}, "X-Forwarded-For": {c.ip}}})
+		conn, _, err := websocket.Dial(dctx, target, &websocket.DialOptions{Subprotocols: rq.P, HTTPHeader: hdr})
 		dcancel()
 		if err != nil {
 			c.wsClose(id, 1011, "the app refused the connection")
@@ -832,11 +870,18 @@ func (c *remoteChan) portal(ctx context.Context, id uint32, rq remoteReq, body i
 		rs := s.remoteSettings(ctx)
 		out := []map[string]any{}
 		for _, a := range apps {
-			if !a.Exposed || (a.Slug != coreSlug && !s.appAdmits(ctx, a.AppID, acc.User)) {
+			if !a.Exposed {
+				continue
+			}
+			if a.Service != nil {
+				if !a.Service.InAudience(acc.User) {
+					continue
+				}
+			} else if a.Slug != coreSlug && !s.appAdmits(ctx, a.AppID, acc.User) {
 				continue
 			}
 			_, err := s.checkRemote(ctx, &store.RemoteKey{DeviceID: acc.Device.ID, App: a.Slug}, a.Slug)
-			out = append(out, map[string]any{"slug": a.Slug, "name": a.Name, "url": "https://" + rs.host(a.Slug) + "/",
+			out = append(out, map[string]any{"slug": a.Slug, "name": a.Name, "url": "https://" + rs.host(a.Slug) + "/", "kind": a.Kind, "direct": a.Direct,
 				"allowed": err == nil, "paired": paired[a.Slug], "passkey": a.Passkey})
 		}
 		c.respondJSON(id, 200, map[string]any{"apps": out, "user": acc.User.Name, "device": acc.Device.Name, "family": s.familyName(ctx)})

@@ -1,0 +1,28 @@
+{
+  "prologue": "pocket-remote/1 money.remote.example.org",
+  "box_private": "26f8567f2569182294c3fa5b9f9cb2270b554eef628b4c149cf82a42888ff4ae",
+  "box_public": "363c13046f2bb1cd026db0ca4517f12ffdc3411587041e06344d28e710890044",
+  "device_private": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5",
+  "device_public": "5d3e530c936ed33a848a757329cc3dd971420fa3950d7558578153440cd87d20",
+  "initiator_ephemeral_private": "1a17a6f8b10dc30a1e9834c4fa77e79090c713f36679c3adfb1b9961a1ba0c49",
+  "responder_ephemeral_private": "c371f0af00f0c080ce453497bebe499360fdd04cbf8c6685f5a1c4df69329a65",
+  "payload2": "{\"v\":1}",
+  "payload3": "{\"t\":\"open\"}",
+  "message1": "9d6ee4ab0230bc118aa0502befd6d9bb92dfdf4026285fb1623e040f5fa17e408dde188628cf803097566cd57118a171",
+  "message2": "62fa6960ca02a4342d89805cb48c75279b93017e38070ed17c65312e405e366072ab48c2f4ee6e7497ebb03428e581228baed7e4ad9f98",
+  "message3": "2d247f5c95d80147cc279999fcbbb2fe60d2b9ab5d4163143e10f0f3ca537b271aa6811fdd9b57c30b431cad75d69cc1b0e5a76672b0d46f2f92944f75435d5a1d358ddef2ac83c909893140",
+  "initiator_to_responder": [
+    "6669727374",
+    "2a018fc68e02c199aef41fcca68963c12817d0ad56",
+    "7365636f6e64",
+    "cf7450d4bfdec96fded1df008379735f551f8db4aac3",
+    "",
+    "abdf80ec8bb6607a2e5d15a6f632345f"
+  ],
+  "responder_to_initiator": [
+    "7265706c79206f6e65",
+    "933d5f4a75b3bb36034b13a02eae3bd30a7ea0acde0d081ce3",
+    "7265706c792074776f",
+    "cfa9f2cc8f8212a3812d3ec03d9f7a7449fc4bc3fd90923a09"
+  ]
+}

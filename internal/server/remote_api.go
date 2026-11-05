@@ -54,6 +54,8 @@ func (s *Server) introspectRemoteToken(w http.ResponseWriter, r *http.Request, c
 type remoteAppView struct {
 	Slug          string `json:"slug"`
 	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	Direct        string `json:"direct"`
 	Address       string `json:"address"`
 	Exposed       bool   `json:"exposed"`
 	DeviceDefault bool   `json:"device_default"`
@@ -75,7 +77,7 @@ func (s *Server) remoteAppViews(ctx context.Context, rs remoteSettings, onlyExpo
 		if rs.Pattern != "" {
 			addr = "https://" + rs.host(a.Slug)
 		}
-		out = append(out, remoteAppView{Slug: a.Slug, Name: a.Name, Address: addr, Exposed: a.Exposed,
+		out = append(out, remoteAppView{Slug: a.Slug, Name: a.Name, Kind: a.Kind, Direct: a.Direct, Address: addr, Exposed: a.Exposed,
 			DeviceDefault: a.DeviceDefault, Passkey: a.Passkey, Sensitive: sensitiveApps[a.Slug]})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })

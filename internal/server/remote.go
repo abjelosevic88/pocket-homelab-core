@@ -12,6 +12,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -166,9 +169,12 @@ func (s *Server) boxKey(ctx context.Context) (remote.Key, error) {
 type remoteApp struct {
 	Slug          string
 	Name          string
+	Kind          string // app | service (a third-party service such as Jellyfin)
 	Target        string // base URL Core forwards to
+	Direct        string // the address devices use at home
 	Icon          string
 	AppID         int64
+	Service       *store.Service // for services: whose audience applies
 	Exposed       bool
 	DeviceDefault bool
 	Passkey       bool
@@ -193,14 +199,52 @@ func (s *Server) remoteApps(ctx context.Context) ([]remoteApp, error) {
 		}
 		out = append(out, ra)
 	}
-	add(remoteApp{Slug: coreSlug, Name: s.familyName(ctx) + " Core", Target: fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Port), Icon: "/icons/pocket-core.svg"})
+	taken := map[string]bool{portalSlug: true, coreSlug: true}
+	add(remoteApp{Slug: coreSlug, Name: s.familyName(ctx) + " Core", Kind: "app", Target: fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Port), Direct: s.cfg.BaseURL, Icon: "/icons/pocket-core.svg"})
 	for _, a := range apps {
-		if a.Slug == portalSlug || a.Slug == coreSlug || !slugRe.MatchString(a.Slug) || a.URL == "" {
+		if taken[a.Slug] || !slugRe.MatchString(a.Slug) || a.URL == "" {
 			continue
 		}
-		add(remoteApp{Slug: a.Slug, Name: a.Name, Target: a.URL, Icon: a.Icon, AppID: a.ID})
+		taken[a.Slug] = true
+		add(remoteApp{Slug: a.Slug, Name: a.Name, Kind: "app", Target: a.URL, Direct: a.EffectivePublicURL(), Icon: a.Icon, AppID: a.ID})
+	}
+	// Third-party services (Jellyfin, Immich…) can be reached the same way; the
+	// device brings its own login for them. Pocket apps' own service rows are
+	// mirrors of the apps above and are skipped.
+	svcs, err := s.store.ListServices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(svcs, func(i, j int) bool { return svcs[i].ID < svcs[j].ID })
+	for i := range svcs {
+		sv := &svcs[i]
+		if sv.AppID != 0 || !sv.Enabled || sv.URL == "" {
+			continue
+		}
+		slug := serviceSlug(sv.Type)
+		if slug == "" || taken[slug] {
+			slug = serviceSlug(sv.Type + "-" + strconv.FormatInt(sv.ID, 10))
+		}
+		if slug == "" || taken[slug] {
+			continue
+		}
+		taken[slug] = true
+		add(remoteApp{Slug: slug, Name: sv.Name, Kind: "service", Target: sv.URL, Direct: sv.EffectivePublicURL(), Service: sv})
 	}
 	return out, nil
+}
+
+var nonSlug = regexp.MustCompile(`[^a-z0-9-]+`)
+
+func serviceSlug(t string) string {
+	s := strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(t), "-"), "-")
+	if len(s) > 40 {
+		s = s[:40]
+	}
+	if !slugRe.MatchString(s) {
+		return ""
+	}
+	return s
 }
 
 func (s *Server) familyName(ctx context.Context) string {
@@ -270,9 +314,14 @@ func (s *Server) checkRemote(ctx context.Context, k *store.RemoteKey, slug strin
 	if !allowed {
 		return nil, errRemoteDenied
 	}
-	if slug == coreSlug {
+	switch {
+	case slug == coreSlug:
 		// Core's own UI: anyone with a Core account, as in a browser at home.
-	} else if !s.appAdmits(ctx, app.AppID, u) {
+	case app.Service != nil:
+		if !app.Service.InAudience(u) {
+			return nil, errRemoteDenied
+		}
+	case !s.appAdmits(ctx, app.AppID, u):
 		return nil, errRemoteDenied
 	}
 	acc.App = app
