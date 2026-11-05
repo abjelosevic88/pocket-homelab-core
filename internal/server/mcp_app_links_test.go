@@ -65,6 +65,17 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"fitness", "/plan", `{}`, `[{"weekday":1,"routine_id":1,"routine":"Push day"}]`, "/routines", "/routines/1"},
 		{"fitness", "/exercises", `{}`, `[{"id":60,"name":"Ab Wheel"}]`, "/exercises", "/exercises/60"},
 		{"fitness", "/exercises/{id}", `{"id":10}`, `{"exercise":{"id":10},"history":[{"workout_id":96}]}`, "/exercises/10", "/workouts/96"},
+		{"nutrition", "/summary", `{}`, `{"date":"2026-11-05","entries":4,"week":{"days":[{"date":"2026-11-03","kcal":2100}]}}`, "/", "/?date=2026-11-03"},
+		{"nutrition", "/day/{date}", `{"date":"2026-11-04"}`, `{"date":"2026-11-04","meals":[{"meal":"breakfast","entries":[{"id":31,"food_id":12,"date":"2026-11-04"}]}]}`, "/?date=2026-11-04", "/foods/12"},
+		{"nutrition", "/day/{date}", `{"date":"../x"}`, `{"meals":[]}`, "/", ""},
+		{"nutrition", "/week", `{"query":{"date":"2026-11-02"}}`, `{"start":"2026-11-02","days":[{"date":"2026-11-02","kcal":1900}]}`, "/?date=2026-11-02", "/?date=2026-11-02"},
+		{"nutrition", "/trends", `{"query":{"days":"30"}}`, `{"days":[{"date":"2026-10-07"}],"top":[{"name":"Oats"}]}`, "/trends", "/?date=2026-10-07"},
+		{"nutrition", "/entries", `{"query":{"date":"2026-11-04"}}`, `[{"id":31,"date":"2026-11-04","food_id":12}]`, "/?date=2026-11-04", "/?date=2026-11-04"},
+		{"nutrition", "/entries", `{}`, `[{"id":31,"date":"2026-11-01"}]`, "/", "/?date=2026-11-01"},
+		{"nutrition", "/foods/search", `{"query":{"q":"egg"}}`, `{"foods":[{"id":0,"builtin":"egg"},{"id":12,"name":"Eggs (farm)"}]}`, "/foods", "/foods/12"},
+		{"nutrition", "/meals", `{}`, `[{"id":3,"name":"Usual breakfast","items":[{"id":9,"food_id":12}]}]`, "/meals", "/foods/12"},
+		{"nutrition", "/entries/log", `{"data":{"meal":"breakfast"}}`, `{"entries":[{"id":40,"date":"2026-11-05","food_id":12}],"count":1,"day":{"text":"…"}}`, "/?date=2026-11-05", "/?date=2026-11-05"},
+		{"nutrition", "/water/{date}/add", `{"date":"2026-11-05","data":{"ml":500}}`, `{"date":"2026-11-05","ml":1500}`, "/?date=2026-11-05", ""},
 		{"notes", "/notes", `{}`, `{"id":"../../bad","item_url":"https://evil.test"}`, "/", ""},
 	}
 	for _, tc := range cases {
@@ -85,6 +96,12 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 				t.Fatal("child ID mistaken for review")
 			}
 		})
+	}
+	// A built-in food (id 0) has no page in Pocket Nutrition.
+	r0 := addMCPAppLinks(mcpAppResult(map[string]any{"result": map[string]any{"foods": []any{map[string]any{"id": 0.0, "builtin": "egg"}}}}, false),
+		"https://nutrition.example", &mcpAppTool{App: "nutrition", Path: "/foods/search"}, nil)
+	if strings.Contains(r0.Content[0].(*mcp.TextContent).Text, "item_url") {
+		t.Fatal("a built-in food got a page")
 	}
 	// Pocket Health's runs in a Pocket Fitness week have no page in Fitness.
 	r := addMCPAppLinks(mcpAppResult(map[string]any{"result": map[string]any{"days": []any{map[string]any{"items": []any{map[string]any{"id": 1793664000.0, "health": true}}}}}}, false),

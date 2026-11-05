@@ -58,6 +58,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"fitness/summary": {"/", ""}, "fitness/week": {"/", ""}, "fitness/day": {"/history", ""}, "fitness/workouts": {"/history", "/workouts/{id}"},
 	"fitness/records": {"/progress", ""}, "fitness/progress": {"/progress", ""}, "fitness/routines": {"/routines", "/routines/{id}"},
 	"fitness/plan": {"/routines", ""}, "fitness/exercises": {"/exercises", "/exercises/{id}"},
+	"nutrition/summary": {"/", ""}, "nutrition/day": {"/", ""}, "nutrition/week": {"/", ""}, "nutrition/trends": {"/trends", ""}, "nutrition/entries": {"/", ""},
+	"nutrition/water": {"/", ""}, "nutrition/foods": {"/foods", "/foods/{id}"}, "nutrition/meals": {"/meals", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -347,6 +349,81 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 		if op.Path == "/plan" {
 			each(envelope["result"], "routine_id", "/routines/{id}")
+		}
+	}
+	// Pocket Nutrition: the diary is one page per day (/?date=YYYY-MM-DD). A day, a week, the entries of a day and what was
+	// just logged open that day; entries and the days of a week or trends link to their day, foods (and the foods in saved
+	// meals) to /foods/{id}. Built-in foods (id 0) have no page.
+	if op.App == "nutrition" {
+		dayURL := func(date any) string {
+			if d, ok := date.(string); ok && mcpLinkDate.MatchString(d) {
+				return link("/?date=" + d)
+			}
+			return ""
+		}
+		days := func(list any) {
+			if rows, ok := list.([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						if u := dayURL(m["date"]); u != "" {
+							m["item_url"] = u
+						}
+					}
+				}
+			}
+		}
+		foods := func(list any, field string) {
+			if rows, ok := list.([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, field, "/foods/{id}")
+					}
+				}
+			}
+		}
+		if parts[0] == "day" || parts[0] == "water" {
+			if u := dayURL(input["date"]); u != "" {
+				envelope["source_url"] = u
+			}
+		}
+		if q, ok := input["query"].(map[string]any); ok && (parts[0] == "week" || parts[0] == "entries") {
+			if u := dayURL(q["date"]); u != "" {
+				envelope["source_url"] = u
+			}
+		}
+		switch data := envelope["result"].(type) {
+		case []any:
+			if op.Path == "/meals" {
+				for _, row := range data {
+					if m, ok := row.(map[string]any); ok {
+						foods(m["items"], "food_id")
+					}
+				}
+			} else {
+				days(data)
+			}
+		case map[string]any:
+			days(data["days"])
+			if w, ok := data["week"].(map[string]any); ok {
+				days(w["days"])
+			}
+			if meals, ok := data["meals"].([]any); ok {
+				for _, meal := range meals {
+					if m, ok := meal.(map[string]any); ok {
+						foods(m["entries"], "food_id")
+					}
+				}
+			}
+			if op.Path == "/entries/log" {
+				days(data["entries"])
+				if rows, ok := data["entries"].([]any); ok && len(rows) > 0 {
+					if m, ok := rows[0].(map[string]any); ok {
+						if u := dayURL(m["date"]); u != "" {
+							envelope["source_url"] = u
+						}
+					}
+				}
+			}
 		}
 	}
 	// Pocket Wallet: cards, passes and IDs in a summary or a day link to their page.

@@ -12,6 +12,7 @@ func TestMCPOpKind(t *testing.T) {
 		"pocket_projects_issues": "read", "pocket_files_save_text": "change", "pocket_tasks_complete": "change", "pocket_notes_append": "add",
 		"pocket_weather_summary": "read", "pocket_weather_add_place": "change",
 		"pocket_fitness_summary": "read", "pocket_fitness_log_workout": "change",
+		"pocket_nutrition_summary": "read", "pocket_nutrition_foods_search": "read", "pocket_nutrition_log_food": "change", "pocket_nutrition_add_water": "change",
 	} {
 		if kinds[name] != want {
 			t.Errorf("%s: kind %q, want %q", name, kinds[name], want)

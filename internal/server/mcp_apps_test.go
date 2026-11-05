@@ -649,3 +649,67 @@ func TestMCPFitnessLogWorkout(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPNutritionLogFood(t *testing.T) {
+	var log, water *mcpAppTool
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "nutrition" {
+			if op.Method == "GET" {
+				reads++
+			}
+			switch op.Name {
+			case "pocket_nutrition_log_food":
+				log = op
+			case "pocket_nutrition_add_water":
+				water = op
+			}
+		}
+	}
+	if log == nil || log.Method != "POST" || log.Path != "/entries/log" || log.Kind != "change" {
+		t.Fatalf("log_food: %+v", log)
+	}
+	if water == nil || water.Method != "POST" || water.Path != "/water/{date}/add" || water.Kind != "change" {
+		t.Fatalf("add_water: %+v", water)
+	}
+	if reads != 7 {
+		t.Fatalf("nutrition reads: %d", reads)
+	}
+	// "two eggs and toast for breakfast, 60 g of oats, and grandma's pie"
+	ok := map[string]any{"date": "2026-11-05", "meal": "breakfast", "ref": "voice-memo-812", "items": []any{
+		map[string]any{"name": "egg", "qty": 2},
+		map[string]any{"name": "White bread", "serving": "1 slice", "qty": 2},
+		map[string]any{"name": "oats", "amount": 60, "unit": "g"},
+		map[string]any{"name": "Grandma's pie", "kcal": 420, "protein": 12, "save": true, "meal": "snacks"},
+		map[string]any{"food_id": 7, "qty": 1},
+	}}
+	if err := log.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("log_food refused a plain breakfast: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"meal": "breakfast"},
+		{"items": []any{}},
+		{"items": []any{map[string]any{"name": "egg", "grams": 50}}},
+		{"items": []any{map[string]any{"name": "milk", "amount": 8, "unit": "oz"}}},
+		{"meal": "brunch", "items": []any{map[string]any{"name": "egg", "qty": 2}}},
+		{"date": "yesterday", "items": []any{map[string]any{"name": "egg", "qty": 2}}},
+		{"items": []any{map[string]any{"name": "egg", "qty": 0}}},
+		{"items": []any{map[string]any{"name": "pie", "kcal": -10}}},
+	} {
+		if err := log.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("log_food accepted %v", bad)
+		}
+	}
+	if err := water.resolved.Validate(map[string]any{"date": "2026-11-05", "request_id": "0123456789abcdef", "data": map[string]any{"ml": 500}}); err != nil {
+		t.Fatalf("add_water refused two glasses: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"date": "2026-11-05", "request_id": "0123456789abcdef", "data": map[string]any{}},
+		{"date": "2026-11-05", "request_id": "0123456789abcdef", "data": map[string]any{"ml": 9000}},
+		{"date": "today", "request_id": "0123456789abcdef", "data": map[string]any{"ml": 250}},
+	} {
+		if err := water.resolved.Validate(bad); err == nil {
+			t.Fatalf("add_water accepted %v", bad)
+		}
+	}
+}
