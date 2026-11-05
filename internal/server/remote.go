@@ -391,6 +391,10 @@ func (h *remoteHub) syncAddresses() {
 
 func (h *remoteHub) cfSyncer(ctx context.Context) {
 	go h.watchReady(ctx)
+	// After a Core update with newer shell files, upload the Worker again by itself.
+	if rs := h.s.remoteSettings(ctx); rs.Provider == "cloudflare" && rs.CFDeployed != "" && rs.CFDeployed != remote.WorkerHash() {
+		h.syncAddresses()
+	}
 	for {
 		select {
 		case <-ctx.Done():

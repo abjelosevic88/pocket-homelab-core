@@ -60,22 +60,67 @@ function db() {
     r.onerror = () => rej(r.error)
   })
 }
-async function load() {
+async function getRaw(k) {
   const d = await db()
   return new Promise((res, rej) => {
-    const r = d.transaction('kv').objectStore('kv').get('state')
-    r.onsuccess = () => res(r.result || {})
+    const r = d.transaction('kv').objectStore('kv').get(k)
+    r.onsuccess = () => res(r.result)
     r.onerror = () => rej(r.error)
   })
 }
-async function save(state) {
+async function putRaw(k, v) {
   const d = await db()
   return new Promise((res, rej) => {
     const t = d.transaction('kv', 'readwrite')
-    t.objectStore('kv').put(state, 'state')
+    if (v === undefined) t.objectStore('kv').delete(k); else t.objectStore('kv').put(v, k)
     t.oncomplete = res
     t.onerror = () => rej(t.error)
+    t.onabort = () => rej(t.error || new Error('storage aborted'))
   })
+}
+
+// WebKit (Safari, every iPhone browser) silently drops X25519 CryptoKeys from
+// IndexedDB, though it keeps AES keys. There the device key is kept wrapped by
+// a stored AES key and unwrapped into a non-extractable key on load. Chromium
+// and Firefox keep the X25519 key itself.
+let keepsX25519 = null
+async function x25519Persists() {
+  if (keepsX25519 !== null) return keepsX25519
+  try {
+    const probe = await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])
+    await putRaw('probe', { k: probe.privateKey })
+    const back = await getRaw('probe')
+    keepsX25519 = !!(back && back.k && back.k.type === 'private')
+  } catch { keepsX25519 = false }
+  await putRaw('probe', undefined).catch(() => {})
+  return keepsX25519
+}
+
+async function newDeviceKey() {
+  if (await x25519Persists()) return { key: await generateStatic() }
+  const pair = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits'])
+  const wrapper = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['wrapKey', 'unwrapKey'])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const wrapped = await crypto.subtle.wrapKey('pkcs8', pair.privateKey, wrapper, { name: 'AES-GCM', iv })
+  const pub = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey))
+  return { wrapped: { wrapped, iv, wrapper, pub }, key: await unwrapDeviceKey({ wrapped, iv, wrapper, pub }) }
+}
+
+async function unwrapDeviceKey(w) {
+  const privateKey = await crypto.subtle.unwrapKey('pkcs8', w.wrapped, w.wrapper, { name: 'AES-GCM', iv: w.iv }, { name: 'X25519' }, false, ['deriveBits'])
+  const publicKey = await crypto.subtle.importKey('raw', w.pub, { name: 'X25519' }, true, [])
+  return { privateKey, publicKey }
+}
+
+async function load() {
+  const st = (await getRaw('state')) || {}
+  if (st.wrapped && !st.key) st.key = await unwrapDeviceKey(st.wrapped)
+  return st
+}
+async function save(state) {
+  // A wrapped key is stored wrapped only: a record holding an X25519 key would vanish in WebKit.
+  const rec = state.wrapped ? { ...state, key: undefined } : state
+  await putRaw('state', rec)
 }
 
 // ---- screens ----
@@ -487,7 +532,9 @@ async function main() {
   }
   let state = await load().catch(() => ({}))
   if (pair && (!same(state.box, pair.box) || !state.key || !state.paired)) {
-    state = { box: pair.box, key: state.key && same(state.box, pair.box) ? state.key : await generateStatic(), paired: false }
+    const keep = state.key && same(state.box, pair.box)
+    const fresh = keep ? { key: state.key, wrapped: state.wrapped } : await newDeviceKey()
+    state = { box: pair.box, key: fresh.key, wrapped: fresh.wrapped, paired: false }
     await save(state)
   } else if (pair) {
     pair = null // already paired here; keep the existing key

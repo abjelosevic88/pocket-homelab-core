@@ -152,4 +152,8 @@ docker run -d --name pocket-relay -p 8080:8080 \
   Cloudflare account, your server) is trusted for that code: protect it with
   2FA. The shell's files are served with a strict CSP and no third-party code.
 - Keys are non-extractable WebCrypto keys: a script can use a key while the
-  page is open but cannot copy it off the device.
+  page is open but cannot copy it off the device. WebKit (Safari and every
+  iPhone browser) cannot store X25519 keys in IndexedDB, so there the key is
+  stored wrapped by a non-extractable AES key and unwrapped on load; a script
+  running on that same app address could unwrap it extractably. Each app has
+  its own address and key, so that exposure stays within the one app.
