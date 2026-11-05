@@ -608,3 +608,44 @@ func TestMCPProjectsSharedNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPFitnessLogWorkout(t *testing.T) {
+	var log *mcpAppTool
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "fitness" {
+			if op.Method == "GET" {
+				reads++
+			}
+			if op.Name == "pocket_fitness_log_workout" {
+				log = op
+			}
+		}
+	}
+	if log == nil || log.Method != "POST" || log.Path != "/workouts/log" || log.Kind != "change" {
+		t.Fatalf("log_workout: %+v", log)
+	}
+	if reads < 10 {
+		t.Fatalf("fitness reads: %d", reads)
+	}
+	// "bench 3x8 at 80, pull-ups 10 and 8, a 5 km run in 26 min"
+	ok := map[string]any{"name": "Push day", "date": "2026-11-05", "duration_min": 55, "feel": 4, "exercises": []any{
+		map[string]any{"name": "bench", "sets": []any{map[string]any{"weight": 80, "reps": 8}, map[string]any{"weight": 80, "reps": 8}, map[string]any{"weight": 80, "reps": 8}}},
+		map[string]any{"name": "Pull Up", "sets": []any{map[string]any{"reps": 10}, map[string]any{"reps": 8, "type": "failure"}}},
+		map[string]any{"exercise_id": 70, "sets": []any{map[string]any{"distance_m": 5000, "duration_s": 1560}}},
+	}}
+	if err := log.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("log_workout refused a plain workout: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"name": "No exercises"},
+		{"exercises": []any{}},
+		{"exercises": []any{map[string]any{"name": "bench", "sets": []any{map[string]any{"weight": 80, "lbs": 176}}}}},
+		{"exercises": []any{map[string]any{"name": "bench", "sets": []any{map[string]any{"reps": 8, "type": "superset"}}}}},
+		{"feel": 9, "exercises": []any{map[string]any{"name": "bench", "sets": []any{map[string]any{"reps": 8}}}}},
+	} {
+		if err := log.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("log_workout accepted %v", bad)
+		}
+	}
+}
