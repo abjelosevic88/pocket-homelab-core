@@ -399,7 +399,8 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "qr")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"url": link, "qr_svg": qrSVG(q), "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL))})
+	img := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(qrSVG(q)))
+	writeJSON(w, http.StatusOK, map[string]any{"url": link, "qr_svg": img, "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL))})
 }
 
 // myRemoteDevice loads a device the caller owns (or any, for admins).

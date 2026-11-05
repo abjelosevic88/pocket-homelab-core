@@ -23,6 +23,12 @@ export default function Remote() {
   const { data: mine, loading, reload: reloadMine } = useAsync(() => api.get<RemoteMine>(`${V1}/me/remote`), [])
   const [pair, setPair] = useState(false)
   const reload = () => { reloadMine(); if (admin) reloadAdmin() }
+  // The relay status changes on its own (connecting, reconnecting): keep it fresh.
+  useEffect(() => {
+    if (!admin) return
+    const t = setInterval(() => { if (!document.hidden) reloadAdmin() }, 5000)
+    return () => clearInterval(t)
+  }, [admin, reloadAdmin])
   if (loading && !mine) return <Loading />
   if (admin && !adm) return <Loading />
   const enabled = admin ? !!adm?.enabled : !!mine?.enabled
@@ -58,7 +64,7 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   const [busy, setBusy] = useState('')
   const [secret, setSecret] = useState('')
   const [reset, setReset] = useState(false)
-  useEffect(() => { setProvider(d.provider); setPattern(d.pattern); setRelayURL(d.relay_url); setAccount(d.cf_account); setWorker(d.cf_worker) }, [d])
+  useEffect(() => { setProvider(d.provider); setPattern(d.pattern); setRelayURL(d.relay_url); setAccount(d.cf_account); setWorker(d.cf_worker) }, [d.provider, d.pattern, d.relay_url, d.cf_account, d.cf_worker]) // not on every status poll: that would wipe what is being typed
   const dirty = provider !== d.provider || pattern !== d.pattern || relayURL !== d.relay_url || account !== d.cf_account || worker !== d.cf_worker || token !== ''
   const run = async (what: string, f: () => Promise<unknown>, ok?: string) => {
     setBusy(what)
@@ -68,6 +74,7 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
   const example = (pattern || '{app}.remote.example.org')
   const showSecret = () => run('secret', async () => setSecret((await api.get<{ secret: string }>(`${V1}/remote/secret`)).secret))
   const portalHost = d.portal.replace(/^https:\/\//, '')
+  const deployBlock = !pattern ? 'Enter the address pattern and save, then deploy.' : !d.has_cf_token && !token ? 'Enter the API token and save, then deploy.' : dirty ? 'Save your changes first, then deploy.' : ''
   return (
     <Card title="Relay" actions={<StatusPill d={d} />}>
       <SettingRow title="Remote access" help={d.enabled ? 'On. Paired devices reach the apps switched on below.' : 'Off. Nothing on this box is reachable through the relay.'}>
@@ -80,7 +87,7 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
           <Segmented value={provider} onChange={v => setProvider(v)} options={[{ value: 'cloudflare', label: 'Cloudflare' }, { value: 'custom', label: 'Self-hosted' }]} />
         </Field>
         <Field label="Address pattern" help={<>Each app gets its own address, {'{app}'} is replaced by its name: <span className="mono">{example.replace('{app}', 'money')}</span>. The launcher is <span className="mono">{example.replace('{app}', 'pocket')}</span>.</>}>
-          <input value={pattern} onChange={e => setPattern(e.target.value)} placeholder="{app}.remote.example.org" spellCheck={false} autoComplete="off" />
+          <input value={pattern} onChange={e => setPattern(e.target.value)} placeholder="e.g. {app}.remote.example.org" spellCheck={false} autoComplete="off" />
         </Field>
         {provider === 'cloudflare' ? <>
           <p className="muted small">Core uploads a small Worker to <b>your own</b> Cloudflare account (the free Workers plan is enough) and adds one address per app you switch on. The API token needs <i>Account · Workers Scripts · Edit</i> and, on the zone, <i>Workers Routes · Edit</i>, <i>DNS · Edit</i> and <i>Zone · Read</i>.</p>
@@ -90,11 +97,12 @@ function RelayCard({ d, onChange }: { d: RemoteAdmin; onChange: () => void }) {
             <Field label="Worker name"><input value={worker} onChange={e => setWorker(e.target.value)} spellCheck={false} /></Field>
           </div>
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-            <button type="button" className="btn" disabled={!!busy || dirty || !d.pattern || !d.has_cf_token} title={dirty ? 'Save first' : undefined}
+            <button type="button" className="btn" disabled={!!busy || dirty || !d.pattern || !d.has_cf_token} title={deployBlock || undefined}
               onClick={() => run('deploy', () => api.post(`${V1}/remote/deploy`), 'Uploaded to Cloudflare.')}>
               <Icon name="upload" size={15} />{busy === 'deploy' ? 'Uploading…' : d.cf_deployed ? 'Upload again' : 'Deploy to Cloudflare'}</button>
             {d.cf_deployed && <span className={`pill ${d.cf_current ? 'ok' : 'warn'}`}>{d.cf_current ? 'Worker up to date' : 'Newer Worker available'}</span>}
           </div>
+          {deployBlock && !busy && <p className="muted small">{deployBlock}</p>}
           {!!d.cf_domains?.length && <p className="muted small">Addresses at Cloudflare: {d.cf_domains.map(h => <span key={h} className="mono" style={{ marginRight: 8 }}>{h}</span>)}</p>}
         </> : <>
           <p className="muted small">Run the relay on any server with a public address, behind a TLS proxy that answers for the whole pattern (a wildcard certificate). It is the same image as Core:</p>

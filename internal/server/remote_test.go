@@ -162,6 +162,9 @@ func (rig *remoteRig) pairLink() string {
 	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", nil, &out); c != 200 {
 		rig.e.t.Fatalf("pair link %d %v", c, out)
 	}
+	if qr, _ := out["qr_svg"].(string); !strings.HasPrefix(qr, "data:image/svg+xml;base64,") {
+		rig.e.t.Fatalf("qr_svg must be an image URL, got %.40q", qr)
+	}
 	code, box := fragment(rig.e.t, out["url"].(string))
 	rig.box = box
 	return code
