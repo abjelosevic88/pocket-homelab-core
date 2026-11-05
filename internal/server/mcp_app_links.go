@@ -51,6 +51,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"places/summary": {"/", ""}, "places/overview": {"/", ""}, "places/places": {"/places", "/places/{id}"}, "places/visits": {"/visits", ""},
 	"places/lists": {"/lists", "/lists/{id}"}, "places/inbox": {"/", ""}, "places/search": {"/places", ""}, "places/day": {"/visits", ""},
 	"places/spending": {"/visits", ""}, "places/trips": {"/", ""},
+	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
 	"wealth/summary": {"/", ""}, "wealth/history": {"/", ""}, "wealth/assets": {"/assets", "/a/{id}"}, "wealth/positions": {"/investments", ""},
@@ -276,6 +277,21 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 		if m, ok := data["last_visit"].(map[string]any); ok {
 			itemLink(m, "place_id", "/places/{id}")
+		}
+	}
+	// Pocket Voice: memos in a list, search, the summary's inbox and a day link to their page; so does the memo a send returns.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "voice" {
+		for _, key := range []string{"items", "latest_inbox", "memos"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/memos/{id}")
+					}
+				}
+			}
+		}
+		if m, ok := data["memo"].(map[string]any); ok {
+			itemLink(m, "id", "/memos/{id}")
 		}
 	}
 	// Pocket Parcels: every list in the summary, overview, search and a day holds parcels; a day's steps point at theirs.

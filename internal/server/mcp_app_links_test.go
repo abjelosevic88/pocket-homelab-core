@@ -36,6 +36,10 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"sign", "/summary", `{}`, `{"to_sign":[],"waiting":[{"id":5,"next":"Ana"}]}`, "/", "/documents/5"},
 		{"sign", "/day/{date}", `{"date":"2026-11-05"}`, `{"signed":[{"document_id":5,"name":"Ana"}]}`, "/", "/documents/5"},
 		{"sign", "/templates/{id}/use", `{"id":2}`, `{"id":11,"kind":"document","status":"draft"}`, "/documents/11", "/documents/11"},
+		{"voice", "/memos", `{}`, `{"items":[{"id":5}],"total":1}`, "/memos", "/memos/5"},
+		{"voice", "/summary", `{}`, `{"memos":3,"latest_inbox":[{"id":5}]}`, "/", "/memos/5"},
+		{"voice", "/day/{date}", `{"date":"2026-11-05"}`, `{"memos":[{"id":5}],"count":1}`, "/memos", "/memos/5"},
+		{"voice", "/memos/{id}/send", `{"id":5}`, `{"sent":{"app":"tasks","ref":"99"},"memo":{"id":5}}`, "/memos/5", "/memos/5"},
 		{"notes", "/notes", `{}`, `{"id":"../../bad","item_url":"https://evil.test"}`, "/", ""},
 	}
 	for _, tc := range cases {

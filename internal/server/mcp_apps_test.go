@@ -306,6 +306,8 @@ var mcpSharingAllowed = map[string]bool{
 	"pocket_projects_create_shared_note /issues/{id}/shared-notes":        true,
 	"pocket_projects_update_shared_note /issues/{id}/shared-notes/{note}": true,
 	"pocket_projects_share_note /issues/{id}/notes/{note}/share":          true,
+	// files a memo into the person's own Notes/Tasks/Calendar/Money (a change: approved per call)
+	"pocket_voice_send_memo /memos/{id}/send": true,
 }
 
 func TestMCPApplicationCatalogBoundary(t *testing.T) {

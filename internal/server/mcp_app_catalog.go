@@ -10,6 +10,8 @@ import (
 // deletion, arbitrary HTTP methods, or service administration. One sharing
 // exception: pocket_projects_share_note copies the person's own note onto a
 // Projects issue for its team (approved per call; see mcpSharingAllowed).
+// pocket_voice_send_memo (/memos/{id}/send) is not delivery to anyone else: it
+// files a memo into the person's own Notes/Tasks/Calendar/Money, approved per call.
 var mcpAppCatalog = buildMCPAppCatalog()
 
 type mcpFields map[string]any
@@ -66,6 +68,7 @@ func arraySchema(item any) map[string]any {
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true,
+	"voice_tidy_memo": true, "voice_send_memo": true, // send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
@@ -375,6 +378,34 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("places", "rate_noticed", "Answer a \"how was it?\" from to_rate: logs that visit with its time, how long and the payment linked, and the rating.", "POST", "/inbox/{id}/accept", textFields("notes with_whom").numbers("rating").integers("spent"), "")
 	write("places", "add_list", "Make a new list of places, optionally with place_ids.", "POST", "/lists", textFields("name emoji description trip_name").integers("trip_id").field("place_ids", arraySchema(map[string]any{"type": "integer"})), "name")
 	write("places", "add_to_list", "Put one of your places on one of your lists (id = the list).", "POST", "/lists/{id}/places", textFields("note").integers("place_id"), "place_id")
+
+	// Pocket Voice: voice memos recorded on the phone, written out on the server (whisper.cpp) and tidied by Pocket AI (title, summary, cleaned text, kind and actions:
+	// tasks, events, journal lines and expenses found in the memo), then sent to Pocket Notes, Tasks, Calendar or Money. Expense amounts here are major units (12.5 = 12.50).
+	read("voice", "summary", "Get a short overview of your voice memos: how many (all, in the inbox waiting to be filed, starred, still being written out, failed), minutes recorded, how many today, and the latest inbox memos with their summary and how many suggested actions wait to be sent.", "/summary", "")
+	read("voice", "memos", "List or filter your voice memos, newest first (oldest=1 reverses). q searches titles and words (accents ignored); kind note|todo|idea|journal|meeting|shopping|reminder; tag; inbox=1 only memos not filed yet; starred=1; status queued|working|done|failed; from and to YYYY-MM-DD (the day it was recorded). Each memo has title, recorded_at, duration_ms, status, summary, tidy (the cleaned text), transcript, kind, tags, actions (what the AI found, with sent_to once sent) and sent (what was made from it in other apps); counts has the totals.", "/memos", "q kind tag inbox starred status from to limit offset oldest")
+	read("voice", "get_memo", "Read one voice memo: transcript (the words as written out, with timed segments), tidy (the cleaned text), summary, kind, tags, language, status (queued|working|done|failed, with error), actions the AI found (a list: type task|event|journal|expense with title, due, start, end, location, text, amount in major units, currency, date and notes; sent_to and sent_url once sent, skipped when dismissed) and sent (every item made from it in Notes, Tasks, Calendar or Money).", "/memos/{id}", "")
+	read("voice", "search", "Search your voice memos' titles and words (1 to 200 characters, accents ignored).", "/search", "q limit")
+	read("voice", "day", "Read one day's voice memos, oldest first, each with its time, length, summary, text and where it was sent: what Pocket Day puts in the journal.", "/day/{date}", "")
+	read("voice", "tags", "List the tags on your voice memos with how many memos have each.", "/tags", "")
+	memoFields := func(text string) mcpFields {
+		f := textFields("title tags recorded_at "+text).enum("kind", "note", "todo", "idea", "journal", "meeting", "shopping", "reminder")
+		f["tags"].(map[string]any)["description"] = "Comma-separated, e.g. \"work, ideas\"; replaces all tags."
+		f["recorded_at"].(map[string]any)["description"] = "RFC 3339 time, e.g. 2026-11-05T09:30:00+01:00."
+		return f
+	}
+	write("voice", "add_memo", "Keep a typed or dictated text as a voice memo (\"keep this as a memo: …\"). text is required; title, kind and tags are optional (recorded_at defaults to now). Pocket AI tidies it in the background when the person has that on: title, summary, kind and suggested actions.", "POST", "/memos",
+		memoFields("text").field("language", map[string]any{"type": "string", "pattern": `^[a-z]{2,3}$`, "description": "Language code like bs or en (default: the person's setting)."}), "text")
+	write("voice", "update_memo", "Update supplied memo fields: title, transcript (fix the words as written out; then pocket_voice_tidy_memo to tidy again), tidy (the cleaned text), summary, kind, tags, starred, filed (true takes it out of the inbox), recorded_at.", "PUT", "/memos/{id}",
+		memoFields("transcript tidy summary").booleans("starred filed"), "")
+	write("voice", "tidy_memo", "Run the Pocket AI tidy on one memo now and return it: rewrites summary, tidy text and the suggested actions not sent yet (so action indexes change), and title, kind and tags unless the person set them. Needs an AI connected in Pocket Voice.", "POST", "/memos/{id}/tidy", nil, "")
+	send := textFields("title text folder due notes start end location currency date").enum("to", "note", "daily", "task", "event", "expense").integers("list_id calendar_id account_id category_id").
+		field("action", map[string]any{"type": "integer", "minimum": 0, "maximum": 100, "description": "Index (0-based) in the memo's actions of the suggestion being sent; it is then marked sent and cannot be sent twice. Its fields are not filled in for you: pass them too."}).
+		field("amount", map[string]any{"type": "number", "minimum": 0.01, "maximum": 10000000, "description": "Expense amount in MAJOR units (12.5 = 12.50), not minor units."})
+	send["due"].(map[string]any)["description"] = "Task due day, YYYY-MM-DD."
+	send["start"].(map[string]any)["description"] = "Event start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (local time)."
+	send["date"].(map[string]any)["description"] = "Expense day, YYYY-MM-DD (default today)."
+	send["folder"].(map[string]any)["description"] = "Pocket Notes folder for a note (default: the person's Voice setting)."
+	write("voice", "send_memo", "Send a memo, or one action found in it, into the person's own Pocket apps through Voice's links: to note (a new Pocket Notes note with the tidy text; title, text and folder optional), daily (a line in today's daily note; a journal action goes here with its text), task (Pocket Tasks: title required; due, notes, list_id), event (Pocket Calendar: title and start required; end, location, calendar_id) or expense (Pocket Money: title and amount required, amount in major units here; currency, date, account_id, category_id). Prefer the actions the AI already found (pocket_voice_get_memo): pass action = its index with its fields. Lists, calendars and accounts default to the person's Voice settings. This creates things in other apps: always ask first. Returns sent (app, kind, title, url) and the memo.", "POST", "/memos/{id}/send", send, "to")
 
 	// Pocket Renewals: what runs out (passports, insurance, warranties, domains, subscriptions) and when. Costs are minor units.
 	read("renewals", "summary", "Get the renewals overview in one call: counts (expired, coming up, found automatically and waiting for a check), what has expired, what is coming up, what was found in other apps, trips a passport does not cover, recent renewals and the yearly cost. Renewal costs can overlap Money: confirmed bookings carry money_tx_id in history; never add Renewals and Money totals without verifying it.", "/overview", "")
