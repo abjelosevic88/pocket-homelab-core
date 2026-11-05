@@ -53,6 +53,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"places/spending": {"/visits", ""}, "places/trips": {"/", ""},
 	"wallet/summary": {"/", ""}, "wallet/overview": {"/", ""}, "wallet/cards": {"/cards", "/cards/{id}"}, "wallet/passes": {"/passes", "/cards/{id}"},
 	"wallet/expiring": {"/ids", "/cards/{id}"}, "wallet/search": {"/cards", "/cards/{id}"}, "wallet/day": {"/passes", ""},
+	"weather/summary": {"/", ""}, "weather/forecast": {"/", ""}, "weather/warnings": {"/warnings", ""}, "weather/day": {"/diary", ""},
+	"weather/diary": {"/diary", ""}, "weather/locations": {"/places", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -112,6 +114,12 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			if op.App == "habits" {
 				source = link("/today/" + id)
 			}
+		}
+	}
+	// Pocket Weather: a forecast of one of the person's places opens that place's page (home is /).
+	if op.App == "weather" && parts[0] == "forecast" {
+		if q, ok := input["query"].(map[string]any); ok && mcpLinkID.MatchString(mcpScalar(q["location"])) {
+			source = link("/places/" + mcpScalar(q["location"]))
 		}
 	}
 	envelope["source_url"] = source
@@ -251,6 +259,44 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 	}
 	// Pocket Places: places link to their page; visits, plans and "how was it?" link to their place's page.
+	// Pocket Weather: places (the list, an added place, a summary's or forecast's place) link to their page, home to /; warnings to their place.
+	if op.App == "weather" {
+		placeLink := func(m map[string]any, field string) {
+			if home, _ := m["is_home"].(bool); home && field == "id" {
+				m["item_url"] = link("/")
+				return
+			}
+			itemLink(m, field, "/places/{id}")
+		}
+		rows, _ := envelope["result"].([]any)
+		data, _ := envelope["result"].(map[string]any)
+		if data != nil {
+			if _, ok := data["lat"]; ok && op.Path == "/locations" {
+				placeLink(data, "id")
+			}
+			for _, key := range []string{"place", "location"} {
+				if m, ok := data[key].(map[string]any); ok {
+					placeLink(m, "id")
+				}
+			}
+			for _, key := range []string{"warnings", "active", "history"} {
+				if list, ok := data[key].([]any); ok {
+					for _, row := range list {
+						if m, ok := row.(map[string]any); ok {
+							placeLink(m, "location_id")
+						}
+					}
+				}
+			}
+		}
+		if op.Path == "/locations" {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					placeLink(m, "id")
+				}
+			}
+		}
+	}
 	// Pocket Wallet: cards, passes and IDs in a summary or a day link to their page.
 	if data, ok := envelope["result"].(map[string]any); ok && op.App == "wallet" {
 		for _, key := range []string{"today", "expiring", "gift_cards", "cards", "ids", "next", "passes"} {

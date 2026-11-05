@@ -40,6 +40,16 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"voice", "/summary", `{}`, `{"memos":3,"latest_inbox":[{"id":5}]}`, "/", "/memos/5"},
 		{"voice", "/day/{date}", `{"date":"2026-11-05"}`, `{"memos":[{"id":5}],"count":1}`, "/memos", "/memos/5"},
 		{"voice", "/memos/{id}/send", `{"id":5}`, `{"sent":{"app":"tasks","ref":"99"},"memo":{"id":5}}`, "/memos/5", "/memos/5"},
+		{"weather", "/summary", `{}`, `{"place":{"id":4,"is_home":false},"warnings":[{"id":9,"location_id":4}]}`, "/", "/places/4"},
+		{"weather", "/summary", `{}`, `{"place":{"id":1,"is_home":true}}`, "/", "/"},
+		{"weather", "/forecast", `{"query":{"location":"4"}}`, `{"location":{"id":4}}`, "/places/4", "/places/4"},
+		{"weather", "/forecast", `{"query":{"lat":"43.8","lon":"18.4"}}`, `{"location":null}`, "/", ""},
+		{"weather", "/forecast", `{"query":{"location":"../x"}}`, `{}`, "/", ""},
+		{"weather", "/warnings", `{"query":{"history":"1"}}`, `{"active":[],"history":[{"id":9,"location_id":4}]}`, "/warnings", "/places/4"},
+		{"weather", "/day/{date}", `{"date":"2026-11-05"}`, `{"date":"2026-11-05","location":{"id":4}}`, "/diary", "/places/4"},
+		{"weather", "/diary", `{}`, `{"location":{"id":4},"days":[]}`, "/diary", "/places/4"},
+		{"weather", "/locations", `{}`, `[{"id":1,"is_home":true},{"id":4,"lat":48.2}]`, "/places", "/places/4"},
+		{"weather", "/locations", `{}`, `{"id":5,"name":"Vienna","lat":48.2,"lon":16.4}`, "/places", "/places/5"},
 		{"notes", "/notes", `{}`, `{"id":"../../bad","item_url":"https://evil.test"}`, "/", ""},
 	}
 	for _, tc := range cases {
