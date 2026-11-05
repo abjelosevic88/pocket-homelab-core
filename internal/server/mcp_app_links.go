@@ -57,7 +57,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"weather/diary": {"/diary", ""}, "weather/locations": {"/places", ""},
 	"fitness/summary": {"/", ""}, "fitness/week": {"/", ""}, "fitness/day": {"/history", ""}, "fitness/workouts": {"/history", "/workouts/{id}"},
 	"fitness/records": {"/progress", ""}, "fitness/progress": {"/progress", ""}, "fitness/routines": {"/routines", "/routines/{id}"},
-	"fitness/plan": {"/routines", ""}, "fitness/exercises": {"/progress", "/exercises/{id}"},
+	"fitness/plan": {"/routines", ""}, "fitness/exercises": {"/exercises", "/exercises/{id}"},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},

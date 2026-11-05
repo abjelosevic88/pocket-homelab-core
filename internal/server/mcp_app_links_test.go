@@ -63,7 +63,7 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"fitness", "/progress", `{}`, `{"weeks":[],"records":[{"exercise_id":1}]}`, "/progress", "/exercises/1"},
 		{"fitness", "/routines", `{}`, `[{"id":1,"items":[{"id":1,"exercise_id":1}]}]`, "/routines", "/routines/1"},
 		{"fitness", "/plan", `{}`, `[{"weekday":1,"routine_id":1,"routine":"Push day"}]`, "/routines", "/routines/1"},
-		{"fitness", "/exercises", `{}`, `[{"id":60,"name":"Ab Wheel"}]`, "/progress", "/exercises/60"},
+		{"fitness", "/exercises", `{}`, `[{"id":60,"name":"Ab Wheel"}]`, "/exercises", "/exercises/60"},
 		{"fitness", "/exercises/{id}", `{"id":10}`, `{"exercise":{"id":10},"history":[{"workout_id":96}]}`, "/exercises/10", "/workouts/96"},
 		{"notes", "/notes", `{}`, `{"id":"../../bad","item_url":"https://evil.test"}`, "/", ""},
 	}
