@@ -109,6 +109,12 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 	if strings.Contains(r.Content[0].(*mcp.TextContent).Text, "/workouts/1793664000") {
 		t.Fatal("a Pocket Health run linked as a workout")
 	}
+	// A Projects read naming no workspace: the links open in the one that answered.
+	rp := addMCPAppLinks(mcpAppResult(map[string]any{"workspace": "projects.client.example", "result": []any{map[string]any{"id": 130.0, "identifier": "ATH-111"}}}, false),
+		"https://projects.example", &mcpAppTool{App: "projects", Path: "/issues"}, map[string]any{})
+	if !strings.Contains(rp.Content[0].(*mcp.TextContent).Text, `"item_url":"https://projects.example/r/projects.client.example/issue/130"`) {
+		t.Fatalf("issue link outside the workspace that answered: %s", rp.Content[0].(*mcp.TextContent).Text)
+	}
 	for _, base := range []string{"javascript:alert(1)", "https://user:secret@example.com", "https://example.com/?token=secret", "//example.com"} {
 		r := addMCPAppLinks(mcpAppResult(map[string]any{"result": nil}, false), base, &mcpAppTool{App: "notes", Path: "/notes"}, nil)
 		if _, ok := r.StructuredContent.(map[string]any)["app_url"]; ok {

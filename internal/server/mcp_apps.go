@@ -246,7 +246,13 @@ func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, toke
 		}
 	}
 	value = scrubMCPAppData(value, token)
-	return mcpAppResult(map[string]any{"app": op.App, "tool": op.Name, "request_id": requestID, "result": value}, false)
+	envelope := map[string]any{"app": op.App, "tool": op.Name, "request_id": requestID, "result": value}
+	// a Projects call naming no workspace: the one that answered (the person's
+	// active one), so its links open there and not in the own instance
+	if ws := strings.ToLower(res.Header.Get("X-Pocket-Workspace")); op.App == "projects" && workspace == "" && mcpWorkspaceAddr.MatchString(ws) {
+		envelope["workspace"] = ws
+	}
+	return mcpAppResult(envelope, false)
 }
 
 // Remove credential-shaped metadata fields from tool output. User-authored
