@@ -68,7 +68,7 @@ func arraySchema(item any) map[string]any {
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
-	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
+	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
@@ -514,6 +514,31 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	send["date"].(map[string]any)["description"] = "Expense day, YYYY-MM-DD (default today)."
 	send["folder"].(map[string]any)["description"] = "Pocket Notes folder for a note (default: the person's Voice setting)."
 	write("voice", "send_memo", "Send a memo, or one action found in it, into the person's own Pocket apps through Voice's links: to note (a new Pocket Notes note with the tidy text; title, text and folder optional), daily (a line in today's daily note; a journal action goes here with its text), task (Pocket Tasks: title required; due, notes, list_id), event (Pocket Calendar: title and start required; end, location, calendar_id) or expense (Pocket Money: title and amount required, amount in major units here; currency, date, account_id, category_id). Prefer the actions the AI already found (pocket_voice_get_memo): pass action = its index with its fields. Lists, calendars and accounts default to the person's Voice settings. This creates things in other apps: always ask first. Returns sent (app, kind, title, url) and the memo.", "POST", "/memos/{id}/send", send, "to")
+
+	// Pocket Blog: the person's own blogs (several per person), posts and pages in Markdown, drafts until published, comments readers wrote and readers counted per day.
+	read("blog", "summary", "Get a short overview of your blogs: each blog with its public address, published posts, drafts and comments waiting; readers in the last 7 days; the latest drafts, scheduled posts and recently published posts with their readers.", "/summary", "")
+	read("blog", "blogs", "List your blogs with their public address (url), look (theme, accent), language, who can read them (visibility public|unlisted|private), comment mode and counts.", "/blogs", "")
+	read("blog", "posts", "List your posts or pages, drafts first then newest. blog = a blog id (default all); kind post|page; status draft|scheduled|published; tag; q searches titles and text (accents ignored); sort updated|oldest|views. Each has title, slug, status, published_at or publish_at, excerpt, tags, words, views, comments_count and url (the public address; a draft's url carries its private preview link).", "/posts", "blog kind status tag q limit offset sort")
+	read("blog", "get_post", "Read one post or page with its full Markdown body, excerpt, tags, status and dates, cover picture, readers, comments and where it came from (source: another Pocket app or an import).", "/posts/{id}", "")
+	read("blog", "search", "Search your posts and pages (drafts too) by their words; each result has a snippet, status, date and url.", "/search", "q limit")
+	read("blog", "comments", "List the comments readers wrote under your posts, newest first: status pending (waiting for your OK), approved or spam (default: all but spam); blog and post narrow it. Each has name, body, post_title and post_url.", "/comments", "blog post status")
+	read("blog", "stats", "Readers of your blog: total in the last days (default 30) and the period before, readers per day, the most read posts and the number of comments. Counted without cookies, once a day per reader per post.", "/stats", "blog days")
+	read("blog", "day", "Read what happened on your blog on one day: posts published and posts written, readers and comments.", "/day/{date}", "")
+	read("blog", "tags", "List the tags on a blog's posts with how many posts have each (blog = a blog id; default your first blog).", "/tags", "blog")
+	read("blog", "ideas", "Things the person did lately in their other Pocket apps that would make a good post (a trip they came back from, a book they finished, a place they loved, a recipe they cooked, a note tagged #blog), with why.", "/ideas", "")
+	postFields := func() mcpFields {
+		f := textFields("title body excerpt tags seo_description").enum("kind", "post", "page").booleans("featured comments in_menu")
+		f["body"].(map[string]any)["description"] = "The post in Markdown: ## headings, paragraphs, - lists, **bold**, > quotes, links, ![alt](url) pictures; a YouTube or Vimeo link alone on a line becomes the video. No HTML (it is not shown). No # title line: the title is separate."
+		f["tags"].(map[string]any)["description"] = "Comma-separated, e.g. \"travel, bosnia\"; replaces all tags."
+		f["excerpt"].(map[string]any)["description"] = "One or two sentences shown in lists and when shared (empty: the start of the post)."
+		return f
+	}
+	write("blog", "create_draft", "Start a post (or page) as a DRAFT in the person's blog, for them to finish and publish in Pocket Blog: nothing is public. Write it in the blog's language (pocket_blog_blogs) and the person's voice, from what they told you or from their other apps (a trip, a book, a place, a recipe); never invent facts about them, leave [placeholders] instead. blog_id picks the blog (default the first). Returns the post with its private preview url.", "POST", "/posts",
+		postFields().integers("blog_id"), "title")
+	write("blog", "update_post", "Change supplied fields of one of the person's posts: title, body (the whole Markdown text), excerpt, tags, seo_description, featured, comments, in_menu. A published post changes for readers at once: ask first.", "PUT", "/posts/{id}", postFields(), "")
+	write("blog", "publish", "Publish a post on the blog now, or schedule it: at = an RFC 3339 time or YYYY-MM-DDTHH:MM local (empty = now). This makes it public to everyone who can read the blog: always ask first, naming the post and the blog.", "POST", "/posts/{id}/publish", textFields("at"), "")
+	write("blog", "unpublish", "Take a published or scheduled post off the blog; it becomes a draft again. Readers no longer see it: always ask first.", "POST", "/posts/{id}/unpublish", nil, "")
+	write("blog", "reply_comment", "Answer a reader's comment (id = the comment) as the blog's author; a waiting comment is approved with it. The answer is public: always ask first and show the text.", "POST", "/comments/{id}/reply", textFields("body"), "body")
 
 	// Pocket Renewals: what runs out (passports, insurance, warranties, domains, subscriptions) and when. Costs are minor units.
 	read("renewals", "summary", "Get the renewals overview in one call: counts (expired, coming up, found automatically and waiting for a check), what has expired, what is coming up, what was found in other apps, trips a passport does not cover, recent renewals and the yearly cost. Renewal costs can overlap Money: confirmed bookings carry money_tx_id in history; never add Renewals and Money totals without verifying it.", "/overview", "")

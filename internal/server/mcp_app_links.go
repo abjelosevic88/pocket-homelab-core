@@ -60,6 +60,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"fitness/plan": {"/routines", ""}, "fitness/exercises": {"/exercises", "/exercises/{id}"},
 	"nutrition/summary": {"/", ""}, "nutrition/day": {"/", ""}, "nutrition/week": {"/", ""}, "nutrition/trends": {"/trends", ""}, "nutrition/entries": {"/", ""},
 	"nutrition/water": {"/", ""}, "nutrition/foods": {"/foods", "/foods/{id}"}, "nutrition/meals": {"/meals", ""},
+	"blog/summary": {"/", ""}, "blog/blogs": {"/look", ""}, "blog/posts": {"/posts", "/posts/{id}"}, "blog/search": {"/posts", "/posts/{id}"}, "blog/comments": {"/comments", ""},
+	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -473,6 +475,21 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 		if m, ok := data["last_visit"].(map[string]any); ok {
 			itemLink(m, "place_id", "/places/{id}")
+		}
+	}
+	// Pocket Blog: posts in lists, search results, the summary's drafts and a day link to their editor page; so does a post itself.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "blog" {
+		for _, key := range []string{"items", "results", "drafts", "scheduled", "recent", "published", "written"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/posts/{id}")
+					}
+				}
+			}
+		}
+		if _, isPost := data["slug"]; isPost {
+			itemLink(data, "id", "/posts/{id}")
 		}
 	}
 	// Pocket Voice: memos in a list, search, the summary's inbox and a day link to their page; so does the memo a send returns.
