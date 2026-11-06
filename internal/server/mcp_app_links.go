@@ -61,6 +61,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"nutrition/summary": {"/", ""}, "nutrition/day": {"/", ""}, "nutrition/week": {"/", ""}, "nutrition/trends": {"/trends", ""}, "nutrition/entries": {"/", ""},
 	"nutrition/water": {"/", ""}, "nutrition/foods": {"/foods", "/foods/{id}"}, "nutrition/meals": {"/meals", ""},
 	"blog/summary": {"/", ""}, "blog/blogs": {"/look", ""}, "blog/posts": {"/posts", "/posts/{id}"}, "blog/search": {"/posts", "/posts/{id}"}, "blog/comments": {"/comments", ""},
+	"chat/summary": {"/", ""}, "chat/conversations": {"/", "/c/{id}"}, "chat/search": {"/search", ""}, "chat/unread": {"/", ""}, "chat/day": {"/", ""},
+	"chat/people": {"/", ""}, "chat/saved": {"/saved", ""},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
@@ -475,6 +477,32 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 		if m, ok := data["last_visit"].(map[string]any); ok {
 			itemLink(m, "place_id", "/places/{id}")
+		}
+	}
+	// Pocket Chat: a conversation opens at /c/{id}; a message (search, saved, a conversation's messages, mentions) opens its conversation.
+	if op.App == "chat" {
+		var list []any
+		switch r := envelope["result"].(type) {
+		case []any:
+			list = r
+		case map[string]any:
+			for _, key := range []string{"results", "waiting", "mentions"} {
+				if rows, ok := r[key].([]any); ok {
+					list = append(list, rows...)
+				}
+			}
+			if _, isMsg := r["conversation_id"]; isMsg {
+				itemLink(r, "conversation_id", "/c/{id}")
+			}
+		}
+		for _, row := range list {
+			if m, ok := row.(map[string]any); ok {
+				if _, isMsg := m["conversation_id"]; isMsg {
+					itemLink(m, "conversation_id", "/c/{id}")
+				} else {
+					itemLink(m, "id", "/c/{id}")
+				}
+			}
 		}
 	}
 	// Pocket Blog: posts in lists, search results, the summary's drafts and a day link to their editor page; so does a post itself.
