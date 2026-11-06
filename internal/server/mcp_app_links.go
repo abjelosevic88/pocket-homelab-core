@@ -63,7 +63,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"blog/summary": {"/", ""}, "blog/blogs": {"/look", ""}, "blog/posts": {"/posts", "/posts/{id}"}, "blog/search": {"/posts", "/posts/{id}"}, "blog/comments": {"/comments", ""},
 	"chat/summary": {"/", ""}, "chat/conversations": {"/", "/c/{id}"}, "chat/search": {"/search", ""}, "chat/unread": {"/", ""}, "chat/day": {"/", ""},
 	"chat/people": {"/", ""}, "chat/saved": {"/saved", ""},
-	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
+	"forms/summary": {"/", ""}, "forms/forms": {"/forms", "/forms/{id}"}, "forms/responses": {"/", "/answers/{id}"}, "forms/search": {"/", ""}, "forms/day": {"/", ""},
+	"forms/templates": {"/forms/new", ""},
+	"blog/stats":      {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -502,6 +504,44 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 				} else {
 					itemLink(m, "id", "/c/{id}")
 				}
+			}
+		}
+	}
+	// Pocket Forms: answers in a list, the summary's latest and a day link to the answer; forms (a list, the summary's list, one form) to the form's page.
+	if op.App == "forms" {
+		switch r := envelope["result"].(type) {
+		case []any:
+			if op.Path == "/forms" {
+				for _, row := range r {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/forms/{id}")
+					}
+				}
+			}
+		case map[string]any:
+			if op.Path == "/responses" || op.Path == "/summary" || op.Path == "/day/{date}" {
+				for _, key := range []string{"items", "latest", "responses"} {
+					if rows, ok := r[key].([]any); ok {
+						for _, row := range rows {
+							if m, ok := row.(map[string]any); ok {
+								itemLink(m, "id", "/answers/{id}")
+							}
+						}
+					}
+				}
+			}
+			if rows, ok := r["list"].([]any); ok && op.Path == "/summary" {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/forms/{id}")
+					}
+				}
+			}
+			if resp, ok := r["response"].(map[string]any); ok {
+				itemLink(resp, "id", "/answers/{id}")
+			}
+			if _, isForm := r["handle"]; isForm {
+				itemLink(r, "id", "/forms/{id}")
 			}
 		}
 	}

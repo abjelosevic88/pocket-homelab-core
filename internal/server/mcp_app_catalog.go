@@ -68,7 +68,7 @@ func arraySchema(item any) map[string]any {
 var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
-	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
+	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
 	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
 
@@ -539,6 +539,35 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("blog", "publish", "Publish a post on the blog now, or schedule it: at = an RFC 3339 time or YYYY-MM-DDTHH:MM local (empty = now). This makes it public to everyone who can read the blog: always ask first, naming the post and the blog.", "POST", "/posts/{id}/publish", textFields("at"), "")
 	write("blog", "unpublish", "Take a published or scheduled post off the blog; it becomes a draft again. Readers no longer see it: always ask first.", "POST", "/posts/{id}/unpublish", nil, "")
 	write("blog", "reply_comment", "Answer a reader's comment (id = the comment) as the blog's author; a waiting comment is approved with it. The answer is public: always ask first and show the text.", "POST", "/comments/{id}/reply", textFields("body"), "body")
+
+	// Pocket Forms: the person's forms (public pages anyone can answer without an account) and the answers people sent; answers go on to Contacts, Projects, Tasks, Calendar, Notes, Mail and Sign from inside Pocket Forms.
+	read("forms", "summary", "Get the state of your forms: how many answers wait (new), this week, forms taking answers and drafts, the latest answers (who, which form, a one-line preview) and each form with its answers, new answers and how many opened it.", "/summary", "")
+	read("forms", "forms", "List your forms: title, status draft|open|closed, taking (takes answers now) and why not (draft, closed, date = its last day passed, full = its answer limit reached), responses, new, views, close_at, max_answers, the public url people answer at.", "/forms", "status")
+	read("forms", "get_form", "Read one form with its questions (fields: id, type, label, help, required, options, role = what the answer means: name, email, phone, company, website, subject, message, budget, deadline, date), its words after sending, limits and what it does by itself with each answer (auto).", "/forms/{id}", "")
+	read("forms", "answers", "List the answers people sent, newest first (default: all but spam): form = a form id; status new|seen|done|spam|open (new and seen); starred=1; q searches the answers and names; email = one person's answers; day = YYYY-MM-DD. Each has name, email, preview, status, form_title, created_at, and what was made from it in other apps (made).", "/responses", "form status starred q email day limit offset")
+	read("forms", "get_answer", "Read one answer in full: every question with its answer (items), who sent it, its status and your note, and what was made from it in your other apps.", "/responses/{id}", "")
+	read("forms", "stats", "Numbers of one form: people who opened it and answers per day (last 30 days), totals, and per question the counted choices, average stars or numbers, and the latest written answers.", "/forms/{id}/stats", "")
+	read("forms", "search", "Search your forms and the answers people sent (names, emails, every answer).", "/search", "q limit")
+	read("forms", "day", "Read one day in your forms: the answers that came in (time, who, which form, a one-line preview) and forms opened that day.", "/day/{date}", "")
+	read("forms", "templates", "List the ready-made forms a new form can start from (key, name, what it is for, its questions): project (a client brief), contact, quote, appointment, feedback, event (sign-ups), rsvp, survey, blank.", "/templates", "")
+	formFields := textFields("title description emoji template language thanks submit_label close_at").integers("max_answers").booleans("one_per_email")
+	formFields["template"].(map[string]any)["description"] = "A ready-made form to start from (pocket_forms_templates): project, contact, quote, appointment, feedback, event, rsvp, survey or blank. Its questions are used unless you give fields."
+	formFields["language"].(map[string]any)["description"] = "The words the page says itself: en, bs, hr, sr or de."
+	formFields["close_at"].(map[string]any)["description"] = "The last day it takes answers, YYYY-MM-DD (empty: until closed)."
+	formFields["fields"] = map[string]any{"type": "array", "maxItems": 60, "description": "The questions, in order; leave out to use the template's.", "items": map[string]any{
+		"type": "object", "additionalProperties": false, "required": []any{"type", "label"}, "properties": map[string]any{
+			"id":       map[string]any{"type": "string", "pattern": `^[a-z0-9_]{1,32}$`},
+			"type":     map[string]any{"type": "string", "enum": []any{"text", "long", "email", "phone", "number", "url", "date", "time", "choice", "checkboxes", "dropdown", "yesno", "rating", "consent", "section"}},
+			"label":    map[string]any{"type": "string", "maxLength": 300},
+			"help":     map[string]any{"type": "string", "maxLength": 1000},
+			"required": map[string]any{"type": "boolean"},
+			"options":  map[string]any{"type": "array", "maxItems": 100, "items": map[string]any{"type": "string", "maxLength": 200}},
+			"other":    map[string]any{"type": "boolean"},
+			"role":     map[string]any{"type": "string", "enum": []any{"", "name", "email", "phone", "company", "website", "subject", "message", "budget", "deadline", "date"}},
+		}}}
+	write("forms", "create_form", "Make a form as a DRAFT for the person to check and open in Pocket Forms: nobody can answer it until they do. Start from a template (pocket_forms_templates) or give the questions; plain, friendly words in the person's language; ask only what is needed, and mark which question is the person's name and email (role) so answers can go on to their contacts. Returns the form with its url.", "POST", "/forms", formFields, "")
+	write("forms", "open_form", "Open one of the person's forms so anyone with its link can answer (a form you made as a draft). Always ask first, naming the form.", "POST", "/forms/{id}/open", nil, "")
+	write("forms", "close_form", "Close one of the person's forms: its page says it takes no more answers. Always ask first, naming the form.", "POST", "/forms/{id}/close", nil, "")
 
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.
 	read("chat", "summary", "Get what waits in your chats: unread counts, the conversations with unread messages (name, how many, the last message), the messages that mention you, and today's activity per conversation.", "/summary", "")
