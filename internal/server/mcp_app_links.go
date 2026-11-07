@@ -69,6 +69,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"crm/lookup": {"/people", ""}, "crm/day": {"/", ""}, "crm/reports": {"/reports", ""}, "crm/stages": {"/pipeline", ""},
 	"league/summary": {"/", ""}, "league/today": {"/", ""}, "league/upcoming": {"/games", "/games/{id}"}, "league/games": {"/games", "/games/{id}"},
 	"league/groups": {"/", "/groups/{id}"}, "league/matches": {"/results", ""}, "league/search": {"/", ""}, "league/lookup": {"/", ""}, "league/day": {"/games", ""}, "league/tournaments": {"/tournaments", "/tournaments/{id}"},
+	"tables/summary": {"/", ""}, "tables/today": {"/", ""}, "tables/bases": {"/", "/b/{id}"}, "tables/tables": {"/", "/t/{id}"}, "tables/records": {"/", "/r/{id}"},
+	"tables/search": {"/", ""}, "tables/lookup": {"/", ""}, "tables/day": {"/", ""},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
@@ -661,6 +663,49 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			}
 			if uid := mcpScalar(input["uid"]); gid != "" && op.Path == "/groups/{id}/players/{uid}" && mcpLinkID.MatchString(uid) {
 				envelope["source_url"] = link("/groups/" + gid + "/players/" + uid)
+			}
+		}
+	}
+	// Pocket Tables: rows open at /r/{id}, tables at /t/{id}, bases at /b/{id}: every row in a list (rows, search, lookup,
+	// a day, the summary's and Today's lists), the bases with their tables, a table read with its base, a row read or added.
+	if data, ok := envelope["result"]; ok && op.App == "tables" {
+		each := func(rows any, route string) {
+			if list, ok := rows.([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", route)
+					}
+				}
+			}
+		}
+		switch r := data.(type) {
+		case []any:
+			if op.Path == "/bases" {
+				each(r, "/b/{id}")
+				for _, b := range r {
+					if m, ok := b.(map[string]any); ok {
+						each(m["tables"], "/t/{id}")
+					}
+				}
+			}
+		case map[string]any:
+			for _, key := range []string{"items", "records", "recent", "soon", "late", "today"} {
+				each(r[key], "/r/{id}")
+			}
+			if op.Path == "/search" {
+				each(r["tables"], "/t/{id}")
+			}
+			if t, ok := r["table"].(map[string]any); ok {
+				itemLink(t, "id", "/t/{id}")
+			}
+			if b, ok := r["base"].(map[string]any); ok {
+				itemLink(b, "id", "/b/{id}")
+			}
+			if rec, ok := r["record"].(map[string]any); ok {
+				itemLink(rec, "id", "/r/{id}")
+			}
+			if _, isRow := r["number"]; isRow && op.Path == "/tables/{id}/records" {
+				itemLink(r, "id", "/r/{id}")
 			}
 		}
 	}

@@ -877,3 +877,84 @@ func TestMCPLeagueTournaments(t *testing.T) {
 		t.Fatalf("league calls: %v", paths)
 	}
 }
+
+func TestMCPTablesTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "tables" {
+			tools[op.Name] = op
+			if op.Method == "GET" {
+				reads++
+			}
+		}
+	}
+	if reads != 9 || len(tools) != 10 {
+		t.Fatalf("tables tools: %d reads of %d", reads, len(tools))
+	}
+	add := tools["pocket_tables_add_row"]
+	if add == nil || add.Method != "POST" || add.Path != "/tables/{id}/records" || add.Kind != "add" {
+		t.Fatalf("add_row: %+v", add)
+	}
+	// "Add Fern to my plants, water every 7 days, next on Monday"
+	ok := map[string]any{"values": map[string]any{"Name": "Fern", "Every (days)": 7, "Next water": "2026-11-09", "Room": "Kitchen", "Tags": []any{"shade", "easy"}, "Indoor": true}}
+	if err := add.resolved.Validate(map[string]any{"id": 3, "request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("add_row refused a plain row: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{},
+		{"values": map[string]any{}},
+		{"values": map[string]any{"Name": "Fern"}, "typecast": false},
+		{"values": map[string]any{"Name": map[string]any{"nested": 1}}},
+		{"fields": map[string]any{"Name": "Fern"}},
+	} {
+		if err := add.resolved.Validate(map[string]any{"id": 3, "request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("add_row accepted %v", bad)
+		}
+	}
+	if tools["pocket_tables_rows"].resolved.Validate(map[string]any{"id": 3, "query": map[string]any{"view": "Grid"}}) == nil {
+		t.Fatal("rows took a view by name: it is the view's id")
+	}
+
+	// rows always ask for values by field name; a row added always has its select names read (typecast)
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var seen []string
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		seen = append(seen, r.Method+" "+r.URL.RequestURI()+" "+string(b))
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id":42,"table_id":3,"number":2,"title":"Fern","values":{}}`))
+			return
+		}
+		w.Write([]byte(`{"records":[{"id":41,"table_id":3,"number":1,"title":"Fern","named":{"Name":"Fern"}}],"total":1,"table":"Plants"}`))
+	}))
+	defer fake.Close()
+	f.app("tables", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read apps:write")
+	session := mcpSessionWithToken(t, f.env, access)
+	for _, c := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"pocket_tables_rows", map[string]any{"id": 3, "query": map[string]any{"view": 5, "q": "fern"}}},
+		{"pocket_tables_add_row", map[string]any{"id": 3, "request_id": "operation-tb-000001", "data": map[string]any{"values": map[string]any{"Name": "Fern", "Room": "Kitchen"}}}},
+	} {
+		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: c.name, Arguments: c.args})
+		if err != nil || r.IsError {
+			t.Fatalf("%s: %v %+v", c.name, err, r)
+		}
+		if raw, _ := json.Marshal(r); !strings.Contains(string(raw), `/r/4`) {
+			t.Fatalf("%s: no row link: %s", c.name, raw)
+		}
+	}
+	want := []string{
+		"GET /api/v1/tables/3/records?limit=50&named=1&q=fern&view=5 ",
+		`POST /api/v1/tables/3/records {"typecast":true,"values":{"Name":"Fern","Room":"Kitchen"}}`,
+	}
+	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
+	}
+}

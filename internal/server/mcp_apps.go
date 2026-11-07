@@ -33,6 +33,10 @@ type mcpAppTool struct {
 	// parameter (e.g. /groups/{group_id}/tournaments for a group_id); without
 	// it the call goes to Path.
 	Within string
+	// Query is query parameters every call sends (Tables' named=1: values as text by field name);
+	// Body is fields every write sends (Tables' typecast: true). Neither is the AI's to change.
+	Query map[string]string
+	Body  map[string]any
 }
 
 func (s *Server) addMCPAppTools(ms *mcp.Server, ctx context.Context) {
@@ -123,10 +127,23 @@ func (s *Server) callMCPApp(ctx context.Context, op *mcpAppTool, args json.RawMe
 			query.Set(k, mcpScalar(v))
 		}
 	}
+	for k, v := range op.Query {
+		query.Set(k, v)
+	}
 	target.RawQuery = query.Encode()
 	var data map[string]any
 	if d, ok := input["data"].(map[string]any); ok {
 		data = d
+	}
+	if write && len(op.Body) > 0 {
+		sent := map[string]any{}
+		for k, v := range data {
+			sent[k] = v
+		}
+		for k, v := range op.Body {
+			sent[k] = v
+		}
+		data = sent
 	}
 	requestID, _ := input["request_id"].(string)
 	if write {
