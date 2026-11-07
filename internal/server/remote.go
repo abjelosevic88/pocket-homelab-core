@@ -56,7 +56,6 @@ type remoteSettings struct {
 	CFDomains  []string `json:"cf_domains"` // hostnames Core created
 }
 
-
 // validPattern accepts host patterns like {app}.remote.example.org or {app}-r.example.org.
 func validPattern(p string) error {
 	if strings.Count(p, "{app}") != 1 {
@@ -351,7 +350,7 @@ type remoteHub struct {
 	passMu sync.Mutex
 	passOK map[int64]time.Time // key id → passkey verified until (rolling)
 
-	cfMu      sync.Mutex  // one Cloudflare deploy or sync at a time
+	cfMu      sync.Mutex    // one Cloudflare deploy or sync at a time
 	cfKick    chan struct{} // an app was switched on or off: sync addresses
 	cfPending atomic.Bool
 	cfErr     atomic.Pointer[string]

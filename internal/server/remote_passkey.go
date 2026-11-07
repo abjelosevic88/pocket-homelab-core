@@ -127,7 +127,9 @@ func checkClientData(raw []byte, typ string, challenge []byte, host string) erro
 	return nil
 }
 
-func isLocalhost(host string) bool { return host == "localhost" || strings.HasSuffix(host, ".localhost") }
+func isLocalhost(host string) bool {
+	return host == "localhost" || strings.HasSuffix(host, ".localhost")
+}
 
 func checkAuthData(ad []byte, host string) error {
 	if len(ad) < 37 {

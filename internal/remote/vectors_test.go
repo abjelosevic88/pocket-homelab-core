@@ -21,20 +21,20 @@ func fixedKey(seed string) noise.DHKey {
 }
 
 type noiseVectors struct {
-	Prologue       string   `json:"prologue"`
-	BoxPrivate     string   `json:"box_private"`
-	BoxPublic      string   `json:"box_public"`
-	DevicePrivate  string   `json:"device_private"`
-	DevicePublic   string   `json:"device_public"`
-	InitEphemeral  string   `json:"initiator_ephemeral_private"`
-	RespEphemeral  string   `json:"responder_ephemeral_private"`
-	Payload2       string   `json:"payload2"`
-	Payload3       string   `json:"payload3"`
-	Message1       string   `json:"message1"`
-	Message2       string   `json:"message2"`
-	Message3       string   `json:"message3"`
-	InitToResp     []string `json:"initiator_to_responder"` // plaintext, ciphertext pairs
-	RespToInit     []string `json:"responder_to_initiator"`
+	Prologue      string   `json:"prologue"`
+	BoxPrivate    string   `json:"box_private"`
+	BoxPublic     string   `json:"box_public"`
+	DevicePrivate string   `json:"device_private"`
+	DevicePublic  string   `json:"device_public"`
+	InitEphemeral string   `json:"initiator_ephemeral_private"`
+	RespEphemeral string   `json:"responder_ephemeral_private"`
+	Payload2      string   `json:"payload2"`
+	Payload3      string   `json:"payload3"`
+	Message1      string   `json:"message1"`
+	Message2      string   `json:"message2"`
+	Message3      string   `json:"message3"`
+	InitToResp    []string `json:"initiator_to_responder"` // plaintext, ciphertext pairs
+	RespToInit    []string `json:"responder_to_initiator"`
 }
 
 func TestNoiseVectors(t *testing.T) {
