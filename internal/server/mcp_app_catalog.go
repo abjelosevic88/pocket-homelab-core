@@ -652,6 +652,47 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	addRow := write("tables", "add_row", "Add a row to one of the person's tables (id = the table): values by field name. Read the table first (pocket_tables_table) for its field names, types and select choices. Returns the row with its id.", "POST", "/tables/{id}/records", row, "values")
 	addRow.Body = map[string]any{"typecast": true}
 
+	// Pocket Rentals: the homes the person rents out (a private landlord). Places (a house, a block of flats) hold units; a lease lets a unit
+	// to tenants for a rent every period; the app makes each period's rent as a charge and payments pay the oldest charges first.
+	// Repairs (requests) and inspections belong to a place. Money: every amount is in CENTS of its currency (65000 = 650.00).
+	read("rentals", "summary", "Get the state of the person's rentals in one call: places, units, how many are let and empty, leases with rent late, rent due soon, leases ending soon, draft leases, open repairs and urgent ones, the monthly rent roll and what tenants owe now ({currency: cents}: 65000 is 650.00).", "/summary", "")
+	read("rentals", "today", "Read the Rentals Today page, what needs the landlord: rent late (late) and due in the next days (due), each with lease_id, lease, place, tenants, due_date, amount and paid in cents, state and days late; leases ending soon (ending, with days_left), open repairs (repairs, with priority low|normal|urgent and status), inspections planned in the next 30 days, empty units (vacant), draft leases, and this month's rent expected and received ({currency: cents}).", "/today", "")
+	rentalsRent := read("rentals", "rent", "Read one month of rent (month = YYYY-MM, this month when left out): every charge due in it (items: lease_id, lease, place, tenants, title, due_date, amount and paid in cents, currency, state paid|part|due|late|upcoming|waived, paid_on), plus expected, received and outstanding ({currency: cents}).", "/rent", "month")
+	rentalsRent.Schema["properties"].(mcpFields)["query"].(map[string]any)["properties"].(mcpFields)["month"] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}$`, "description": "The month, YYYY-MM; leave out for this month."}
+	compileMCPAppTool(rentalsRent)
+	rentalsLeases := read("rentals", "leases", "List the person's leases (status active|draft|ended; property = a place id from pocket_rentals_properties): id, title, the unit and place, tenants, start_date, end_date, rent in cents, currency, frequency, due_day, deposit and its state, balance (what is owed now, cents), overdue, next_due and days_left.", "/leases", "status property")
+	rentalsLeases.Schema["properties"].(mcpFields)["query"].(map[string]any)["properties"].(mcpFields)["status"] = map[string]any{"type": "string", "enum": []string{"active", "draft", "ended"}, "description": "Only leases in this state; leave out for all."}
+	compileMCPAppTool(rentalsLeases)
+	read("rentals", "get_lease", "Read one lease in full (id = the lease): the lease with its tenants, rent, deposit and balance, every charge (amount and paid in cents, state), the payments, its timeline (notes, calls, emails, visits, what happened), its repairs and inspections, and what it has in other apps (made).", "/leases/{id}", "")
+	read("rentals", "properties", "List the person's places (archived=1 to include archived ones): id, name, kind, address, city, currency, each unit with its rent (cents) and current lease, how many units are let, the monthly rent roll (cents) and rent late. Start here to find a place's or unit's id.", "/properties", "archived")
+	read("rentals", "get_property", "Read one place in full (id = the place): the place with its units, its leases, repairs, inspections and files, and this year's money in and out (income, expenses and net in cents).", "/properties/{id}", "")
+	read("rentals", "tenants", "List the person's tenants: id, name, email, phone, how many leases, the current place and lease_id, and balance (what they owe now on active leases, cents).", "/tenants", "")
+	rentalsRepairs := read("rentals", "repairs", "List the open repairs (not done or cancelled), newest first: id, title, details, the place and unit (property_id, unit_id), lease_id, priority low|normal|urgent, status new|planned|in_progress|waiting, reported_by, reported_on, planned_on, the person fixing it (pro_name) and cost in cents. property or lease = only those of one place or lease.", "/requests", "property lease limit")
+	rentalsRepairs.Query = map[string]string{"open": "1"}
+	read("rentals", "inspections", "List the inspections (property or lease = only one place's or lease's): id, kind (moving in, moving out, routine), date, status planned|done, the place, unit and lease.", "/inspections", "property lease")
+	read("rentals", "search", "Search the person's rentals: places, leases, tenants (name, email, phone) and repairs with these words (results: kind property|lease|tenant|repair, id, title, subtitle, url).", "/search", "q limit")
+	read("rentals", "lookup", "Find a tenant by email, for a contact from another app: the tenant and their leases (place, status, dates, rent and balance in cents). tenant is null when the address rents nothing here.", "/lookup", "email")
+	rentalsRef := func(description string) map[string]any {
+		return map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991), "description": description}
+	}
+	rentalsRepair := textFields("title details").enum("priority", "low", "normal", "urgent")
+	rentalsRepair["title"].(map[string]any)["maxLength"] = 200
+	rentalsRepair["title"].(map[string]any)["description"] = "What needs fixing, in a few words (\"Kitchen tap drips\")."
+	rentalsRepair["details"].(map[string]any)["description"] = "What the tenant said, where exactly, since when."
+	rentalsRepair["priority"].(map[string]any)["description"] = "low, normal (default) or urgent (water, heating, a lock, anything unsafe)."
+	rentalsRepair["property_id"] = rentalsRef("The place (pocket_rentals_properties).")
+	rentalsRepair["unit_id"] = rentalsRef("The unit at that place, when it is about one; its current lease and tenants are added by themselves.")
+	write("rentals", "report_repair", "Report a repair at one of the person's places: which place (and unit), what needs fixing, details and how urgent. It starts as new; when the person has it on, Pocket Rentals also puts it in Pocket Tasks. Returns the repair (request) with its id.", "POST", "/requests", rentalsRepair, "property_id title")
+	rentalsLine := textFields("title body").enum("kind", "note", "call", "email", "visit")
+	rentalsLine["kind"].(map[string]any)["description"] = "note (default), or a call, email or visit that happened."
+	rentalsLine["lease_id"] = rentalsRef("The lease it is about (pocket_rentals_leases).")
+	rentalsLine["property_id"] = rentalsRef("The place it is about, when it is not about one lease.")
+	rentalsLine["request_id"] = rentalsRef("The repair it is about (pocket_rentals_repairs).")
+	rentalsNote := write("rentals", "add_note", "Write a line on a lease's, place's or repair's timeline (give exactly one of lease_id, property_id, request_id): a note, or a call, email or visit that happened (\"Called Ana about the rent\"), with a short title and what was said in body. It changes nothing else.", "POST", "/entries", rentalsLine, "")
+	rentalsNote.Schema["properties"].(mcpFields)["data"].(map[string]any)["anyOf"] = []any{
+		map[string]any{"required": []string{"lease_id"}}, map[string]any{"required": []string{"property_id"}}, map[string]any{"required": []string{"request_id"}}}
+	compileMCPAppTool(rentalsNote)
+
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.
 	read("chat", "summary", "Get what waits in your chats: unread counts, the conversations with unread messages (name, how many, the last message), the messages that mention you, and today's activity per conversation.", "/summary", "")
 	read("chat", "conversations", "List your conversations: id, name as you see it (the other person in a direct chat, \"Me\" for your own space), kind direct|group|self, members, unread and mentioned counts, the last message, muted/pinned/archived.", "/conversations", "")

@@ -958,3 +958,91 @@ func TestMCPTablesTools(t *testing.T) {
 		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
 	}
 }
+
+func TestMCPRentalsTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "rentals" {
+			tools[op.Name] = op
+			if op.Method == "GET" {
+				reads++
+			}
+		}
+	}
+	if reads != 12 || len(tools) != 14 {
+		t.Fatalf("rentals tools: %d reads of %d", reads, len(tools))
+	}
+	// Every tool stays inside what Pocket Rentals lets a linked app do (internal/server/links.go linkRoutes there).
+	allowed := map[string]*regexp.Regexp{
+		"GET":  regexp.MustCompile(`^/api/v1/((properties|units|tenants|leases|requests|expenses|inspections|summary|today|rent|reports|search|lookup|day/\d{4}-\d{2}-\d{2})|(properties|tenants|leases|requests|inspections)/\d+)$`),
+		"POST": regexp.MustCompile(`^/api/v1/(requests|entries)$`),
+	}
+	for name, op := range tools {
+		if re := allowed[op.Method]; re == nil || !re.MatchString("/api/v1"+strings.ReplaceAll(op.Path, "{id}", "12")) {
+			t.Fatalf("%s: %s %s is not a route Rentals opens to linked apps", name, op.Method, op.Path)
+		}
+	}
+	repair, note := tools["pocket_rentals_report_repair"], tools["pocket_rentals_add_note"]
+	if repair == nil || repair.Method != "POST" || repair.Path != "/requests" || repair.Kind != "add" {
+		t.Fatalf("report_repair: %+v", repair)
+	}
+	if note == nil || note.Method != "POST" || note.Path != "/entries" || note.Kind != "add" {
+		t.Fatalf("add_note: %+v", note)
+	}
+	// "The kitchen tap in flat 2 is dripping, Ana says since Monday"
+	if err := repair.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"property_id": 2, "unit_id": 11, "title": "Kitchen tap drips", "details": "Ana says since Monday", "priority": "normal"}}); err != nil {
+		t.Fatalf("report_repair refused a plain repair: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"title": "Tap"},
+		{"property_id": 2},
+		{"property_id": 2, "title": "Tap", "priority": "asap"},
+		{"property_id": 2, "title": "Tap", "status": "done"},
+		{"property_id": 2, "title": "Tap", "cost": 5000},
+		{"property_id": "Main Street", "title": "Tap"},
+	} {
+		if err := repair.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("report_repair accepted %v", bad)
+		}
+	}
+	if err := note.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"lease_id": 4, "kind": "call", "title": "Called Ana about the rent", "body": "Pays on Friday"}}); err != nil {
+		t.Fatalf("add_note refused a call: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"title": "No lease, place or repair"},
+		{"lease_id": 4, "kind": "lease", "title": "x"},
+		{"lease_id": 4, "kind": "note", "title": "x", "at": "2026-11-07"},
+	} {
+		if err := note.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("add_note accepted %v", bad)
+		}
+	}
+	if tools["pocket_rentals_rent"].resolved.Validate(map[string]any{"query": map[string]any{"month": "November"}}) == nil {
+		t.Fatal("rent took a month by name: it is YYYY-MM")
+	}
+
+	// repairs always asks only for the open ones
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var seen []string
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"id":7,"property_id":2,"title":"Kitchen tap drips","priority":"urgent","status":"new"}]`))
+	}))
+	defer fake.Close()
+	f.app("rentals", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read apps:write")
+	session := mcpSessionWithToken(t, f.env, access)
+	r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "pocket_rentals_repairs", Arguments: map[string]any{"query": map[string]any{"property": "2"}}})
+	if err != nil || r.IsError {
+		t.Fatalf("repairs: %v %+v", err, r)
+	}
+	if raw, _ := json.Marshal(r); !strings.Contains(string(raw), `/repairs/7`) {
+		t.Fatalf("repairs: no repair link: %s", raw)
+	}
+	if strings.Join(seen, "\n") != "GET /api/v1/requests?limit=50&open=1&property=2" {
+		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
+	}
+}

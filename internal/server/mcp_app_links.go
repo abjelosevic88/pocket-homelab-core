@@ -71,6 +71,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"league/groups": {"/", "/groups/{id}"}, "league/matches": {"/results", ""}, "league/search": {"/", ""}, "league/lookup": {"/", ""}, "league/day": {"/games", ""}, "league/tournaments": {"/tournaments", "/tournaments/{id}"},
 	"tables/summary": {"/", ""}, "tables/today": {"/", ""}, "tables/bases": {"/", "/b/{id}"}, "tables/tables": {"/", "/t/{id}"}, "tables/records": {"/", "/r/{id}"},
 	"tables/search": {"/", ""}, "tables/lookup": {"/", ""}, "tables/day": {"/", ""},
+	"rentals/summary": {"/", ""}, "rentals/today": {"/", ""}, "rentals/rent": {"/rent", ""}, "rentals/leases": {"/leases", "/leases/{id}"},
+	"rentals/properties": {"/properties", "/properties/{id}"}, "rentals/tenants": {"/tenants", "/tenants/{id}"}, "rentals/requests": {"/repairs", "/repairs/{id}"},
+	"rentals/inspections": {"/inspections", "/inspections/{id}"}, "rentals/search": {"/", ""}, "rentals/lookup": {"/tenants", ""}, "rentals/entries": {"/", ""},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
@@ -706,6 +709,67 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			}
 			if _, isRow := r["number"]; isRow && op.Path == "/tables/{id}/records" {
 				itemLink(r, "id", "/r/{id}")
+			}
+		}
+	}
+	// Pocket Rentals: leases open at /leases/{id}, places at /properties/{id}, tenants at /tenants/{id}, repairs (the API's requests)
+	// at /repairs/{id}, inspections at /inspections/{id}. A rent line (Today's late and due, a month's items) opens its lease; an empty
+	// unit its place; a search hit by its kind; a line written on a timeline the repair, lease or place it is on (and opens there, as
+	// a repair reported and a tenant looked up open theirs). Plain lists get their links from the browser routes above.
+	if r, ok := envelope["result"].(map[string]any); ok && op.App == "rentals" {
+		each := func(rows any, field, route string) {
+			if list, ok := rows.([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, field, route)
+					}
+				}
+			}
+		}
+		for _, key := range []string{"late", "due"} {
+			each(r[key], "lease_id", "/leases/{id}")
+		}
+		if op.Path == "/rent" {
+			each(r["items"], "lease_id", "/leases/{id}")
+		}
+		for _, key := range []string{"ending", "drafts", "leases"} {
+			each(r[key], "id", "/leases/{id}")
+		}
+		for _, key := range []string{"repairs", "requests"} {
+			each(r[key], "id", "/repairs/{id}")
+		}
+		each(r["inspections"], "id", "/inspections/{id}")
+		each(r["vacant"], "property_id", "/properties/{id}")
+		for key, route := range map[string]string{"lease": "/leases/{id}", "property": "/properties/{id}", "tenant": "/tenants/{id}", "request": "/repairs/{id}", "inspection": "/inspections/{id}"} {
+			if m, ok := r[key].(map[string]any); ok {
+				itemLink(m, "id", route)
+			}
+		}
+		if op.Path == "/search" {
+			kinds := map[string]string{"property": "/properties/{id}", "lease": "/leases/{id}", "tenant": "/tenants/{id}", "repair": "/repairs/{id}"}
+			if list, ok := r["results"].([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok {
+						if route, ok := kinds[mcpScalar(m["kind"])]; ok {
+							itemLink(m, "id", route)
+						}
+					}
+				}
+			}
+		}
+		if op.Path == "/entries" {
+			itemLink(r, "property_id", "/properties/{id}")
+			itemLink(r, "lease_id", "/leases/{id}")
+			itemLink(r, "request_id", "/repairs/{id}")
+			if u, ok := r["item_url"].(string); ok {
+				envelope["source_url"] = u
+			}
+		}
+		for key, path := range map[string]string{"request": "/requests", "tenant": "/lookup"} {
+			if m, ok := r[key].(map[string]any); ok && op.Path == path {
+				if u, ok := m["item_url"].(string); ok {
+					envelope["source_url"] = u
+				}
 			}
 		}
 	}
