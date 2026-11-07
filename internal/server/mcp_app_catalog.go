@@ -569,6 +569,36 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("forms", "open_form", "Open one of the person's forms so anyone with its link can answer (a form you made as a draft). Always ask first, naming the form.", "POST", "/forms/{id}/open", nil, "")
 	write("forms", "close_form", "Close one of the person's forms: its page says it takes no more answers. Always ask first, naming the form.", "POST", "/forms/{id}/close", nil, "")
 
+	// Pocket CRM: the person's deals (possible work for clients) on a pipeline by stage, each with its next step, due day and timeline.
+	// Money: every deal has value in CENTS (450000 = 4,500.00) and the same as amount in currency units (4500), with its currency.
+	read("crm", "summary", "Get the state of your sales: open deals and their value, the weighted value (value × chance), steps due today and overdue, deals with no next step and gone quiet, won this month and this year with their value, lost this year, win rate, closing soon. Every *_value is {currency: cents}: 450000 is 4,500.00.", "/summary", "")
+	read("crm", "today", "Read the Today page: deals whose next step is overdue, due today and this week, with no next step, gone quiet (stale), closing soon and won lately; plus the summary. Each deal has amount (currency units), value (cents), currency, next_action, next_due, stage_name, contact and company.", "/today", "")
+	read("crm", "deals", "List your deals: status open|won|lost|closed; stage = a stage id (pocket_crm_stages); q searches titles, people, companies and notes; due overdue|today|week|none|any (the next step); company; email = one person's deals; starred=1; tag; source; sort stage|due|value|updated|created|close|expected. Each deal: title, stage_name, status, amount in currency units and value in cents, currency, chance, weighted (cents), contact_name/email/phone, company, next_action, next_due, expected_close, overdue, stale, days_in_stage.", "/deals", "status stage q due company email starred tag source sort limit offset")
+	read("crm", "get_deal", "Read one deal in full: the deal (amount in currency units, value in cents), its timeline (activities: notes, calls, meetings, emails, steps done, stage moves, newest first) and what it has in your other apps (made: contacts, tasks, events, invoices, projects, signings).", "/deals/{id}", "")
+	read("crm", "search", "Search your deals (titles, people, emails, companies, notes); each deal comes with its link.", "/search", "q limit")
+	read("crm", "people", "List who you sell to: deals grouped by company (else by person) with email, phone, how many deals are open, won and lost, open_value and won_value as {currency: cents}, the last activity and the deal ids. q filters by name or email.", "/people", "q")
+	read("crm", "lookup", "Find the deals with one person (email) or company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
+	read("crm", "day", "Read one day in your sales: the timeline lines written that day (notes, calls, meetings, steps done, deals added, moved, won and lost, each with its deal) and the deals whose next step is due that day.", "/day/{date}", "")
+	read("crm", "reports", "Get sales reports for the last months (default 12, up to 36): per month deals added, won, lost and won value (cents, the person's currency); the open pipeline per stage (funnel), why deals were lost, where deals came from (sources), days to win and the average won deal.", "/reports", "months")
+	read("crm", "stages", "List the pipeline's stages in order: id, name, kind open|won|lost, probability (% chance a deal there is won), how many deals and their value (cents).", "/stages", "")
+	lead := textFields("title currency contact_name contact_email contact_phone company description next_action next_due expected_close stage note").numbers("amount").
+		enum("source", "", "referral", "website", "form", "email", "event", "social", "repeat", "cold", "other")
+	lead["amount"].(map[string]any)["description"] = "What the work is worth in currency units (4500 = 4,500.00), not cents. Leave out when nobody said."
+	lead["amount"].(map[string]any)["minimum"] = 0
+	lead["currency"] = map[string]any{"type": "string", "pattern": `^[A-Za-z]{3}$`, "description": "Three letters (EUR, BAM, USD); leave out for the person's own currency."}
+	for _, day := range []string{"next_due", "expected_close"} {
+		lead[day] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`}
+	}
+	lead["next_due"].(map[string]any)["description"] = "The day the next step is due, YYYY-MM-DD."
+	lead["expected_close"].(map[string]any)["description"] = "When the person expects to win or lose it, YYYY-MM-DD."
+	lead["stage"].(map[string]any)["description"] = "The stage by its name (pocket_crm_stages); leave out for the first stage."
+	lead["next_action"].(map[string]any)["description"] = "The next thing to do, in a few words (\"Call Ana about the quote\")."
+	lead["note"].(map[string]any)["description"] = "A first line for the deal's timeline: where it came from, what was said."
+	write("crm", "add_lead", "Add a deal (possible work for a client) to the person's pipeline: a short title (\"Website for Bistro Sara\"), who it is with and the company, what it is worth (amount, in currency units), the next step and its day. It goes to the first stage unless stage names another. When the person has it on, Pocket CRM also puts the next step in Pocket Tasks. Returns the deal with its id.", "POST", "/deals", lead, "")
+	activity := textFields("title body").enum("kind", "note", "call", "meeting", "email", "step")
+	activity["kind"].(map[string]any)["description"] = "note (default), call, meeting, email (one that was sent or came in) or step (something done)."
+	write("crm", "add_note", "Write a line on one deal's timeline (id = the deal): a note, or a call, meeting or email that happened, or a step done, with a short title and what was said in body. It does not move the deal or change its next step.", "POST", "/deals/{id}/activities", activity, "")
+
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.
 	read("chat", "summary", "Get what waits in your chats: unread counts, the conversations with unread messages (name, how many, the last message), the messages that mention you, and today's activity per conversation.", "/summary", "")
 	read("chat", "conversations", "List your conversations: id, name as you see it (the other person in a direct chat, \"Me\" for your own space), kind direct|group|self, members, unread and mentioned counts, the last message, muted/pinned/archived.", "/conversations", "")

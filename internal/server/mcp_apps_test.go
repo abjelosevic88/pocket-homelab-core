@@ -713,3 +713,50 @@ func TestMCPNutritionLogFood(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPCRMTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "crm" {
+			tools[op.Name] = op
+			if op.Method == "GET" {
+				reads++
+			}
+		}
+	}
+	if reads != 10 || len(tools) != 12 {
+		t.Fatalf("crm tools: %d reads of %d", reads, len(tools))
+	}
+	lead, note := tools["pocket_crm_add_lead"], tools["pocket_crm_add_note"]
+	if lead == nil || lead.Method != "POST" || lead.Path != "/deals" || lead.Kind != "add" {
+		t.Fatalf("add_lead: %+v", lead)
+	}
+	if note == nil || note.Method != "POST" || note.Path != "/deals/{id}/activities" || note.Kind != "add" {
+		t.Fatalf("add_note: %+v", note)
+	}
+	// "Bistro Sara wants a website, about 4,500 euros; call Ana on Monday"
+	ok := map[string]any{"title": "Website for Bistro Sara", "amount": 4500, "currency": "EUR", "contact_name": "Ana", "contact_email": "ana@bistro.example",
+		"company": "Bistro Sara", "next_action": "Call Ana about the quote", "next_due": "2026-11-09", "stage": "Talking", "source": "referral", "note": "Met at the fair"}
+	if err := lead.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("add_lead refused a plain lead: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"title": "x", "value": 450000},
+		{"title": "x", "amount": -5},
+		{"title": "x", "currency": "euro"},
+		{"title": "x", "next_due": "Monday"},
+		{"title": "x", "source": "linkedin"},
+		{"title": "x", "stage_id": 2},
+	} {
+		if err := lead.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("add_lead accepted %v", bad)
+		}
+	}
+	if err := note.resolved.Validate(map[string]any{"id": 12, "request_id": "0123456789abcdef", "data": map[string]any{"kind": "call", "title": "Called Ana", "body": "She liked the quote"}}); err != nil {
+		t.Fatalf("add_note refused a call: %v", err)
+	}
+	if err := note.resolved.Validate(map[string]any{"id": 12, "request_id": "0123456789abcdef", "data": map[string]any{"kind": "won", "body": "x"}}); err == nil {
+		t.Fatal("add_note accepted kind won: only the app writes those lines")
+	}
+}

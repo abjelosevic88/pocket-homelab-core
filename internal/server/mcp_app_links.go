@@ -65,7 +65,9 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"chat/people": {"/", ""}, "chat/saved": {"/saved", ""},
 	"forms/summary": {"/", ""}, "forms/forms": {"/forms", "/forms/{id}"}, "forms/responses": {"/", "/answers/{id}"}, "forms/search": {"/", ""}, "forms/day": {"/", ""},
 	"forms/templates": {"/forms/new", ""},
-	"blog/stats":      {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
+	"crm/summary":     {"/", ""}, "crm/today": {"/", ""}, "crm/deals": {"/deals", "/deals/{id}"}, "crm/search": {"/deals", ""}, "crm/people": {"/people", ""},
+	"crm/lookup": {"/people", ""}, "crm/day": {"/", ""}, "crm/reports": {"/reports", ""}, "crm/stages": {"/pipeline", ""},
+	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
 	"renewals/search": {"/all", "/r/{id}"}, "renewals/travel": {"/", ""},
@@ -543,6 +545,37 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			if _, isForm := r["handle"]; isForm {
 				itemLink(r, "id", "/forms/{id}")
 			}
+		}
+	}
+	// Pocket CRM: every deal in a list (deals, search, lookup, the day's due, each Today list) opens at /deals/{id};
+	// so do a deal read or added, the day's timeline lines and a line written on a deal (their deal_id).
+	if r, ok := envelope["result"].(map[string]any); ok && op.App == "crm" {
+		deals := func(rows any, field string) {
+			if list, ok := rows.([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, field, "/deals/{id}")
+					}
+				}
+			}
+		}
+		for _, key := range []string{"items", "deals", "due"} {
+			deals(r[key], "id")
+		}
+		deals(r["activities"], "deal_id")
+		if lists, ok := r["lists"].(map[string]any); ok && op.Path == "/today" {
+			for _, rows := range lists {
+				deals(rows, "id")
+			}
+		}
+		if d, ok := r["deal"].(map[string]any); ok {
+			itemLink(d, "id", "/deals/{id}")
+		}
+		if _, isDeal := r["stage_id"]; isDeal {
+			itemLink(r, "id", "/deals/{id}")
+		}
+		if _, isLine := r["kind"]; isLine && op.Path == "/deals/{id}/activities" {
+			itemLink(r, "deal_id", "/deals/{id}")
 		}
 	}
 	// Pocket Blog: posts in lists, search results, the summary's drafts and a day link to their editor page; so does a post itself.
