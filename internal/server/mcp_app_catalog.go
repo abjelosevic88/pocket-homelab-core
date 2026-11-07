@@ -65,7 +65,7 @@ func arraySchema(item any) map[string]any {
 
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
-var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
+var mcpChangePosts = map[string]bool{"tasks_complete": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
@@ -785,6 +785,38 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	mapTools = append(mapTools, write("map", "add_spot", "Pin a spot on the person's map (a café to remember, a place to go, where they parked): name and coordinates, optionally a kind, a list, a note, an address and the day. It is theirs to change or remove in Pocket Map.", "POST", "/spots", mapSpot, "name lat lng"))
 	for _, op := range mapTools {
 		op.Omit = []string{"line"}
+	}
+
+	// Pocket Errors: the errors of the person's apps and websites (Sentry SDKs, Pocket apps through Core, this box's
+	// container logs) grouped into issues: open, resolved (back when it happens again) or ignored. Times are UTC.
+	// Code around a stack line and the hourly bars never reach the assistant: Omit.
+	errStatus := map[string]any{"type": "string", "enum": []string{"open", "resolved", "ignored", "all"}, "description": "open (the default), resolved, ignored or all."}
+	errTools := []*mcpAppTool{
+		read("errors", "summary", "Get what is broken right now: open issues, how many are new today (new), how many came back after being resolved (regressed), errors in the last 24 hours (events_24h, by level per hour in hours), the newest open issues (latest: id, title, culprit = where in the code, project_name, level, times, people, last_seen) and which of this box's containers are read for errors (watch).", "/summary", ""),
+		read("errors", "issues", "List issues (status = open, resolved, ignored or all; project = a project id from pocket_errors_projects; level = fatal, error or warning to get that level and worse; q = words in the title, place, project or note; since = a length like 24h or 7d for issues seen since then; sort = last, first, times or people): id, title (\"TypeError: x is undefined\"), type, culprit (the function/file or request it happened in), level, status, regressed (came back), times (ever), events_24h, people (how many of the app's users), first_seen, last_seen, first_release, last_release, environment, project_name, new (first seen in the last 24 hours), note. total is before the limit.", "/issues", "status project level q since sort limit offset"),
+		read("errors", "get_issue", "Read one issue (id): everything pocket_errors_issues gives, its project (name, platform, container), Pocket AI's explanation when one was asked for (ai_text), links to what it became in other apps (a Pocket Projects issue, a task) and tags with how their values spread over the kept events (release, browser, os, environment…).", "/issues/{id}", ""),
+		read("errors", "latest_event", "Read the newest time an issue happened (id = the issue), to see what went wrong: event.data has exceptions (type, value, frames outermost first with function, module, file, line, in_app = the app's own code; the failing frame is last), message, breadcrumbs (what happened before it), request (method, url, headers with secrets filtered), user, tags, contexts (browser, os, runtime), extra and log_lines (a container's lines around it). pos/total/older/newer say where it sits among the kept events.", "/issues/{id}/latest", ""),
+		read("errors", "events", "List an issue's kept events, newest first (id = the issue; before = an event id to page on): id, at, level, message, environment, release, who (the app's user), url (the request).", "/issues/{id}/events", "before limit"),
+		read("errors", "projects", "List the person's projects (each app, site, service or container that sends errors): id, name, platform, source (docker = read from a container's logs, else a Pocket app reporting through Core, empty = a DSN), container, open (open issues), events_24h, last_event_at, archived, and dsn (the Sentry DSN to give an app).", "/projects", ""),
+		read("errors", "search", "Search issues and projects by words (results: type issue|project, id, title, subtitle, url).", "/search", "q"),
+		read("errors", "day", "Read one day (date = YYYY-MM-DD, local): the issues first seen that day (new) and how many errors each project had (projects, events).", "/day/{date}", ""),
+	}
+	errQuery := func(op *mcpAppTool, name string, schema map[string]any) {
+		op.Schema["properties"].(mcpFields)["query"].(map[string]any)["properties"].(mcpFields)[name] = schema
+	}
+	errQuery(errTools[1], "status", errStatus)
+	errQuery(errTools[1], "level", map[string]any{"type": "string", "enum": []string{"fatal", "error", "warning"}})
+	errQuery(errTools[1], "sort", map[string]any{"type": "string", "enum": []string{"last", "first", "times", "people"}})
+	errQuery(errTools[1], "since", map[string]any{"type": "string", "pattern": `^\d{1,4}(h|m)$|^\d{1,3}d$`, "description": "How far back: 30m, 24h, 7d."})
+	errQuery(errTools[1], "project", map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991)})
+	compileMCPAppTool(errTools[1])
+	errUpd := mcpFields{
+		"status": map[string]any{"type": "string", "enum": []string{"resolved", "ignored", "open"}, "description": "resolved = fixed (it comes back as open if it happens again), ignored = no more alerts, open = open again."},
+		"for":    map[string]any{"type": "string", "enum": []string{"1h", "24h", "7d", "30d", ""}, "description": "Only with ignored: for how long; empty = for good."},
+	}
+	errTools = append(errTools, write("errors", "update_issue", "Resolve, ignore (for a while or for good) or reopen one of the person's issues (id). Ask before resolving or ignoring: it changes what they are told about. Returns the issue.", "POST", "/issues/{id}/status", errUpd, "status"))
+	for _, op := range errTools {
+		op.Omit = []string{"pre_context", "post_context", "hours"}
 	}
 
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.

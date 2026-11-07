@@ -76,6 +76,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"rentals/inspections": {"/inspections", "/inspections/{id}"}, "rentals/search": {"/", ""}, "rentals/lookup": {"/tenants", ""}, "rentals/entries": {"/", ""},
 	"map/summary": {"/spots", ""}, "map/layers": {"/settings/apps", ""}, "map/features": {"/", ""}, "map/day": {"/timeline", ""}, "map/spots": {"/spots", ""},
 	"map/lines": {"/spots", ""}, "map/views": {"/", ""}, "map/search": {"/", ""},
+	"errors/summary": {"/", ""}, "errors/issues": {"/", "/issues/{id}"}, "errors/projects": {"/projects", "/projects/{id}"}, "errors/search": {"/", ""}, "errors/day": {"/", ""},
 	"trails/summary": {"/", ""}, "trails/today": {"/", ""}, "trails/routes": {"/routes", "/routes/{id}"}, "trails/outings": {"/outings", "/outings/{id}"},
 	"trails/day": {"/outings", ""}, "trails/search": {"/", ""}, "trails/stats": {"/year", ""}, "trails/gear": {"/gear", ""}, "trails/packs": {"/gear", ""},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
