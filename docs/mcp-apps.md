@@ -236,10 +236,13 @@ List tools using your MCP client's `tools/list`. For example:
 Read the note again with `pocket_notes_get`, then use its current `etag` when
 calling `pocket_notes_update`. Update tools generally preserve omitted fields.
 Supplied arrays replace those arrays. Files `save_text` replaces the complete
-file; Office currently creates blank documents and renames them, rather than
-editing spreadsheet cells or rich document content. Documents uploads, binary
-file uploads, contact-card replacement, calendar invitees and occurrence edits
-are not part of this catalog.
+file. Binary files of any size go through Files `upload_link`: it returns a
+one-time link for one path (an hour, one use, written as the person), and the
+agent PUTs the bytes there itself (`curl -T file url`), so they never pass
+through the tool call. Office currently creates blank documents and renames
+them, rather than editing spreadsheet cells or rich document content. Documents
+uploads, contact-card replacement, calendar invitees and occurrence edits are
+not part of this catalog.
 
 Money and Split amounts are integer minor units (`1250` means EUR 12.50).
 Invoicing line prices are major units (`12.50`). Split modes are `even`, `amount`,

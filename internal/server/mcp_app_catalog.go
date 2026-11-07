@@ -65,7 +65,7 @@ func arraySchema(item any) map[string]any {
 
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
-var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true,
+var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
@@ -242,6 +242,10 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("files", "read_text", "Read a UTF-8 text file (up to 512 KiB); binary files are not supported.", "/fs/raw", "space path").TextResponse = true
 	write("files", "mkdir", "Create a folder within an accessible file space.", "POST", "/fs/mkdir", textFields("space path"), "space path")
 	write("files", "save_text", "Create or replace a text file's complete contents. Read and preserve existing contents when needed.", "POST", "/fs/text", textFields("space path content"), "space path content")
+	// The bytes never pass through the tool call: an app build, a photo or a video can't fit in JSON. Files hands out a link that
+	// writes only this path, once, within an hour, as the person; the agent then PUTs the file there. A change (always asked):
+	// what gets written is only known when it arrives.
+	write("files", "upload_link", "Get a one-time link to upload one file of any type or size (an app build, a photo, a PDF, a video) to path in an accessible space, then send the file's bytes to the returned url with a PUT, e.g. curl -T <file> '<url>'. The link writes only that path, works once and expires after an hour. overwrite = true replaces a file already there; otherwise the new file is kept beside it under a new name. Create the folder first with pocket_files_mkdir.", "POST", "/fs/upload-link", textFields("space path").booleans("overwrite"), "space path")
 
 	read("garage", "vehicles", "List your vehicles.", "/vehicles", "")
 	read("garage", "get_vehicle", "Read a vehicle's details.", "/vehicles/{id}/", "")
