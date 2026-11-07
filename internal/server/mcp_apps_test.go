@@ -760,3 +760,55 @@ func TestMCPCRMTools(t *testing.T) {
 		t.Fatal("add_note accepted kind won: only the app writes those lines")
 	}
 }
+
+func TestMCPLeagueTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "league" {
+			tools[op.Name] = op
+			if op.Method == "GET" {
+				reads++
+			}
+		}
+	}
+	if reads != 13 || len(tools) != 14 {
+		t.Fatalf("league tools: %d reads of %d", reads, len(tools))
+	}
+	// answering for oneself is the only thing the AI may do: no chat, no results, no games planned or cancelled
+	for name, op := range tools {
+		if op.Method != "GET" && name != "pocket_league_answer" {
+			t.Fatalf("unexpected league write %s %s", op.Method, op.Path)
+		}
+		for _, part := range []string{"/messages", "/matches/", "/cancel", "/votes", "/pick", "/teams", "/mvp", "/make", "/members/"} {
+			if op.Method != "GET" && strings.Contains(op.Path, part) {
+				t.Fatalf("league write on %s", op.Path)
+			}
+		}
+	}
+	ans := tools["pocket_league_answer"]
+	if ans == nil || ans.Method != "POST" || ans.Path != "/games/{id}/answer" || ans.Kind != "change" {
+		t.Fatalf("answer: %+v", ans)
+	}
+	// "I'm in for Tuesday"
+	for _, ok := range []map[string]any{{"answer": "in"}, {"answer": "maybe", "note": "10 min late"}, {"answer": "out"}, {"answer": ""}} {
+		if err := ans.resolved.Validate(map[string]any{"id": 31, "request_id": "0123456789abcdef", "data": ok}); err != nil {
+			t.Fatalf("answer refused %v: %v", ok, err)
+		}
+	}
+	for _, bad := range []map[string]any{
+		{"answer": "waiting"},
+		{"answer": "yes"},
+		{"note": "x"},
+		{"answer": "in", "user_id": 2},
+		{"answer": "in", "body": "see you there"},
+		{"answer": "in", "note": strings.Repeat("x", 121)},
+	} {
+		if err := ans.resolved.Validate(map[string]any{"id": 31, "request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("answer accepted %v", bad)
+		}
+	}
+	if tools["pocket_league_player"] == nil || tools["pocket_league_player"].Path != "/groups/{id}/players/{uid}" {
+		t.Fatal("player read missing")
+	}
+}
