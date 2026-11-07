@@ -74,6 +74,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"rentals/summary": {"/", ""}, "rentals/today": {"/", ""}, "rentals/rent": {"/rent", ""}, "rentals/leases": {"/leases", "/leases/{id}"},
 	"rentals/properties": {"/properties", "/properties/{id}"}, "rentals/tenants": {"/tenants", "/tenants/{id}"}, "rentals/requests": {"/repairs", "/repairs/{id}"},
 	"rentals/inspections": {"/inspections", "/inspections/{id}"}, "rentals/search": {"/", ""}, "rentals/lookup": {"/tenants", ""}, "rentals/entries": {"/", ""},
+	"trails/summary": {"/", ""}, "trails/today": {"/", ""}, "trails/routes": {"/routes", "/routes/{id}"}, "trails/outings": {"/outings", "/outings/{id}"},
+	"trails/day": {"/outings", ""}, "trails/search": {"/", ""}, "trails/stats": {"/year", ""}, "trails/gear": {"/gear", ""}, "trails/packs": {"/gear", ""},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
@@ -90,6 +92,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 var mcpLinkID = regexp.MustCompile(`^(?:[1-9][0-9]*|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
 var mcpIssueIdent = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,6}-[1-9][0-9]{0,9}$`)
 var mcpLinkDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+var mcpTrailsRoutePath = regexp.MustCompile(`^/routes/[1-9][0-9]*$`)
 
 func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool, input map[string]any) *mcp.CallToolResult {
 	if result.IsError {
@@ -768,6 +771,76 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		for key, path := range map[string]string{"request": "/requests", "tenant": "/lookup"} {
 			if m, ok := r[key].(map[string]any); ok && op.Path == path {
 				if u, ok := m["item_url"].(string); ok {
+					envelope["source_url"] = u
+				}
+			}
+		}
+	}
+	// Pocket Trails: outings open at /outings/{id}, routes at /routes/{id}, gear and packing lists on /gear. An outing's page (one
+	// outing, Today's current, a plan or a status change) holds {outing, route}; Today's and the summary's lists hold outings, Today's
+	// ideas routes; a year's longest is an outing; a route's page lists its outings; search hits go by their type (a spot opens its
+	// route). A planned outing and a status change open the outing.
+	if r, ok := envelope["result"].(map[string]any); ok && op.App == "trails" {
+		each := func(rows any, route string) {
+			if list, ok := rows.([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", route)
+					}
+				}
+			}
+		}
+		page := func(p map[string]any) {
+			if o, ok := p["outing"].(map[string]any); ok {
+				itemLink(o, "id", "/outings/{id}")
+			}
+			if rt, ok := p["route"].(map[string]any); ok {
+				itemLink(rt, "id", "/routes/{id}")
+			}
+		}
+		page(r)
+		if cur, ok := r["current"].(map[string]any); ok {
+			page(cur)
+		}
+		for _, key := range []string{"upcoming", "recent", "unmarked", "out", "outings"} {
+			each(r[key], "/outings/{id}")
+		}
+		each(r["ideas"], "/routes/{id}")
+		if n, ok := r["next"].(map[string]any); ok {
+			itemLink(n, "id", "/outings/{id}")
+		}
+		for _, key := range []string{"year", "previous"} {
+			if y, ok := r[key].(map[string]any); ok {
+				if l, ok := y["longest"].(map[string]any); ok {
+					itemLink(l, "id", "/outings/{id}")
+				}
+			}
+		}
+		if op.Path == "/search" {
+			if list, ok := r["results"].([]any); ok {
+				for _, row := range list {
+					m, ok := row.(map[string]any)
+					if !ok {
+						continue
+					}
+					switch mcpScalar(m["type"]) {
+					case "route":
+						itemLink(m, "id", "/routes/{id}")
+					case "outing":
+						itemLink(m, "id", "/outings/{id}")
+					case "gear":
+						m["item_url"] = link("/gear")
+					case "spot":
+						if p := mcpScalar(m["path"]); mcpTrailsRoutePath.MatchString(p) {
+							m["item_url"] = link(p)
+						}
+					}
+				}
+			}
+		}
+		if op.Path == "/outings" { // a list is an array: this is a planned outing's page
+			if o, ok := r["outing"].(map[string]any); ok {
+				if u, ok := o["item_url"].(string); ok {
 					envelope["source_url"] = u
 				}
 			}

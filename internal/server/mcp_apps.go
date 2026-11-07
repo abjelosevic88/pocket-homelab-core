@@ -37,6 +37,30 @@ type mcpAppTool struct {
 	// Body is fields every write sends (Tables' typecast: true). Neither is the AI's to change.
 	Query map[string]string
 	Body  map[string]any
+	// Omit is keys dropped from the answer wherever they sit (Trails' tracks: thousands of map points
+	// the assistant cannot use). The app's answer may then be larger than the usual limit, up to
+	// mcpOmitReadLimit; what is left must still fit in it.
+	Omit []string
+}
+
+const mcpOmitReadLimit = 16 << 20
+
+// omitMCPKeys removes these keys from every object in value.
+func omitMCPKeys(value any, keys []string) any {
+	switch v := value.(type) {
+	case map[string]any:
+		for _, k := range keys {
+			delete(v, k)
+		}
+		for k, x := range v {
+			v[k] = omitMCPKeys(x, keys)
+		}
+	case []any:
+		for i := range v {
+			v[i] = omitMCPKeys(v[i], keys)
+		}
+	}
+	return value
 }
 
 func (s *Server) addMCPAppTools(ms *mcp.Server, ctx context.Context) {
@@ -252,8 +276,12 @@ func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, toke
 		}
 		return mcpAppResult(failure, true)
 	}
-	raw, err := io.ReadAll(io.LimitReader(res.Body, (512<<10)+1))
-	if err != nil || len(raw) > 512<<10 {
+	limit := int64(512 << 10)
+	if len(op.Omit) > 0 && !op.TextResponse {
+		limit = mcpOmitReadLimit
+	}
+	raw, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
+	if err != nil || int64(len(raw)) > limit {
 		return mcpAppError("Application response exceeded the limit or could not be read. Narrow the query. A requested change may already have completed.")
 	}
 	var value any
@@ -268,6 +296,12 @@ func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, toke
 	} else {
 		if !strings.Contains(res.Header.Get("Content-Type"), "application/json") || json.Unmarshal(raw, &value) != nil {
 			return mcpAppError("Application did not return the expected JSON response. A requested change may already have completed.")
+		}
+		if len(op.Omit) > 0 {
+			value = omitMCPKeys(value, op.Omit)
+			if left, _ := json.Marshal(value); len(left) > 512<<10 {
+				return mcpAppError("Application response exceeded the limit. Narrow the query. A requested change may already have completed.")
+			}
 		}
 	}
 	value = scrubMCPAppData(value, token)

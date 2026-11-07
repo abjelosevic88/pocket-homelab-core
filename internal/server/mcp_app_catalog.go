@@ -70,8 +70,9 @@ var mcpChangePosts = map[string]bool{"tasks_complete": true, "inventory_adjust":
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
-	"league_answer":      true, // the group sees it and may move someone off the waiting list: always ask
-	"ai_create_schedule": true} // a new schedule runs an agent unattended: always ask, like a change
+	"trails_outing_status": true, // "I'm back" may email the person's safety contact: always ask
+	"league_answer":        true, // the group sees it and may move someone off the waiting list: always ask
+	"ai_create_schedule":   true} // a new schedule runs an agent unattended: always ask, like a change
 
 // mcpOpKind is read, add (creates something new) or change (alters what exists).
 func mcpOpKind(name, method string) string {
@@ -692,6 +693,63 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	rentalsNote.Schema["properties"].(mcpFields)["data"].(map[string]any)["anyOf"] = []any{
 		map[string]any{"required": []string{"lease_id"}}, map[string]any{"required": []string{"property_id"}}, map[string]any{"required": []string{"request_id"}}}
 	compileMCPAppTool(rentalsNote)
+
+	// Pocket Trails: the person's hikes, walks, runs and bike rides. Routes (a GPX import or drawn on the map) carry their numbers and
+	// the spots along them; an outing is a route (or none) on a day with a start time, the weather, a back-by time, the people coming
+	// and a packing list from their gear. Distances and heights are in METRES, weights in grams, times in minutes. Map tracks
+	// (thousands of points) never reach the assistant: Omit drops them from every answer.
+	trailsQuery := func(op *mcpAppTool, name string, schema map[string]any) {
+		op.Schema["properties"].(mcpFields)["query"].(map[string]any)["properties"].(mcpFields)[name] = schema
+	}
+	trailsDay := map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`}
+	trailsActivity := []string{"hike", "walk", "run", "bike", "gravel", "mtb", "ski", "other"}
+	trails := []*mcpAppTool{
+		read("trails", "summary", "Get the small picture of the person's hikes, walks, runs and rides: who is out right now (out: the outings going on, with back_by), how many outings are planned, the next one (next: title, date, start_time, activity, distance_m and gain_m in metres, minutes, days until it), how many finished outings of the last two weeks wait for a rating (to_rate), how many routes, and this year's totals (year: outings, distance_m, gain_m, minutes, by activity, by month, summits, the highest point in metres, the longest outing).", "/summary", ""),
+		read("trails", "today", "Read the Trails Today page. current is the outing going on now, or else the next one in the coming 14 days, in full: the outing (date, start_time, status planned|out, people, back_by, its packing list items with packed true or false, item_count and packed_count), its route's numbers and spots, the day's weather (condition, t_max and t_min in °C, precip_prob in %, wind and gust, sunrise, sunset, hours), advice (level info|caution|warning and a text: daylight, rain, storms, wind, heat), finish (when they would be done) and suggest_back_by. Then upcoming (more planned outings), recent (finished ones; rating 0 = not rated yet), unmarked (planned for a day that passed and never marked as done or called off), ideas (routes never done) and this year's totals. Distances and heights are in metres, times in minutes.", "/today", ""),
+		read("trails", "routes", "List the person's routes (activity = hike, walk, run, bike, gravel, mtb, ski or other; q = words in the name, region or description; archived = 1 to include archived ones): id, name, activity, region, distance_m, gain_m and loss_m in metres, the lowest and highest point (min_ele, max_ele, metres), minutes (how long it takes at the person's pace), level easy|moderate|hard|expert, loop, start_name, how often it was done (done, last_done) and the next planned date (next). Find a route's id here (by its name with q) to plan an outing on it.", "/routes", "activity q archived"),
+		read("trails", "get_route", "Read one route (id = the route): its numbers (distance_m, gain_m, loss_m and the highest and lowest point in metres, minutes at the person's pace, level), description, tags, where it starts, the spots along it (waypoints: kind such as water, hut, food, summit, viewpoint, parking, transport or danger, name, note, height ele in metres, at_m = metres from the start), and the outings on it (planned and done, with dates, people and ratings). The map track itself is left out.", "/routes/{id}", ""),
+		read("trails", "outings", "List outings (status = planned, out, done or cancelled, several joined by commas like planned,out; from and to = YYYY-MM-DD; route_id = only those on one route; q = words; order = desc for the newest first): id, title, activity, date, start_time, status, route_id and route_name, distance_m and gain_m in metres, minutes, people, notes, back_by, rating (1-5, 0 = not rated yet), item_count and packed_count (the packing list) and the day's weather.", "/outings", "status from to route_id q order limit"),
+		read("trails", "get_outing", "Read one outing in full (id = the outing): the outing (title, date, start_time, status planned|out|done|cancelled, people, notes, back_by, whether someone is told when the person is not back (safety, contact_name), started_at and ended_at, rating, conditions, report, the packing list items with packed true or false), its route's numbers and spots, the day's weather, advice (daylight, rain, storms, wind, heat), sunrise, sunset, finish (when they would be done), suggest_back_by and its links in other apps. Distances and heights are in metres. Map tracks are left out. A forecast older than an hour is fetched again.", "/outings/{id}", ""),
+		read("trails", "day", "Read one day's outings (date = YYYY-MM-DD; called-off ones are left out): id, title, status, activity, start_time, distance_m and gain_m in metres (what was really covered when a track was recorded), minutes, rating, people, route and a short line (text).", "/day/{date}", ""),
+		read("trails", "search", "Search the person's routes, outings, gear and the spots on their routes with these words (results: type route|outing|gear|spot, id, title, subtitle, url).", "/search", "q"),
+		read("trails", "stats", "Read one year of finished outings (year = YYYY, this year when left out): outings, distance_m and gain_m in metres, minutes, by month, by activity, summits reached, the highest point (metres) and the longest outing; previous = the year before to compare; years = the years with outings.", "/stats", "year"),
+		read("trails", "gear", "List the person's gear (q = words, archived = 1 to include archived): id, name, category, weight_g in grams, worn (worn, not carried), consumable (food, water, gas), note and on how many packing lists it is (packs).", "/gear", "q archived"),
+		read("trails", "packs", "List the person's packing lists: id, name, activity, items (gear_id, qty and the gear), count and weight in grams (base = the pack without food and water, worn, consumable, total = what is in the pack).", "/packs", ""),
+	}
+	trailsQuery(trails[2], "activity", map[string]any{"type": "string", "enum": trailsActivity, "description": "Only routes for this activity."})
+	trailsQuery(trails[4], "status", map[string]any{"type": "string", "pattern": `^(planned|out|done|cancelled)(,(planned|out|done|cancelled))*$`, "description": "planned, out, done or cancelled; several joined by commas."})
+	trailsQuery(trails[4], "from", trailsDay)
+	trailsQuery(trails[4], "to", trailsDay)
+	trailsQuery(trails[4], "route_id", map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991)})
+	trailsQuery(trails[4], "order", map[string]any{"type": "string", "enum": []string{"asc", "desc"}})
+	trailsQuery(trails[8], "year", map[string]any{"type": "string", "pattern": `^\d{4}$`, "description": "The year, YYYY; leave out for this year."})
+	for _, op := range []*mcpAppTool{trails[2], trails[4], trails[8]} {
+		compileMCPAppTool(op)
+	}
+	trailsPerson := objectSchema(textFields("name email"), "name")
+	trailsPerson["properties"].(mcpFields)["name"].(map[string]any)["maxLength"] = 120
+	trailsOuting := textFields("title notes").enum("activity", trailsActivity...)
+	trailsOuting["title"].(map[string]any)["maxLength"] = 200
+	trailsOuting["title"].(map[string]any)["description"] = "What it is called (\"Trebević with Ana\"); left out, the route's name is used."
+	trailsOuting["notes"].(map[string]any)["description"] = "Anything to remember: where to meet, the bus, who brings what."
+	trailsOuting["activity"].(map[string]any)["description"] = "Only when it differs from the route's (or there is no route)."
+	trailsOuting["route_id"] = map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991), "description": "The route (pocket_trails_routes with q = its name gives the id). Leave out for an outing without a route, then give a title."}
+	trailsOuting["date"] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`, "description": "The day, YYYY-MM-DD."}
+	trailsOuting["start_time"] = map[string]any{"type": "string", "pattern": `^([01]\d|2[0-3]):[0-5]\d$`, "description": "When they set off, HH:MM (24 h, local time)."}
+	trailsOuting["back_by"] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$`, "description": "When the person means to be back, YYYY-MM-DDTHH:MM local time; Trails reminds them when it passes."}
+	trailsOuting["people"] = arraySchema(trailsPerson)
+	trailsOuting["people"].(map[string]any)["maxItems"] = 30
+	trailsOuting["people"].(map[string]any)["description"] = "Who comes along: name, and email when known."
+	plan := write("trails", "plan_outing", "Plan an outing for the person: a route (route_id) or a title, the day, the start time, who comes, notes and when they mean to be back (back_by). Trails adds the day's forecast and advice, and puts it in Pocket Calendar when the person has that on. It never switches on telling someone when the person is not back; they do that in Trails. Returns the planned outing with its weather and advice (distances in metres).", "POST", "/outings", trailsOuting, "date")
+	plan.Body = map[string]any{"safety": false}
+	plan.Schema["properties"].(mcpFields)["data"].(map[string]any)["anyOf"] = []any{map[string]any{"required": []string{"route_id"}}, map[string]any{"required": []string{"title"}}}
+	compileMCPAppTool(plan)
+	status := write("trails", "outing_status", "Mark where one of the person's outings stands (id = the outing): start = setting off now, back = \"I'm back\" (home safe: it ends the outing with the time back, so no one is warned; if someone was already told they were not back, Trails tells them all is well), done = it happened (no time back), cancel = called off. Returns the outing with a note of who was told.", "POST", "/outings/{id}/status/{action}", nil, "")
+	status.Schema["properties"].(mcpFields)["action"] = map[string]any{"type": "string", "enum": []string{"start", "back", "done", "cancel"}, "description": "start, back, done or cancel."}
+	compileMCPAppTool(status)
+	for _, op := range append(trails, plan, status) {
+		op.Omit = []string{"track", "actual_track", "controls", "preview"}
+	}
 
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.
 	read("chat", "summary", "Get what waits in your chats: unread counts, the conversations with unread messages (name, how many, the last message), the messages that mention you, and today's activity per conversation.", "/summary", "")

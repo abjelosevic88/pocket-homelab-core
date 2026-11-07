@@ -1046,3 +1046,141 @@ func TestMCPRentalsTools(t *testing.T) {
 		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
 	}
 }
+
+func TestMCPTrailsTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "trails" {
+			tools[op.Name] = op
+			if op.Method == "GET" {
+				reads++
+			}
+		}
+	}
+	if reads != 11 || len(tools) != 13 {
+		t.Fatalf("trails tools: %d reads of %d", reads, len(tools))
+	}
+	// Reads and plan_outing stay inside what Pocket Trails opens to linked apps (internal/server/links.go linkRoutes there).
+	// outing_status is the one more: Trails keeps status changes from linked apps, but these tools call it with the
+	// person's own (pcu_) token, as the person's phone does for "I'm back".
+	allowed := map[string]*regexp.Regexp{
+		"GET":  regexp.MustCompile(`^/api/v1/((summary|today|stats|routes|outings|gear|packs|search|day/\d{4}-\d{2}-\d{2})|(routes|outings)/\d+)$`),
+		"POST": regexp.MustCompile(`^/api/v1/(outings|outings/\d+/status/(start|back|done|cancel))$`),
+	}
+	for name, op := range tools {
+		path := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(op.Path, "{id}", "12"), "{date}", "2026-11-08"), "{action}", "back")
+		if re := allowed[op.Method]; re == nil || !re.MatchString("/api/v1"+path) {
+			t.Fatalf("%s: %s %s is not a route for Trails' tools", name, op.Method, op.Path)
+		}
+		if strings.Join(op.Omit, " ") != "track actual_track controls preview" {
+			t.Fatalf("%s: map tracks are not left out: %v", name, op.Omit)
+		}
+	}
+	plan, status := tools["pocket_trails_plan_outing"], tools["pocket_trails_outing_status"]
+	if plan == nil || plan.Method != "POST" || plan.Path != "/outings" || plan.Kind != "add" || plan.Body["safety"] != false {
+		t.Fatalf("plan_outing: %+v", plan)
+	}
+	if status == nil || status.Method != "POST" || status.Kind != "change" {
+		t.Fatalf("outing_status: %+v", status)
+	}
+	// "We hike Trebević on Saturday at 8 with Ana, back by five"
+	ok := map[string]any{"route_id": 3, "date": "2026-11-14", "start_time": "08:00", "back_by": "2026-11-14T17:00", "people": []any{map[string]any{"name": "Ana", "email": "ana@example.com"}}, "notes": "Meet at the cable car"}
+	if err := plan.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("plan_outing refused a plain plan: %v", err)
+	}
+	if err := plan.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "Run by the river", "activity": "run", "date": "2026-11-09"}}); err != nil {
+		t.Fatalf("plan_outing refused an outing without a route: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"route_id": 3},
+		{"date": "2026-11-14"},
+		{"route_id": 3, "date": "Saturday"},
+		{"route_id": 3, "date": "2026-11-14", "start_time": "8am"},
+		{"route_id": 3, "date": "2026-11-14", "back_by": "17:00"},
+		{"route_id": 3, "date": "2026-11-14", "safety": true},
+		{"route_id": 3, "date": "2026-11-14", "contact_email": "mum@example.com"},
+		{"route_id": 3, "date": "2026-11-14", "alert_after": 60},
+		{"route_id": "Trebević", "date": "2026-11-14"},
+		{"route_id": 3, "date": "2026-11-14", "activity": "swim"},
+		{"route_id": 3, "date": "2026-11-14", "people": []any{map[string]any{"email": "ana@example.com"}}},
+	} {
+		if err := plan.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("plan_outing accepted %v", bad)
+		}
+	}
+	for _, action := range []string{"start", "back", "done", "cancel"} {
+		if err := status.resolved.Validate(map[string]any{"id": 14, "action": action, "request_id": "0123456789abcdef", "data": map[string]any{}}); err != nil {
+			t.Fatalf("outing_status refused %s: %v", action, err)
+		}
+	}
+	for _, action := range []any{"plan", "delete", "../x", 1} {
+		if status.resolved.Validate(map[string]any{"id": 14, "action": action, "request_id": "0123456789abcdef", "data": map[string]any{}}) == nil {
+			t.Fatalf("outing_status took %v", action)
+		}
+	}
+	if tools["pocket_trails_outings"].resolved.Validate(map[string]any{"query": map[string]any{"status": "planned,soon"}}) == nil {
+		t.Fatal("outings took a status Trails does not have")
+	}
+	if tools["pocket_trails_stats"].resolved.Validate(map[string]any{"query": map[string]any{"year": "this year"}}) == nil {
+		t.Fatal("stats took a year in words: it is YYYY")
+	}
+
+	// tracks never reach the assistant (even one too big to pass whole); a plan never arms "tell someone"; "I'm back" goes to its status
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var seen []string
+	long := make([]string, 30000)
+	for i := range long {
+		long[i] = "[43.851234,18.412345,1150.5,1793664000]"
+	}
+	track := "[" + strings.Join(long, ",") + "]"
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		seen = append(seen, r.Method+" "+r.URL.RequestURI()+" "+string(b))
+		w.Header().Set("Content-Type", "application/json")
+		page := `{"outing":{"id":14,"route_id":3,"status":"planned","actual_track":` + track + `,"items":[{"id":300,"name":"Rain jacket","packed":false}]},"route":{"id":3,"name":"Trebević","distance_m":11800,"track":` + track + `,"controls":[[43.85,18.41]],"preview":[[43.85,18.41]],"waypoints":[{"id":40,"kind":"hut","name":"Pino","at_m":5200}]},"advice":[{"level":"caution","icon":"rain","text":"Rain from 14:00"}],"note":""}`
+		if r.Method == "POST" && r.URL.Path == "/api/v1/outings" {
+			w.WriteHeader(http.StatusCreated)
+		}
+		if r.URL.Path == "/api/v1/routes/3" {
+			page = `{"route":{"id":3,"name":"Trebević","track":` + track + `,"waypoints":[{"id":40,"kind":"hut","name":"Pino","at_m":5200}]},"outings":[{"id":14}]}`
+		}
+		w.Write([]byte(page))
+	}))
+	defer fake.Close()
+	f.app("trails", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read apps:write")
+	session := mcpSessionWithToken(t, f.env, access)
+	for _, c := range []struct {
+		name string
+		args map[string]any
+		link string
+	}{
+		{"pocket_trails_get_route", map[string]any{"id": 3}, "/outings/14"},
+		{"pocket_trails_get_outing", map[string]any{"id": 14}, "/routes/3"},
+		{"pocket_trails_plan_outing", map[string]any{"request_id": "operation-tr-000001", "data": map[string]any{"route_id": 3, "date": "2026-11-14", "start_time": "08:00", "back_by": "2026-11-14T17:00"}}, "/outings/14"},
+		{"pocket_trails_outing_status", map[string]any{"id": 14, "action": "back", "request_id": "operation-tr-000002", "data": map[string]any{}}, "/outings/14"},
+	} {
+		r, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: c.name, Arguments: c.args})
+		if err != nil || r.IsError {
+			t.Fatalf("%s: %v %+v", c.name, err, r)
+		}
+		raw, _ := json.Marshal(r)
+		if strings.Contains(string(raw), "1793664000") || strings.Contains(string(raw), `"track"`) || strings.Contains(string(raw), `"preview"`) || strings.Contains(string(raw), `"controls"`) {
+			t.Fatalf("%s: a map track reached the assistant (%d bytes)", c.name, len(raw))
+		}
+		if !strings.Contains(string(raw), `"Pino"`) || !strings.Contains(string(raw), c.link) {
+			t.Fatalf("%s: spots or links missing: %s", c.name, raw)
+		}
+	}
+	want := []string{
+		"GET /api/v1/routes/3 ",
+		"GET /api/v1/outings/14 ",
+		`POST /api/v1/outings {"back_by":"2026-11-14T17:00","date":"2026-11-14","route_id":3,"safety":false,"start_time":"08:00"}`,
+		"POST /api/v1/outings/14/status/back {}",
+	}
+	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
+	}
+}
