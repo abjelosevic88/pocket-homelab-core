@@ -751,6 +751,42 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		op.Omit = []string{"track", "actual_track", "controls", "preview"}
 	}
 
+	// Pocket Map: everything with a place on one map. Most of it is read live from the person's other apps as layers (journeys and
+	// stops from Pocket Movement, places, trail routes and outings, trips, Immich photos, payments, fuel stops, games, weather
+	// places); their own spots, lines and saved views live in Map. A feature: id "<layer>:<ref>", layer, kind point|line, title,
+	// sub, lat, lng, date, time, end, facts, url (opens it in its own app). Lines (many points) never reach the assistant: Omit.
+	mapPeriod := map[string]any{"type": "string", "enum": []string{"today", "7d", "30d", "90d", "year", "all"}, "description": "today, 7d, 30d, 90d, year or all; or give from and to instead."}
+	mapDay := map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`}
+	mapTools := []*mcpAppTool{
+		read("map", "summary", "Get how many spots and lines of their own the person has on Pocket Map, their lists (name, spots, lines) and saved views (name, layers, period).", "/summary", ""),
+		read("map", "layers", "List the map's layers: key (for layers in pocket_map_features), name, which app it comes from (group), dated (false = shown whatever the time), whether it is on for the person and whether its app works for them (works; app.state and app.fix say why not).", "/layers", ""),
+		read("map", "features", "Read what the map shows for a time: every layer that is on (or layers = keys joined by commas, from pocket_map_layers), for period (today, 7d, 30d, 90d, year, all) or from and to (YYYY-MM-DD). Answers features (newest first: id, layer, kind point|line, title, sub, lat, lng, date, time, end for things that last, facts like distances and amounts, url to open it in its own app) and per layer the count and any error. Use it for \"where was I in May?\", \"which places did I go to on my trip?\". Distances inside facts are as the apps wrote them.", "/features", "period from to layers"),
+		read("map", "day", "Read everything on the map on one day (date = YYYY-MM-DD): journeys, stops, outings, trips, photos, payments and the like from the layers that are on, and the person's own spots dated that day; url opens the day on the map.", "/day/{date}", ""),
+		read("map", "spots", "List the person's own spots (list = one list's name, q = words): id, name, kind (pin home work food coffee view nature camp parking shop culture sport star), list, lat, lng, address, date, note, link_url, source (the app that added it, empty when they did).", "/spots", "list q"),
+		read("map", "lines", "List the person's own lines (drawn or from GPX/KML files; list, q): id, name, list, distance_m in metres, date, note, color. The points are left out.", "/lines", "list q"),
+		read("map", "views", "List the person's saved map views: id, name, layers, period, date_from, date_to, and where the map looks (lat, lng, zoom; 0 = fits to what is shown).", "/views", ""),
+		read("map", "search", "Search the person's spots and lines, what the map showed lately, and places on OpenStreetMap (found: name, detail, lat, lng) when their online search is on.", "/search", "q"),
+	}
+	mapQuery := func(op *mcpAppTool, name string, schema map[string]any) {
+		op.Schema["properties"].(mcpFields)["query"].(map[string]any)["properties"].(mcpFields)[name] = schema
+	}
+	mapQuery(mapTools[2], "period", mapPeriod)
+	mapQuery(mapTools[2], "from", mapDay)
+	mapQuery(mapTools[2], "to", mapDay)
+	mapQuery(mapTools[2], "layers", map[string]any{"type": "string", "pattern": `^[a-z.]+(,[a-z.]+)*$`, "description": "Layer keys joined by commas; leave out for the layers that are on."})
+	compileMCPAppTool(mapTools[2])
+	mapSpot := textFields("name note list address date link_url source_ref").numbers("lat lng").enum("kind", "pin", "home", "work", "food", "coffee", "view", "nature", "camp", "parking", "shop", "culture", "sport", "star")
+	mapSpot["name"].(map[string]any)["maxLength"] = 200
+	mapSpot["lat"].(map[string]any)["description"] = "Latitude in degrees, -90 to 90."
+	mapSpot["lng"].(map[string]any)["description"] = "Longitude in degrees, -180 to 180."
+	mapSpot["list"].(map[string]any)["description"] = "A list to put it in (\"Want to go\", \"Summer 2026\"); pocket_map_summary has the existing ones."
+	mapSpot["date"].(map[string]any)["description"] = "The day the person was there, YYYY-MM-DD; leave out when it is a place to go."
+	mapSpot["source_ref"].(map[string]any)["description"] = "Optional: your own reference; the same one again answers the spot added before instead of adding another."
+	mapTools = append(mapTools, write("map", "add_spot", "Pin a spot on the person's map (a café to remember, a place to go, where they parked): name and coordinates, optionally a kind, a list, a note, an address and the day. It is theirs to change or remove in Pocket Map.", "POST", "/spots", mapSpot, "name lat lng"))
+	for _, op := range mapTools {
+		op.Omit = []string{"line"}
+	}
+
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.
 	read("chat", "summary", "Get what waits in your chats: unread counts, the conversations with unread messages (name, how many, the last message), the messages that mention you, and today's activity per conversation.", "/summary", "")
 	read("chat", "conversations", "List your conversations: id, name as you see it (the other person in a direct chat, \"Me\" for your own space), kind direct|group|self, members, unread and mentioned counts, the last message, muted/pinned/archived.", "/conversations", "")
