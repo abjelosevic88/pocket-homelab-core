@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -371,12 +372,26 @@ func (s *Server) handleMyRemote(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /api/v1/me/remote/pair: a one-time QR code that pairs a new device.
+// An optional {"apps": {slug: on}} sets which apps the device starts with;
+// apps it does not name follow their default.
 func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	u := userFrom(ctx)
 	if u == nil {
 		writeErr(w, http.StatusForbidden, "people only")
 		return
+	}
+	var in struct {
+		Apps map[string]bool `json:"apps"`
+	}
+	if err := decode(r, &in); err != nil && !errors.Is(err, io.EOF) {
+		writeErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	for app := range in.Apps {
+		if !slugRe.MatchString(app) || app == portalSlug {
+			delete(in.Apps, app)
+		}
 	}
 	rs := s.remoteSettings(ctx)
 	if !rs.Enabled || rs.Pattern == "" {
@@ -388,7 +403,7 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "box key")
 		return
 	}
-	code, err := s.store.CreateRemoteCode(ctx, store.RemoteCode{UserID: u.ID, App: portalSlug}, remoteCodeTTL)
+	code, err := s.store.CreateRemoteCode(ctx, store.RemoteCode{UserID: u.ID, App: portalSlug, Apps: in.Apps}, remoteCodeTTL)
 	if err != nil {
 		s.fail(w, err, "pairing code")
 		return

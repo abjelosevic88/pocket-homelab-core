@@ -521,6 +521,36 @@ func TestRemotePairingCodes(t *testing.T) {
 	}
 }
 
+func TestRemotePairChoosesApps(t *testing.T) {
+	rig := newRemoteRig(t)
+	devApps := func() map[string]any {
+		var mine struct {
+			Devices []struct {
+				Apps map[string]any `json:"apps"`
+			} `json:"devices"`
+		}
+		rig.e.do("GET", "/api/v1/me/remote", "", nil, &mine)
+		return mine.Devices[len(mine.Devices)-1].Apps
+	}
+	// No choice: the device follows every app's default.
+	rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": rig.pairLink(), "name": "Default"})
+	if a := devApps(); len(a) != 0 {
+		t.Fatalf("default device has its own switches: %v", a)
+	}
+	// Money switched off in the pairing dialog stays off on the new device.
+	var out map[string]any
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"apps": map[string]bool{"money": false}}, &out); c != 200 {
+		t.Fatalf("pair %d %v", c, out)
+	}
+	code, _ := fragment(t, out["url"].(string))
+	if _, m := rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": code, "name": "Chosen"}); m["t"] != "ready" {
+		t.Fatalf("pair: %v", m)
+	}
+	if a := devApps(); a["money"] != false {
+		t.Fatalf("money should be off on the new device: %v", a)
+	}
+}
+
 func TestRemoteSwitchOffDisconnects(t *testing.T) {
 	rig := newRemoteRig(t)
 	_, app := rig.pairApp(t)

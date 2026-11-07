@@ -384,6 +384,11 @@ func (c *remoteChan) authenticate(ctx context.Context, mode, code, name, pub str
 		if devID, err = s.store.CreateRemoteDevice(ctx, rc.UserID, name); err != nil {
 			return nil, err
 		}
+		for app, on := range rc.Apps {
+			if err := s.store.SetRemoteDeviceApp(ctx, devID, app, on); err != nil {
+				return nil, err
+			}
+		}
 	} else if d, err := s.store.GetRemoteDevice(ctx, devID); err != nil || d.UserID != rc.UserID {
 		return nil, errRemoteNotFound
 	}

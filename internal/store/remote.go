@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -52,6 +53,8 @@ type RemoteCode struct {
 	UserID   int64
 	DeviceID int64 // 0 = a new device
 	App      string
+	// Apps are the switches a new device starts with (nil = app defaults).
+	Apps map[string]bool
 }
 
 func (s *Store) ListRemoteApps(ctx context.Context) (map[string]RemoteApp, error) {
@@ -85,8 +88,16 @@ func (s *Store) CreateRemoteCode(ctx context.Context, c RemoteCode, ttl time.Dur
 	if c.DeviceID > 0 {
 		dev = c.DeviceID
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO remote_codes(hash, user_id, device_id, app, expires_at) VALUES(?,?,?,?,?)`,
-		crypto.Hash(code), c.UserID, dev, c.App, Stamp(time.Now().Add(ttl)))
+	apps := ""
+	if c.Apps != nil {
+		b, err := json.Marshal(c.Apps)
+		if err != nil {
+			return "", err
+		}
+		apps = string(b)
+	}
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO remote_codes(hash, user_id, device_id, app, apps, expires_at) VALUES(?,?,?,?,?,?)`,
+		crypto.Hash(code), c.UserID, dev, c.App, apps, Stamp(time.Now().Add(ttl)))
 	return code, err
 }
 
@@ -94,12 +105,16 @@ func (s *Store) CreateRemoteCode(ctx context.Context, c RemoteCode, ttl time.Dur
 func (s *Store) TakeRemoteCode(ctx context.Context, code string) (*RemoteCode, error) {
 	var c RemoteCode
 	var dev sql.NullInt64
-	err := s.DB.QueryRowContext(ctx, `DELETE FROM remote_codes WHERE hash=? AND expires_at>? RETURNING user_id, device_id, app`,
-		crypto.Hash(code), Now()).Scan(&c.UserID, &dev, &c.App)
+	var apps string
+	err := s.DB.QueryRowContext(ctx, `DELETE FROM remote_codes WHERE hash=? AND expires_at>? RETURNING user_id, device_id, app, apps`,
+		crypto.Hash(code), Now()).Scan(&c.UserID, &dev, &c.App, &apps)
 	if err != nil {
 		return nil, notFound(err)
 	}
 	c.DeviceID = dev.Int64
+	if apps != "" {
+		_ = json.Unmarshal([]byte(apps), &c.Apps)
+	}
 	return &c, nil
 }
 
