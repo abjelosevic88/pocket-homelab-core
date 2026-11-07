@@ -66,6 +66,11 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 		{"league", "/groups/{id}/players/{uid}", `{"id":1,"uid":2}`, `{"row":{"user_id":2}}`, "/groups/1/players/2", ""},
 		{"league", "/search", `{"query":{"q":"tennis"}}`, `{"results":[{"kind":"group","id":1},{"kind":"message","id":77}]}`, "/", "/groups/1"},
 		{"league", "/day/{date}", `{"date":"2026-11-10"}`, `{"date":"2026-11-10","games":[{"id":31}],"matches":[]}`, "/games", "/games/31"},
+		{"league", "/tournaments", `{}`, `[{"id":7,"group_id":1,"name":"Autumn Americano","status":"live","mine":true}]`, "/tournaments", "/tournaments/7"},
+		{"league", "/tournaments", `{"group_id":1}`, `[{"id":7,"group_id":1,"status":"finished","winner":"Ana"}]`, "/groups/1?tab=tournaments", "/tournaments/7"},
+		{"league", "/tournaments", `{"group_id":"../x"}`, `[]`, "/tournaments", ""},
+		{"league", "/tournaments/{id}", `{"id":7}`, `{"tournament":{"id":7,"group_id":1},"group":{"id":1},"groups":[{"id":40,"name":"Group A"}],"entries":[{"id":90}],"matches":[{"id":300}],"mine":[90],"podium":[]}`, "/tournaments/7", "/tournaments/7"},
+		{"league", "/tournaments/{id}", `{"id":7}`, `{"tournament":{"id":7},"group":{"id":1},"groups":[]}`, "/tournaments/7", "/groups/1"},
 		{"blog", "/posts", `{}`, `{"items":[{"id":5,"slug":"x"}],"total":1}`, "/posts", "/posts/5"},
 		{"blog", "/search", `{}`, `{"query":"x","results":[{"id":5}]}`, "/posts", "/posts/5"},
 		{"blog", "/summary", `{}`, `{"drafts":[{"id":5}],"recent":[]}`, "/", "/posts/5"},
@@ -129,6 +134,12 @@ func TestMCPAppBrowserLinks(t *testing.T) {
 				t.Fatal("child ID mistaken for review")
 			}
 		})
+	}
+	// A tournament's pools ("groups") are not League groups: they get no /groups/ page.
+	rt := addMCPAppLinks(mcpAppResult(map[string]any{"result": map[string]any{"tournament": map[string]any{"id": 7.0}, "groups": []any{map[string]any{"id": 40.0, "name": "Group A"}}}}, false),
+		"https://league.example", &mcpAppTool{App: "league", Path: "/tournaments/{id}"}, map[string]any{"id": 7.0})
+	if text := rt.Content[0].(*mcp.TextContent).Text; strings.Contains(text, "/groups/40") || !strings.Contains(text, "/tournaments/7") {
+		t.Fatalf("tournament pool links: %s", text)
 	}
 	// A built-in food (id 0) has no page in Pocket Nutrition.
 	r0 := addMCPAppLinks(mcpAppResult(map[string]any{"result": map[string]any{"foods": []any{map[string]any{"id": 0.0, "builtin": "egg"}}}}, false),

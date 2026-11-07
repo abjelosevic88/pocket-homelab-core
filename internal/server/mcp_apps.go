@@ -29,6 +29,10 @@ type mcpAppTool struct {
 	// Merge is used only for an application endpoint whose API replaces the
 	// complete personal document (Hub preferences). Other updates are patches.
 	Merge bool
+	// Within is a narrower path the call takes when the input names its
+	// parameter (e.g. /groups/{group_id}/tournaments for a group_id); without
+	// it the call goes to Path.
+	Within string
 }
 
 func (s *Server) addMCPAppTools(ms *mcp.Server, ctx context.Context) {
@@ -98,7 +102,11 @@ func (s *Server) callMCPApp(ctx context.Context, op *mcpAppTool, args json.RawMe
 		return mcpAppError("Application has an invalid registered API URL.")
 	}
 	target := *base
-	target.Path = strings.TrimRight(base.Path, "/") + "/api/v1" + op.Path
+	path := op.Path
+	if p := mcpPathParams.FindStringSubmatch(op.Within); p != nil && input[p[1]] != nil {
+		path = op.Within
+	}
+	target.Path = strings.TrimRight(base.Path, "/") + "/api/v1" + path
 	for k, v := range input {
 		if k != "data" && k != "query" && k != "request_id" && k != "workspace" {
 			target.Path = strings.ReplaceAll(target.Path, "{"+k+"}", mcpScalar(v))

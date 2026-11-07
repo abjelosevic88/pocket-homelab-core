@@ -68,7 +68,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"crm/summary":     {"/", ""}, "crm/today": {"/", ""}, "crm/deals": {"/deals", "/deals/{id}"}, "crm/search": {"/deals", ""}, "crm/people": {"/people", ""},
 	"crm/lookup": {"/people", ""}, "crm/day": {"/", ""}, "crm/reports": {"/reports", ""}, "crm/stages": {"/pipeline", ""},
 	"league/summary": {"/", ""}, "league/today": {"/", ""}, "league/upcoming": {"/games", "/games/{id}"}, "league/games": {"/games", "/games/{id}"},
-	"league/groups": {"/", "/groups/{id}"}, "league/matches": {"/results", ""}, "league/search": {"/", ""}, "league/lookup": {"/", ""}, "league/day": {"/games", ""},
+	"league/groups": {"/", "/groups/{id}"}, "league/matches": {"/results", ""}, "league/search": {"/", ""}, "league/lookup": {"/", ""}, "league/day": {"/games", ""}, "league/tournaments": {"/tournaments", "/tournaments/{id}"},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
 	"voice/summary": {"/", ""}, "voice/memos": {"/memos", "/memos/{id}"}, "voice/search": {"/memos", ""}, "voice/day": {"/memos", ""}, "voice/tags": {"/memos", ""},
 	"renewals/overview": {"/", ""}, "renewals/due": {"/all?status=soon", ""}, "renewals/renewals": {"/all", "/r/{id}"}, "renewals/history": {"/history", ""},
@@ -581,7 +581,8 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 		}
 	}
 	// Pocket League: games open at /games/{id}, groups at /groups/{id}; a result opens its game (else its group's Results tab),
-	// a table row the player's page in that group. A group's table and an answer open their own page.
+	// a table row the player's page in that group. A group's table and an answer open their own page. Tournaments open at
+	// /tournaments/{id} (one group's list at its Tournaments tab); a tournament's "groups" are its pools, not League groups.
 	if data, ok := envelope["result"]; ok && op.App == "league" {
 		each := func(rows any, fn func(map[string]any)) {
 			if list, ok := rows.([]any); ok {
@@ -618,6 +619,12 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					}
 				})
 			}
+			if op.Path == "/tournaments" {
+				each(r, func(m map[string]any) { itemLink(m, "id", "/tournaments/{id}") })
+				if g := mcpScalar(input["group_id"]); mcpLinkID.MatchString(g) {
+					envelope["source_url"] = link("/groups/" + g + "?tab=tournaments")
+				}
+			}
 		case map[string]any:
 			for _, key := range []string{"next", "unanswered", "voting", "upcoming", "games"} {
 				each(r[key], game)
@@ -633,7 +640,11 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			if g, ok := r["group"].(map[string]any); ok {
 				itemLink(g, "id", "/groups/{id}")
 			}
-			each(r["groups"], func(m map[string]any) { itemLink(m, "id", "/groups/{id}") })
+			if t, ok := r["tournament"].(map[string]any); ok && op.Path == "/tournaments/{id}" {
+				itemLink(t, "id", "/tournaments/{id}")
+			} else {
+				each(r["groups"], func(m map[string]any) { itemLink(m, "id", "/groups/{id}") })
+			}
 			if op.Path == "/search" {
 				each(r["results"], func(m map[string]any) {
 					switch m["kind"] {

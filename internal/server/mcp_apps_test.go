@@ -772,7 +772,7 @@ func TestMCPLeagueTools(t *testing.T) {
 			}
 		}
 	}
-	if reads != 13 || len(tools) != 14 {
+	if reads != 15 || len(tools) != 16 {
 		t.Fatalf("league tools: %d reads of %d", reads, len(tools))
 	}
 	// answering for oneself is the only thing the AI may do: no chat, no results, no games planned or cancelled
@@ -780,7 +780,7 @@ func TestMCPLeagueTools(t *testing.T) {
 		if op.Method != "GET" && name != "pocket_league_answer" {
 			t.Fatalf("unexpected league write %s %s", op.Method, op.Path)
 		}
-		for _, part := range []string{"/messages", "/matches/", "/cancel", "/votes", "/pick", "/teams", "/mvp", "/make", "/members/"} {
+		for _, part := range []string{"/messages", "/matches/", "/cancel", "/votes", "/pick", "/teams", "/mvp", "/make", "/members/", "/tournaments", "/tmatches"} {
 			if op.Method != "GET" && strings.Contains(op.Path, part) {
 				t.Fatalf("league write on %s", op.Path)
 			}
@@ -810,5 +810,70 @@ func TestMCPLeagueTools(t *testing.T) {
 	}
 	if tools["pocket_league_player"] == nil || tools["pocket_league_player"].Path != "/groups/{id}/players/{uid}" {
 		t.Fatal("player read missing")
+	}
+}
+
+// Tournaments are reads only: the list (all groups, or one group's with group_id) and one tournament in full.
+func TestMCPLeagueTournaments(t *testing.T) {
+	list, one := mcpAppCatalog[0], mcpAppCatalog[0]
+	for _, op := range mcpAppCatalog {
+		switch op.Name {
+		case "pocket_league_tournaments":
+			list = op
+		case "pocket_league_get_tournament":
+			one = op
+		}
+	}
+	if list.Name != "pocket_league_tournaments" || list.Method != "GET" || list.Path != "/tournaments" || list.Within != "/groups/{group_id}/tournaments" || list.Kind != "read" {
+		t.Fatalf("tournaments: %+v", list)
+	}
+	if one.Name != "pocket_league_get_tournament" || one.Method != "GET" || one.Path != "/tournaments/{id}" || one.Kind != "read" {
+		t.Fatalf("get_tournament: %+v", one)
+	}
+	for _, bad := range []map[string]any{{"group_id": 0}, {"group_id": "../x"}, {"status": "live"}} {
+		if list.resolved.Validate(bad) == nil {
+			t.Fatalf("tournaments accepted %v", bad)
+		}
+	}
+	if one.resolved.Validate(map[string]any{}) == nil {
+		t.Fatal("get_tournament without id")
+	}
+	f := newOAuthFixture(t)
+	f.s.cfg.MCPAppToolsEnabled = true
+	var paths []string
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/tournaments/7" {
+			w.Write([]byte(`{"tournament":{"id":7,"name":"Autumn Americano","status":"live"},"groups":[{"id":40}],"mine":[90],"podium":[]}`))
+			return
+		}
+		w.Write([]byte(`[{"id":7,"group_id":2,"name":"Autumn Americano","status":"live","mine":true}]`))
+	}))
+	defer fake.Close()
+	f.app("league", fake.URL, "all")
+	access, _ := f.appAccess("status:read apps:read")
+	session := mcpSessionWithToken(t, f.env, access)
+	for _, call := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"pocket_league_tournaments", map[string]any{}},
+		{"pocket_league_tournaments", map[string]any{"group_id": 2}},
+		{"pocket_league_get_tournament", map[string]any{"id": 7}},
+	} {
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: call.name, Arguments: call.args})
+		if err != nil || result.IsError {
+			t.Fatalf("%s %v: %v %+v", call.name, call.args, err, result)
+		}
+		if raw, _ := json.Marshal(result); !strings.Contains(string(raw), "Autumn Americano") {
+			t.Fatalf("%s: %s", call.name, raw)
+		}
+	}
+	if strings.Join(paths, " ") != "/api/v1/tournaments /api/v1/groups/2/tournaments /api/v1/tournaments/7" {
+		t.Fatalf("league calls: %v", paths)
 	}
 }
