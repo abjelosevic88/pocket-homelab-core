@@ -250,9 +250,11 @@ function RemotePairModal({ apps, onClose }: { apps: RemoteApp[]; onClose: () => 
   const [left, setLeft] = useState(600)
   // The apps the new device starts with; each can be changed later under Devices.
   const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(apps.map(a => [a.slug, a.device_default])))
+  // Only what differs from the defaults is kept for the device.
+  const changed = Object.fromEntries(apps.filter(a => !!on[a.slug] !== a.device_default).map(a => [a.slug, !!on[a.slug]]))
   const make = async () => {
     setBusy(true); setErr('')
-    try { setP(await api.post<{ url: string; qr_svg: string; expires_at: string }>(`${V1}/me/remote/pair`, { apps: on })) } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
+    try { setP(await api.post<{ url: string; qr_svg: string; expires_at: string }>(`${V1}/me/remote/pair`, { apps: changed })) } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   useEffect(() => { if (!apps.length) make() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -261,10 +263,12 @@ function RemotePairModal({ apps, onClose }: { apps: RemoteApp[]; onClose: () => 
     return () => clearInterval(t)
   }, [p])
   const count = apps.filter(a => on[a.slug]).length
+  // An unused link should not outlive the dialog.
+  const close = () => { if (p) api.del(`${V1}/me/remote/pair`).catch(() => {}); onClose() }
   return (
-    <Modal title="Pair a device for remote access" onClose={onClose}
+    <Modal title="Pair a device for remote access" onClose={close}
       footer={!p && apps.length > 0 ? <>
-        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn" onClick={close}>Cancel</button>
         <button type="button" className="btn primary" disabled={busy} onClick={make}><Icon name="qr" size={15} />{busy ? 'Making a code…' : 'Make pairing code'}</button>
       </> : undefined}>
       {err && <div className="callout danger">{err}</div>}

@@ -275,6 +275,7 @@ func (s *Server) Router() http.Handler {
 			r.Delete("/me/ai-connections/{id}", s.handleMCPDisconnect)
 			r.Get("/me/remote", s.handleMyRemote)
 			r.Post("/me/remote/pair", s.handleRemotePair)
+			r.Delete("/me/remote/pair", s.handleCancelRemotePair)
 			r.Put("/me/remote/devices/{id}", s.handleUpdateRemoteDevice)
 			r.Delete("/me/remote/devices/{id}", s.handleDeleteRemoteDevice)
 			r.Delete("/me/remote/devices/{id}/keys/{kid}", s.handleDeleteRemoteKey)

@@ -551,6 +551,33 @@ func TestRemotePairChoosesApps(t *testing.T) {
 	}
 }
 
+func TestRemotePairCodesDoNotPileUp(t *testing.T) {
+	rig := newRemoteRig(t)
+	pending := func() (n int) {
+		rig.e.s.store.DB.QueryRow(`SELECT COUNT(*) FROM remote_codes WHERE device_id IS NULL`).Scan(&n)
+		return n
+	}
+	old := rig.pairLink()
+	fresh := rig.pairLink()
+	if n := pending(); n != 1 {
+		t.Fatalf("%d open pairing codes, want 1", n)
+	}
+	// The replaced link no longer pairs.
+	if _, m := rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": old}); m["code"] != "bad_code" {
+		t.Fatalf("replaced code paired: %v", m)
+	}
+	// Closing the dialog forgets the unused one.
+	if c := rig.e.do("DELETE", "/api/v1/me/remote/pair", "", nil, nil); c != 204 {
+		t.Fatalf("cancel %d", c)
+	}
+	if n := pending(); n != 0 {
+		t.Fatalf("%d codes left after closing", n)
+	}
+	if _, m := rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": fresh}); m["code"] != "bad_code" {
+		t.Fatalf("cancelled code paired: %v", m)
+	}
+}
+
 func TestRemoteSwitchOffDisconnects(t *testing.T) {
 	rig := newRemoteRig(t)
 	_, app := rig.pairApp(t)

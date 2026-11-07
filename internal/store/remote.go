@@ -101,6 +101,12 @@ func (s *Store) CreateRemoteCode(ctx context.Context, c RemoteCode, ttl time.Dur
 	return code, err
 }
 
+// DropRemotePairCodes forgets a person's unused new-device codes.
+func (s *Store) DropRemotePairCodes(ctx context.Context, userID int64) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM remote_codes WHERE user_id=? AND device_id IS NULL`, userID)
+	return err
+}
+
 // TakeRemoteCode consumes a code: it works once, before it expires.
 func (s *Store) TakeRemoteCode(ctx context.Context, code string) (*RemoteCode, error) {
 	var c RemoteCode

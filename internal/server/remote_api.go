@@ -403,6 +403,11 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "box key")
 		return
 	}
+	// One open pairing link per person: a new one replaces the last.
+	if err := s.store.DropRemotePairCodes(ctx, u.ID); err != nil {
+		s.fail(w, err, "pairing code")
+		return
+	}
 	code, err := s.store.CreateRemoteCode(ctx, store.RemoteCode{UserID: u.ID, App: portalSlug, Apps: in.Apps}, remoteCodeTTL)
 	if err != nil {
 		s.fail(w, err, "pairing code")
@@ -416,6 +421,20 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 	}
 	img := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(qrSVG(q)))
 	writeJSON(w, http.StatusOK, map[string]any{"url": link, "qr_svg": img, "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL))})
+}
+
+// DELETE /api/v1/me/remote/pair: the dialog closed; an unused link stops working.
+func (s *Server) handleCancelRemotePair(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r.Context())
+	if u == nil {
+		writeErr(w, http.StatusForbidden, "people only")
+		return
+	}
+	if err := s.store.DropRemotePairCodes(r.Context(), u.ID); err != nil {
+		s.fail(w, err, "pairing code")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // myRemoteDevice loads a device the caller owns (or any, for admins).
