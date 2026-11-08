@@ -65,7 +65,7 @@ func arraySchema(item any) map[string]any {
 
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
-var mcpChangePosts = map[string]bool{"tasks_complete": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
+var mcpChangePosts = map[string]bool{"tasks_complete": true, "family_take_run": true, "family_done_chore": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
@@ -818,6 +818,66 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	for _, op := range errTools {
 		op.Omit = []string{"pre_context", "post_context", "hours"}
 	}
+
+	// Pocket Family: a household shared by its people (grown-ups, children, helpers such as a grandparent or the sitter; a person may
+	// be in more than one family — the person's current one is used). Runs are pick-ups, drop-offs and lifts on a day (time HH:MM,
+	// children = person ids, driver_id = who takes it, 0 = nobody yet; state planned|asking|done|skipped, asking = the driver asked for
+	// someone else to take it); weekly plans make them. Chores repeat and may go in turns (whose = whose turn). Days are YYYY-MM-DD,
+	// local; amounts in letters are in CENTS. Person ids come from pocket_family_family.
+	read("family", "summary", "Get the family at a glance: today's runs (who picks up whom), the person's own runs today, runs that need someone in the next week (needs_someone: nobody yet or asking), chores due today (and the person's own), how many things are on the shopping lists, letters to deal with, unseen notes on the board, what the children take along tomorrow, the next plan, and whether there is no school today.", "/summary", "")
+	read("family", "family", "Read the person's current family: its people (id, name, role grownup|child|helper, birthday, school, class_name, phone, notes such as allergies, whether they have an account) and me (the person asking).", "/family", "")
+	familyToday := read("family", "today", "Read the family's Today (date = YYYY-MM-DD, today when left out): runs today and tomorrow with who takes them, runs that need someone, the agenda (the family's plans, birthdays, holidays), chores due (by person), what to take along today and tomorrow (bring_*: person_id, what, for), whether there is no school, letters to deal with soon, shopping lists with how much is open and who is at the shop, the latest notes on the board, and who did what lately.", "/today", "date")
+	familyToday.Query = map[string]string{"quick": "1"}
+	familyWeek := read("family", "week", "Read the family's week day by day (from = YYYY-MM-DD, the start of this week when left out; days = 1 to 31, default 7): each day's runs, agenda, chores due and what to take along, and no_school.", "/week", "from days")
+	familyWeek.Query = map[string]string{"quick": "1"}
+	read("family", "runs", "List the runs between two days (from, to = YYYY-MM-DD; today and the next 6 days when left out; mine=1 for only the person's own): id, day, time, kind pickup|dropoff|lift, place, children (person ids), driver_id (0 = nobody yet), state, asked_by and asked_note when someone asked for cover, clash when the driver is due somewhere else then.", "/runs", "from to mine")
+	read("family", "plans", "List the weekly runs (the school run, a club): id, kind, weekdays (1 = Monday), time, place, children, driver_id, rota (weekday → person), term_only (not in school holidays), active.", "/plans", "")
+	read("family", "chores", "List the chores (all=1 to include finished one-offs): id, title, emoji, repeat once|daily|weekly|monthly|every, weekdays, assign one|turns|anyone, people, whose (whose turn now), stars, next_due, last_done (who, when) and done_on (days this week).", "/chores", "all")
+	read("family", "stars", "Read the week's chores per person (week = any day in it): done, stars and last week's stars, plus the latest chores done.", "/stars", "week")
+	read("family", "events", "List the family's own plans between two days (from, to = YYYY-MM-DD): id, title, day, end_day, start_time, end_time, place, people, kind school|activity|appointment|family|other, repeat, bring (what to take along), notes. Repeating plans come once per day they fall on.", "/events", "from to")
+	read("family", "lists", "List the shopping lists: id, name, how many things are still to get (open), and shopper_id when someone is at the shop now.", "/lists", "")
+	read("family", "list_items", "Read one shopping list (id = the list): the list and its items (name, qty, note, aisle, added_by, done, done_by).", "/lists/{id}/items", "")
+	read("family", "school", "Read the school year: terms, holidays and closed days (kind term|holiday|closed, starts_on, ends_on), each child's school week (person_id, weekday, starts, ends, bring = what to take that day) and now (the current term, the next break, no_school today).", "/school", "")
+	read("family", "letters", "List letters from school or a club (state todo|done|none, all when left out): id, title, sender, summary, people, kind info|permission|payment|bring|event, action (what to do), due_on, amount in cents and currency, state, done_by.", "/letters", "state limit")
+	read("family", "get_letter", "Read one letter (id) in full: its text, what it asks, the dates made from it (events) and what the person made from it in other apps.", "/letters/{id}", "")
+	read("family", "board", "Read the family board, pinned first then newest: id, body, person_id (who wrote it), pinned, until, seen_by (person ids) and seen (by the person asking).", "/posts", "")
+	read("family", "info", "Read what everyone in the family should know, by section emergency|health|school|home|sitter|other: label, value, phone, person_id (0 = the whole family): who to call, allergies, the doctor, the school office, the wifi, bedtimes.", "/info", "")
+	read("family", "search", "Search the family by words: people, plans, letters, chores, shopping items, info lines and notes on the board (results: type, id, title, subtitle, url).", "/search", "q")
+	read("family", "day", "Read one day in the family (date = YYYY-MM-DD): runs, agenda, chores due and done, what to take along and who did what.", "/day/{date}", "")
+	familyDay := func(description string) map[string]any {
+		return map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`, "description": description}
+	}
+	familyClock := func(description string) map[string]any {
+		return map[string]any{"type": "string", "pattern": `^([01]\d|2[0-3]):[0-5]\d$`, "description": description}
+	}
+	familyPeople := func(description string) map[string]any {
+		s := arraySchema(map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991)})
+		s["description"] = description
+		return s
+	}
+	familyItems := textFields("name list")
+	familyItems["name"].(map[string]any)["description"] = "What to buy; one thing per line (\"2 milk\\nbread\"). A thing already on the list is not added twice."
+	familyItems["list"].(map[string]any)["description"] = "The list's name (from pocket_family_lists); the first list when left out."
+	write("family", "add_items", "Put things on the family's shopping list. Returns the list, the items and how many were new (added).", "POST", "/items", familyItems, "name")
+	familyEvent := textFields("title place bring notes").enum("kind", "family", "school", "activity", "appointment", "other")
+	familyEvent["day"] = familyDay("The day.")
+	familyEvent["start_time"] = familyClock("From, HH:MM; leave out for all day.")
+	familyEvent["end_time"] = familyClock("To, HH:MM.")
+	familyEvent["people"] = familyPeople("Who it is for (person ids from pocket_family_family).")
+	familyEvent["bring"].(map[string]any)["description"] = "What to take along that day."
+	write("family", "add_event", "Add a plan to the family's week (an appointment, a party, a school thing, a visit). Returns the event.", "POST", "/events", familyEvent, "title day")
+	familyRun := textFields("place title notes").enum("kind", "pickup", "dropoff", "lift")
+	familyRun["day"] = familyDay("The day.")
+	familyRun["time"] = familyClock("When, HH:MM.")
+	familyRun["children"] = familyPeople("Who is picked up, dropped off or given a lift (person ids).")
+	familyRun["driver_id"] = map[string]any{"type": "integer", "minimum": 0, "maximum": int64(9007199254740991), "description": "Who takes it (a person id); 0 or left out = nobody yet, and the other grown-ups are asked."}
+	write("family", "add_run", "Add one pick-up, drop-off or lift. Ask the person who takes it if they did not say. Returns the run.", "POST", "/runs", familyRun, "day kind")
+	write("family", "take_run", "The person takes a run (id): they become the one who does it, and whoever asked is told. A change: ask first.", "POST", "/runs/{id}/take", nil, "")
+	familyDone := mcpFields{"person_id": map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991), "description": "Who did it; the person asking when left out."}}
+	write("family", "done_chore", "Tick off a chore (id) as done today: it moves to its next day, and a chore in turns passes to the next person. A change: ask first.", "POST", "/chores/{id}/done", familyDone, "")
+	familyPost := textFields("body").booleans("pinned")
+	familyPost["body"].(map[string]any)["description"] = "The note for everyone (\"Grandma comes for lunch on Sunday\")."
+	write("family", "add_note", "Put a note on the family board for everyone; the others get a push when they asked for one. Returns the post.", "POST", "/posts", familyPost, "body")
 
 	// Pocket Chat: the person's conversations (direct, groups and "Me", their own space), shared with the people in them; messages can be text, cards from other apps, polls, to-do lists, voice messages (with their words) and Pocket AI's answers.
 	read("chat", "summary", "Get what waits in your chats: unread counts, the conversations with unread messages (name, how many, the last message), the messages that mention you, and today's activity per conversation.", "/summary", "")
