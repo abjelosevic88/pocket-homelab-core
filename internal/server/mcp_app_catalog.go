@@ -819,6 +819,36 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		op.Omit = []string{"pre_context", "post_context", "hours"}
 	}
 
+	// Pocket Wardrobe: the person's clothes (items: category top|knit|bottom|dress|outerwear|shoes|bag|accessory|active|other, kind such as
+	// shirt, jeans, sneakers, coat; colours with a family name; warmth 0-5, formality 1-5 = sporty…black tie; status ready|laundry|repair|lent|stored),
+	// saved outfits (item_ids), wears (what was worn on a day, or planned when planned=true), packing lists and ideas worth buying.
+	// Occasions: everyday work formal_work interview date dinner party wedding formal travel outdoors sport home. Styles: smart_casual classic
+	// minimal casual street sporty business boho romantic edgy preppy colourful outdoor. Prices are in CENTS. Days are YYYY-MM-DD.
+	read("wardrobe", "summary", "Get the wardrobe at a glance: how many pieces and outfits, how many wait in the laundry, at the tailor or are lent, whether tomorrow's outfit is planned and today's logged, the next trip to pack for and the ideas kept.", "/summary", "")
+	read("wardrobe", "today", "What to wear on a day (date = YYYY-MM-DD, today when left out; occasion and style to override): the weather where the person is, their calendar events with the occasion each needs, a training day or a hike, the planned outfit and what was worn, scored outfit ideas (suggest.suggestions: items, score 0-100, reasons, warnings; the pieces in suggest.items/items) and tips. Name the pieces, not their ids.", "/today", "date occasion style")
+	read("wardrobe", "suggest", "Outfit ideas from the person's own clothes for a day, an occasion and a style (date, occasion, style, n = how many, include = a piece id every idea must have, shuffle = a number for other ideas). Each has its pieces, a score and the reasons it works. Pieces in the laundry are left out.", "/suggest", "date occasion style n include shuffle")
+	read("wardrobe", "items", "List the person's pieces (category, status, q = words such as navy or wool, gone=1 for what they no longer have): id, name, kind, colours, warmth, formality, styles, brand, size, price (cents), wears, last_worn, per_wear (cost per wear, cents), status.", "/items", "category status q gone")
+	read("wardrobe", "get_item", "Read one piece (id): its details, the days it was worn, the outfits it is in, pieces much like it, and what it goes best with.", "/items/{id}", "")
+	read("wardrobe", "outfits", "List the saved outfits: id, name, item_ids, occasion, style, rating, favourite, wears, last_worn (the pieces are in items).", "/outfits", "")
+	read("wardrobe", "wears", "List what was worn and planned between two days (from, to = YYYY-MM-DD): date, planned, item_ids, occasion, event, the weather that day, notes (the pieces are in items).", "/wears", "from to")
+	read("wardrobe", "day", "Read one day (date = YYYY-MM-DD): what was worn or planned, by name, with a picture link.", "/day/{date}", "")
+	read("wardrobe", "packs", "List the packing lists: trip name, destination, dates, purpose, the pieces (item_id, packed) and extras.", "/packs", "")
+	read("wardrobe", "gaps", "What is worth buying for the person's styles (style = one style id instead): pieces the style is built on that they lack, each with why, how many new outfits it makes with what they have (unlocks) and shop search links.", "/gaps", "style")
+	read("wardrobe", "ideas", "List the ideas the person kept to buy (status idea|wish|bought|dismissed): title, kind, colour, why, unlocks, wish_url on Pocket Wishlist.", "/ideas", "status")
+	read("wardrobe", "stats", "The wardrobe in numbers for the last days (days, 365 when left out): how much of it is worn, days logged, value, spent this year, most worn, never worn, best and worst cost per wear, colours, categories.", "/stats", "days")
+	read("wardrobe", "search", "Find pieces and outfits by words (name, brand, colour, notes).", "/search", "q")
+	wardrobeItem := textFields("name kind brand size shop notes").enum("category", "top", "knit", "bottom", "dress", "outerwear", "shoes", "bag", "accessory", "active", "other").integers("price warmth formality")
+	wardrobeItem["kind"].(map[string]any)["description"] = "What it is: tshirt, shirt, blouse, sweater, cardigan, hoodie, jeans, chinos, trousers, shorts, skirt, dress, blazer, jacket, raincoat, coat, puffer, sneakers, loafers, smart_shoes, boots, heels, sandals, bag, belt, scarf… (sets the category, warmth and formality)."
+	wardrobeItem["colors"] = arraySchema(objectSchema(textFields("hex name"), ""))
+	wardrobeItem["colors"].(map[string]any)["description"] = "Its colours, main first: {\"name\": \"navy\"} or {\"hex\": \"#1f2b48\"}."
+	wardrobeItem["price"].(map[string]any)["description"] = "What it cost, in CENTS."
+	write("wardrobe", "add_item", "Add a piece of clothing (something the person bought or got). Returns the piece; a photo can be added in the app.", "POST", "/items", wardrobeItem, "kind")
+	wardrobeWear := textFields("occasion event notes").booleans("planned")
+	wardrobeWear["date"] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`, "description": "The day; today when left out. A day ahead needs planned=true."}
+	wardrobeWear["item_ids"] = arraySchema(map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991)})
+	wardrobeWear["item_ids"].(map[string]any)["description"] = "The pieces (ids from pocket_wardrobe_items or a suggestion)."
+	write("wardrobe", "log_outfit", "Log what the person wore on a day, or plan an outfit for a day ahead (planned=true). Worn tops go to the laundry when the person has that on. Returns the wear.", "POST", "/wears", wardrobeWear, "item_ids")
+
 	// Pocket Family: a household shared by its people (grown-ups, children, helpers such as a grandparent or the sitter; a person may
 	// be in more than one family — the person's current one is used). Runs are pick-ups, drop-offs and lifts on a day (time HH:MM,
 	// children = person ids, driver_id = who takes it, 0 = nobody yet; state planned|asking|done|skipped, asking = the driver asked for
