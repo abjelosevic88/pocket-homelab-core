@@ -1184,3 +1184,58 @@ func TestMCPTrailsTools(t *testing.T) {
 		t.Fatalf("requests:\n%s", strings.Join(seen, "\n"))
 	}
 }
+
+func TestMCPJobsTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	reads := 0
+	for _, op := range mcpAppCatalog {
+		if op.App == "jobs" {
+			tools[op.Name] = op
+			if op.Method == "GET" {
+				reads++
+			}
+		}
+	}
+	if reads != 11 || len(tools) != 14 {
+		t.Fatalf("jobs tools: %d reads of %d", reads, len(tools))
+	}
+	add, note, iv := tools["pocket_jobs_add_job"], tools["pocket_jobs_add_note"], tools["pocket_jobs_add_interview"]
+	if add == nil || add.Path != "/jobs" || add.Kind != "add" || note == nil || note.Path != "/jobs/{id}/activities" || iv == nil || iv.Path != "/jobs/{id}/interviews" || iv.Kind != "add" {
+		t.Fatalf("jobs writes: %+v %+v %+v", add, note, iv)
+	}
+	ok := map[string]any{"title": "Senior Go developer", "company": "Northwind", "location": "Berlin", "work_mode": "remote", "employment": "full_time",
+		"url": "https://jobs.example/1", "min_amount": 70000, "max_amount": 85000, "currency": "EUR", "salary_period": "year", "source": "linkedin",
+		"excitement": 4, "apply_by": "2026-12-01", "stage": "applied", "contact_name": "Julia", "contact_email": "julia@example.com",
+		"next_action": "Follow up", "next_due": "2026-11-15", "note": "Found on LinkedIn"}
+	if err := add.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("add_job refused a plain job: %v", err)
+	}
+	for _, bad := range []map[string]any{
+		{"company": "x"},
+		{"title": "x", "salary_min": 7000000},
+		{"title": "x", "min_amount": -5},
+		{"title": "x", "excitement": 9},
+		{"title": "x", "work_mode": "office"},
+		{"title": "x", "apply_by": "Friday"},
+		{"title": "x", "currency": "euro"},
+	} {
+		if err := add.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("add_job accepted %v", bad)
+		}
+	}
+	if err := note.resolved.Validate(map[string]any{"id": 3, "request_id": "0123456789abcdef", "data": map[string]any{"kind": "call", "title": "Called Julia"}}); err != nil {
+		t.Fatalf("add_note refused a call: %v", err)
+	}
+	if err := note.resolved.Validate(map[string]any{"id": 3, "request_id": "0123456789abcdef", "data": map[string]any{"kind": "hired", "title": "x"}}); err == nil {
+		t.Fatal("add_note accepted kind hired: only the app writes those lines")
+	}
+	good := map[string]any{"kind": "video", "date": "2026-11-12", "time": "14:30", "minutes": 45, "location": "https://meet.example/x", "with_people": "Julia"}
+	if err := iv.resolved.Validate(map[string]any{"id": 3, "request_id": "0123456789abcdef", "data": good}); err != nil {
+		t.Fatalf("add_interview refused: %v", err)
+	}
+	for _, bad := range []map[string]any{{"kind": "video"}, {"date": "2026-11-12", "time": "2pm"}, {"date": "2026-11-12", "kind": "chat"}, {"date": "2026-11-12", "minutes": 2}} {
+		if err := iv.resolved.Validate(map[string]any{"id": 3, "request_id": "0123456789abcdef", "data": bad}); err == nil {
+			t.Fatalf("add_interview accepted %v", bad)
+		}
+	}
+}

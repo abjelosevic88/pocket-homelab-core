@@ -14,6 +14,7 @@ func TestMCPOpKind(t *testing.T) {
 		"pocket_fitness_summary": "read", "pocket_fitness_log_workout": "change",
 		"pocket_chat_summary": "read", "pocket_chat_messages": "read",
 		"pocket_league_summary": "read", "pocket_league_table": "read", "pocket_league_answer": "change", "pocket_league_tournaments": "read", "pocket_league_get_tournament": "read",
+		"pocket_jobs_summary": "read", "pocket_jobs_jobs": "read", "pocket_jobs_get_job": "read", "pocket_jobs_add_job": "add", "pocket_jobs_add_note": "add", "pocket_jobs_add_interview": "add",
 		"pocket_crm_summary": "read", "pocket_crm_deals": "read", "pocket_crm_add_lead": "add", "pocket_crm_add_note": "add",
 		"pocket_rentals_today": "read", "pocket_rentals_repairs": "read", "pocket_rentals_report_repair": "add", "pocket_rentals_add_note": "add",
 		"pocket_wardrobe_today": "read", "pocket_wardrobe_suggest": "read", "pocket_wardrobe_add_item": "add", "pocket_wardrobe_log_outfit": "add",

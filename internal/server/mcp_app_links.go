@@ -79,6 +79,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"wardrobe/summary": {"/", ""}, "wardrobe/today": {"/", ""}, "wardrobe/suggest": {"/outfits/ideas", ""}, "wardrobe/items": {"/closet", "/closet/{id}"},
 	"wardrobe/outfits": {"/outfits", "/outfits/{id}"}, "wardrobe/wears": {"/plan", ""}, "wardrobe/day": {"/plan", ""}, "wardrobe/packs": {"/packing", "/packing/{id}"},
 	"wardrobe/ideas": {"/shop", ""}, "wardrobe/gaps": {"/shop", ""}, "wardrobe/stats": {"/stats", ""}, "wardrobe/styles": {"/style", ""}, "wardrobe/search": {"/closet", ""},
+	"jobs/summary": {"/", ""}, "jobs/today": {"/", ""}, "jobs/jobs": {"/jobs", "/jobs/{id}"}, "jobs/search": {"/jobs", ""}, "jobs/interviews": {"/interviews", ""},
+	"jobs/offers": {"/offers", ""}, "jobs/companies": {"/companies", ""}, "jobs/reports": {"/reports", ""}, "jobs/day": {"/", ""}, "jobs/lookup": {"/companies", ""},
 	"family/summary": {"/", ""}, "family/family": {"/family", ""}, "family/today": {"/", ""}, "family/week": {"/week", ""}, "family/runs": {"/pickups", ""},
 	"family/plans": {"/pickups", ""}, "family/chores": {"/chores", ""}, "family/stars": {"/chores", ""}, "family/events": {"/week", ""},
 	"family/lists": {"/shopping", "/shopping/{id}"}, "family/school": {"/school", ""}, "family/letters": {"/school", "/school/letters/{id}"},
@@ -564,6 +566,54 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			}
 			if _, isForm := r["handle"]; isForm {
 				itemLink(r, "id", "/forms/{id}")
+			}
+		}
+	}
+	// Pocket Jobs: every job in a list (jobs, search, lookup, each Today list, the day's due and applied) opens at /jobs/{id};
+	// so do a job read or added, an interview or offer (their job_id), the day's timeline lines and a line written on a job.
+	if r, ok := envelope["result"].(map[string]any); ok && op.App == "jobs" {
+		jobs := func(rows any, field string) {
+			if list, ok := rows.([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, field, "/jobs/{id}")
+					}
+				}
+			}
+		}
+		for _, key := range []string{"items", "jobs", "due", "applied"} {
+			jobs(r[key], "id")
+		}
+		jobs(r["activities"], "job_id")
+		jobs(r["interviews"], "job_id")
+		jobs(r["offers"], "job_id")
+		if lists, ok := r["lists"].(map[string]any); ok && op.Path == "/today" {
+			for _, rows := range lists {
+				jobs(rows, "id")
+			}
+		}
+		if j, ok := r["job"].(map[string]any); ok {
+			itemLink(j, "id", "/jobs/{id}")
+		}
+		if ni, ok := r["next_interview"].(map[string]any); ok {
+			itemLink(ni, "job_id", "/jobs/{id}")
+		}
+		if iv, ok := r["interview"].(map[string]any); ok {
+			itemLink(iv, "job_id", "/jobs/{id}")
+		}
+		if _, isJob := r["stage_id"]; isJob {
+			itemLink(r, "id", "/jobs/{id}")
+		}
+		if _, isLine := r["kind"]; isLine && op.Path == "/jobs/{id}/activities" {
+			itemLink(r, "job_id", "/jobs/{id}")
+		}
+	}
+	if list, ok := envelope["result"].([]any); ok && op.App == "jobs" {
+		for _, row := range list {
+			if m, ok := row.(map[string]any); ok {
+				if _, has := m["job_id"]; has {
+					itemLink(m, "job_id", "/jobs/{id}")
+				}
 			}
 		}
 	}

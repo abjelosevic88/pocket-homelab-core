@@ -849,6 +849,59 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	wardrobeWear["item_ids"].(map[string]any)["description"] = "The pieces (ids from pocket_wardrobe_items or a suggestion)."
 	write("wardrobe", "log_outfit", "Log what the person wore on a day, or plan an outfit for a day ahead (planned=true). Worn tops go to the laundry when the person has that on. Returns the wear.", "POST", "/wears", wardrobeWear, "item_ids")
 
+	// Pocket Jobs: the person's job search. Jobs sit in stages whose kind is saved (not applied yet), applied (waiting to hear),
+	// active (calls, interviews), offer, hired or closed; a job's status is open, hired or closed. Salaries: min_amount/max_amount
+	// are in the currency's units (55000 = 55,000.00) per salary_period year|month|hour; salary_min/salary_max are the same in CENTS.
+	// Interviews have kind phone|video|onsite|technical|take_home|panel|final|other and starts_at local YYYY-MM-DDTHH:MM (or a day).
+	// Offers: base_amount per period, bonus_amount a year, yearly = base for a year + bonus (cents). Days are YYYY-MM-DD.
+	read("jobs", "summary", "Get the job search at a glance: open jobs (saved, waiting = applied and not heard, talking, offers to decide), hired and closed, applications this week against the weekly goal, this month and in all, response_rate and interview_rate (% of applications from the last 90 days that got an answer / an interview), upcoming interviews and the next one, next steps due today and overdue, applications to follow up, saved jobs to apply for within a week.", "/summary", "")
+	read("jobs", "today", "Read the Today page: interviews in the next two weeks, open offers with their decide_by day, the week day by day (applications sent), and lists of jobs: overdue, today and this week (next steps), follow_up (applied, no answer for a while), apply (saved jobs to apply for soon or wanted most), no_step, recent (hired lately); plus the summary.", "/today", "")
+	read("jobs", "jobs", "List the person's jobs: status open|hired|closed|ended; kind = a stage kind saved|applied|active|offer|hired|closed; q searches roles, companies, contacts, places and notes; company; due overdue|today|week|none|any (the next step); starred=1; tag; source linkedin|company_site|job_board|referral|recruiter|network|other; work_mode onsite|hybrid|remote; sort stage|due|updated|created|applied|salary|excitement|fit. Each job: id, title (the role), company, stage_name, stage_kind, status, location, work_mode, min_amount/max_amount, currency, salary_period, applied_on, contact_name/email, next_action, next_due, interviews, next_interview, has_offer, excitement 0-5, fit_score (0-100 from the AI, -1 = not checked), overdue, stale (follow up).", "/jobs", "status kind q company due starred tag source work_mode sort limit offset")
+	read("jobs", "get_job", "Read one job in full: the job (with the posting's text, notes, cover letter, fit_note), its timeline (activities, newest first), its interviews (with prep, questions, outcome, feedback), its offer (or null) and what it has in the person's other apps (made).", "/jobs/{id}", "")
+	read("jobs", "interviews", "List interviews: when upcoming|past (all when left out), job = one job's id, from/to = local days YYYY-MM-DD. Each: id, job_id, job_title, company, kind, starts_at, minutes, location (an address or a call link), with_people, prep, questions [{q, a}], outcome good|okay|bad, feedback, thanks_sent, past.", "/interviews", "when job from to limit")
+	read("jobs", "offers", "List offers, the ones still to decide first: job_id, job_title, company, base_amount per period, period, bonus_amount, yearly (cents), currency, equity, pto_days, benefits, start_date, decide_by, status open|negotiating|accepted|declined, notes, excitement.", "/offers", "")
+	read("jobs", "companies", "List the companies the person applied to or saved jobs at: how many jobs (open, hired, closed), interviews, the people talked to and their emails, the roles, the last activity and the job ids. q filters by name, person or role.", "/companies", "q")
+	read("jobs", "reports", "Get job-search reports for the last weeks (weeks, default 12): per week applications sent, interviews and answers; the funnel (applied, heard back, interviewed, offer, hired); per source and per work mode how many were sent, answered, led to interviews and offers; why jobs ended; the average days to an answer.", "/reports", "weeks")
+	read("jobs", "search", "Search the person's jobs (roles, companies, contacts, places, notes); each job comes with its label and link.", "/search", "q limit")
+	read("jobs", "day", "Read one day of the job search: applications sent that day, interviews, the timeline lines written (notes, calls, emails, stage moves, offers, hired) with their job, and the next steps due that day.", "/day/{date}", "")
+	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
+	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
+		numbers("min_amount max_amount").integers("excitement").
+		enum("work_mode", "onsite", "hybrid", "remote").enum("employment", "full_time", "part_time", "contract", "freelance", "internship").
+		enum("salary_period", "year", "month", "hour").enum("source", "linkedin", "company_site", "job_board", "referral", "recruiter", "network", "other")
+	for _, k := range []string{"min_amount", "max_amount"} {
+		job[k].(map[string]any)["minimum"] = 0
+		job[k].(map[string]any)["description"] = "The salary in the currency's units (55000 = 55,000.00), not cents, per salary_period. Leave out when the posting does not say."
+	}
+	job["excitement"].(map[string]any)["minimum"] = 0
+	job["excitement"].(map[string]any)["maximum"] = 5
+	job["excitement"].(map[string]any)["description"] = "How much the person wants it, 0 to 5."
+	job["currency"] = map[string]any{"type": "string", "pattern": `^[A-Za-z]{3}$`, "description": "Three letters (EUR, BAM, USD); leave out for the person's own currency."}
+	for _, day := range []string{"apply_by", "next_due"} {
+		job[day] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`}
+	}
+	job["apply_by"].(map[string]any)["description"] = "The last day to apply, YYYY-MM-DD."
+	job["next_due"].(map[string]any)["description"] = "The day the next step is due, YYYY-MM-DD."
+	job["title"].(map[string]any)["description"] = "The role (\"Senior Go developer\")."
+	job["url"].(map[string]any)["description"] = "The posting's address (https://…); the same address is not saved twice."
+	job["posting"].(map[string]any)["description"] = "The posting's text, if the person shared it."
+	job["stage"].(map[string]any)["description"] = "A stage by its name, or a kind (saved, applied, active, offer); leave out for Saved. A job saved into an applied stage counts as applied today."
+	job["next_action"].(map[string]any)["description"] = "The next thing to do, in a few words (\"Tailor the CV and apply\")."
+	job["note"].(map[string]any)["description"] = "A first line for the job's timeline: where it was found, what was said."
+	write("jobs", "add_job", "Save a job to the person's search: the role, the company, where, the salary range, the posting's link or text, who to talk to, the next step and its day. It goes to Saved unless stage says otherwise. Returns the job with its id.", "POST", "/jobs", job, "title")
+	jobLine := textFields("title body").enum("kind", "note", "call", "email", "step")
+	jobLine["kind"].(map[string]any)["description"] = "note (default), call, email (one that was sent or came in) or step (something done)."
+	write("jobs", "add_note", "Write a line on one job's timeline (id = the job): a note, a call or email that happened, or a step done, with a short title and what was said in body. It does not move the job or change its next step.", "POST", "/jobs/{id}/activities", jobLine, "")
+	interview := textFields("location with_people prep").integers("minutes").
+		enum("kind", "phone", "video", "onsite", "technical", "take_home", "panel", "final", "other")
+	interview["date"] = map[string]any{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`, "description": "The day of the interview, YYYY-MM-DD."}
+	interview["time"] = map[string]any{"type": "string", "pattern": `^([01]\d|2[0-3]):[0-5]\d$`, "description": "The local start time HH:MM; leave out for a whole day (a take-home task)."}
+	interview["minutes"].(map[string]any)["minimum"] = 5
+	interview["minutes"].(map[string]any)["maximum"] = 1440
+	interview["location"].(map[string]any)["description"] = "An address, or the call link."
+	interview["with_people"].(map[string]any)["description"] = "Who the person meets (names, roles)."
+	write("jobs", "add_interview", "Add an interview to one job (id = the job): its kind, day and time, length, place or call link and who it is with. A saved or applied job moves on to the first active stage, and when the person has it on the interview also goes to Pocket Calendar. Returns the interview.", "POST", "/jobs/{id}/interviews", interview, "date")
+
 	// Pocket Family: a household shared by its people (grown-ups, children, helpers such as a grandparent or the sitter; a person may
 	// be in more than one family — the person's current one is used). Runs are pick-ups, drop-offs and lifts on a day (time HH:MM,
 	// children = person ids, driver_id = who takes it, 0 = nobody yet; state planned|asking|done|skipped, asking = the driver asked for
