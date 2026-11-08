@@ -94,6 +94,7 @@ var entries = []Entry{
 	{Type: "backups", Name: "Pocket Backups", Prefix: "BACKUPS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "library", Name: "Pocket Library", Prefix: "LIBRARY", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "still", Name: "Pocket Still", Prefix: "STILL", Group: "Pocket", Pocket: true, Fields: apiKey("")},
+	{Type: "remote", Name: "Pocket Remote", Prefix: "REMOTE", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "network", Name: "Pocket Network", Prefix: "NETWORK", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "mail", Name: "Pocket Mail", Prefix: "MAIL", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "database", Name: "Pocket Database", Prefix: "DATABASE", Group: "Pocket", Pocket: true, Fields: apiKey("")},
