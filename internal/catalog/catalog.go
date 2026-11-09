@@ -134,6 +134,7 @@ var entries = []Entry{
 	{Type: "family", Name: "Pocket Family", Prefix: "FAMILY", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "wardrobe", Name: "Pocket Wardrobe", Prefix: "WARDROBE", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "quest", Name: "Pocket Quest", Prefix: "QUEST", Group: "Pocket", Pocket: true, Fields: apiKey("")},
+	{Type: "rooms", Name: "Pocket Rooms", Prefix: "ROOMS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "wallet", Name: "Pocket Wallet", Prefix: "WALLET", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "weather", Name: "Pocket Weather", Prefix: "WEATHER", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "fitness", Name: "Pocket Fitness", Prefix: "FITNESS", Group: "Pocket", Pocket: true, Fields: apiKey("")},

@@ -53,6 +53,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"places/spending": {"/visits", ""}, "places/trips": {"/", ""},
 	"wallet/summary": {"/", ""}, "wallet/overview": {"/", ""}, "wallet/cards": {"/cards", "/cards/{id}"}, "wallet/passes": {"/passes", "/cards/{id}"},
 	"wallet/expiring": {"/ids", "/cards/{id}"}, "wallet/search": {"/cards", "/cards/{id}"}, "wallet/day": {"/passes", ""},
+	"rooms/summary": {"/", ""}, "rooms/plans": {"/", "/plans/{id}"}, "rooms/layouts": {"/", ""}, "rooms/pieces": {"/furniture", "/furniture/{id}"},
+	"rooms/fit": {"/fit", ""}, "rooms/search": {"/", ""}, "rooms/todos": {"/", ""}, "rooms/day": {"/", ""},
 	"weather/summary": {"/", ""}, "weather/forecast": {"/", ""}, "weather/warnings": {"/warnings", ""}, "weather/day": {"/diary", ""},
 	"weather/diary": {"/diary", ""}, "weather/locations": {"/places", ""},
 	"fitness/summary": {"/", ""}, "fitness/week": {"/", ""}, "fitness/day": {"/history", ""}, "fitness/workouts": {"/history", "/workouts/{id}"},

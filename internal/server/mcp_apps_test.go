@@ -1264,3 +1264,22 @@ func TestMCPPhotoLabTools(t *testing.T) {
 		t.Fatalf("add_pictures: %v", err)
 	}
 }
+
+func TestMCPRoomsTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "rooms" {
+			tools[op.Name] = op
+		}
+	}
+	fit, piece := tools["pocket_rooms_fit"], tools["pocket_rooms_add_piece"]
+	if len(tools) != 13 || fit == nil || fit.Kind != "read" || fit.Path != "/fit" || piece == nil || piece.Kind != "add" {
+		t.Fatalf("rooms tools: %d %+v %+v", len(tools), fit, piece)
+	}
+	if err := piece.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"name": "Sofa", "width": 228, "depth": 95, "height": 83, "status": "want"}}); err != nil {
+		t.Fatalf("add_piece refused a sofa: %v", err)
+	}
+	if piece.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"name": "Sofa"}}) == nil {
+		t.Fatal("add_piece took a piece without its size")
+	}
+}
