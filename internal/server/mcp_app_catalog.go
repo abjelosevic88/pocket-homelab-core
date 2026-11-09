@@ -65,7 +65,7 @@ func arraySchema(item any) map[string]any {
 
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
-var mcpChangePosts = map[string]bool{"tasks_complete": true, "family_take_run": true, "family_done_chore": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
+var mcpChangePosts = map[string]bool{"tasks_complete": true, "photolab_apply": true, "family_take_run": true, "family_done_chore": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
@@ -864,6 +864,29 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("jobs", "reports", "Get job-search reports for the last weeks (weeks, default 12): per week applications sent, interviews and answers; the funnel (applied, heard back, interviewed, offer, hired); per source and per work mode how many were sent, answered, led to interviews and offers; why jobs ended; the average days to an answer.", "/reports", "weeks")
 	read("jobs", "search", "Search the person's jobs (roles, companies, contacts, places, notes); each job comes with its label and link.", "/search", "q limit")
 	read("jobs", "day", "Read one day of the job search: applications sent that day, interviews, the timeline lines written (notes, calls, emails, stage moves, offers, hired) with their job, and the next steps due that day.", "/day/{date}", "")
+	read("photolab", "summary", "Get Photo Lab at a glance: how many pictures, edited, favourites, own looks and saved copies, the storage used, the latest pictures worked on and the latest copies saved (to the device, Pocket Photos or Pocket Files).", "/home", "")
+	read("photolab", "pictures", "List the pictures in Photo Lab, the person's picture editor. q searches names, original file names and notes; show edited|unedited|favorites|photos|files|upload|collage|copy; sort recent|added|taken|title|size. Each: id, title, width, height, source (photos = from Pocket Photos, with source_ref its asset id), edited, favorite, taken_at, camera, exports, updated_at.", "/images", "q show sort limit offset")
+	read("photolab", "get_picture", "Read one picture: its details and its edit (recipe: crop, turn, sliders, look, effects, text and drawings, frame), its versions count, and item_url to open it in the editor.", "/images/{id}", "")
+	read("photolab", "looks", "List the person's own looks (saved light, colour and effects) by name. Built-in looks are: vivid, warm, cool, golden, teal-orange, film, fade, matte, pastel, chrome, dramatic, vintage, lomo, summer, winter, night, mono, noir, silver, sepia.", "/presets", "")
+	read("photolab", "history", "List the copies saved out of Photo Lab, newest first: title, format, width, height, bytes, destination (download, photos, files), target (the new photo's id or the file's path).", "/exports", "limit")
+	labImport := mcpFields{}.enum("source", "photos", "files").strings("ids paths").field("space", map[string]any{"type": "string", "maxLength": 200, "description": "Pocket Files: the place, \"home\" for My files (default)."})
+	labImport["ids"].(map[string]any)["description"] = "Pocket Photos asset ids (from Pocket Photos), up to 100."
+	labImport["paths"].(map[string]any)["description"] = "Pocket Files paths like /Pictures/beach.jpg, up to 100."
+	write("photolab", "add_pictures", "Bring pictures into Photo Lab to edit: from Pocket Photos (source photos, ids) or Pocket Files (source files, paths). Pictures already there are not added twice. Returns them with their ids and, for one, its url in the editor.", "POST", "/images/import", labImport, "source")
+	labApply := mcpFields{}.field("ids", arraySchema(map[string]any{"type": "integer", "minimum": 1})).
+		field("look", map[string]any{"type": "string", "maxLength": 80, "description": "A built-in look (vivid, warm, cool, golden, teal-orange, film, fade, matte, pastel, chrome, dramatic, vintage, lomo, summer, winter, night, mono, noir, silver, sepia), the name of one of the person's own looks, or none to take the look off."}).
+		field("strength", map[string]any{"type": "number", "minimum": 0, "maximum": 100, "description": "How strong a built-in look is, 0-100 (default 80)."}).
+		field("adjust", map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "number"}, "description": "Sliders to set, -100..100 (hue -180..180; sharpen, denoise, grain, fade, blur 0..100): exposure, brightness, contrast, highlights, shadows, whites, blacks, temperature (warmth), tint, vibrance, saturation, hue, clarity, dehaze, sharpen, denoise, vignette, grain, fade, blur. 0 resets one."}).
+		enum("aspect", "none", "original", "1:1", "4:5", "5:4", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16").
+		field("rotate", map[string]any{"type": "integer", "enum": []any{0, 90, 180, 270}, "description": "Turn clockwise by this much (0 = back upright)."}).
+		field("straighten", map[string]any{"type": "number", "minimum": -45, "maximum": 45}).
+		booleans("black_and_white reset").
+		field("frame", map[string]any{"type": "number", "minimum": 0, "maximum": 25, "description": "A white border as % of the short side; 0 removes it."}).
+		field("long_edge", map[string]any{"type": "integer", "minimum": 0, "maximum": 20000, "description": "Resize so the long side has this many pixels; 0 = full size."})
+	labApply["ids"].(map[string]any)["description"] = "The pictures to change (Photo Lab ids), 1 to 100."
+	labApply["aspect"].(map[string]any)["description"] = "Crop to this shape, centred (none = no crop)."
+	labApply["reset"].(map[string]any)["description"] = "Start from the original before applying the rest."
+	write("photolab", "apply", "Change the edit of one or more Photo Lab pictures: put on a look, set sliders, crop to a shape, turn, straighten, black and white, a border, a size. Originals never change and every change can be undone in the editor; the new look is drawn the next time Photo Lab is open. Returns the pictures with their edits.", "POST", "/images/apply", labApply, "ids")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").

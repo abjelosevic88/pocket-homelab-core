@@ -1239,3 +1239,28 @@ func TestMCPJobsTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPPhotoLabTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "photolab" {
+			tools[op.Name] = op
+		}
+	}
+	apply, add := tools["pocket_photolab_apply"], tools["pocket_photolab_add_pictures"]
+	if len(tools) != 7 || apply == nil || apply.Kind != "change" || apply.Path != "/images/apply" || add == nil || add.Kind != "add" {
+		t.Fatalf("photolab tools: %d %+v %+v", len(tools), apply, add)
+	}
+	ok := map[string]any{"ids": []any{3, 4}, "look": "film", "strength": 60, "adjust": map[string]any{"exposure": 20}, "aspect": "4:5", "rotate": 90, "black_and_white": true, "long_edge": 1080}
+	if err := apply.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": ok}); err != nil {
+		t.Fatalf("apply refused a plain change: %v", err)
+	}
+	for _, bad := range []map[string]any{{"look": "film"}, {"ids": []any{1}, "aspect": "7:3"}, {"ids": []any{1}, "rotate": 45}, {"ids": []any{1}, "url": "x"}} {
+		if apply.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": bad}) == nil {
+			t.Fatalf("apply took %v", bad)
+		}
+	}
+	if err := add.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"source": "photos", "ids": []any{"0b1c2d3e-0000-4000-8000-000000000001"}}}); err != nil {
+		t.Fatalf("add_pictures: %v", err)
+	}
+}
