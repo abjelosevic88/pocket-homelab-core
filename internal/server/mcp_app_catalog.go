@@ -935,6 +935,23 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	make["picture"].(map[string]any)["description"] = "Picture puzzle (nonogram) from the library: heart, house, cat, tree, star, smile, boat, key, fish, umbrella, apple, mushroom, note, car, bird, duck."
 	write("puzzlecraft", "make_puzzle", "Make a puzzle for the person, tested for one fair answer: give kind and what to make it from (words_text, theme, size, text…); everything else is chosen for them. Returns the puzzle with its link (and share_url, playable without an account when share_on).", "POST", "/puzzles", make, "kind")
 	write("puzzlecraft", "add_wordlist", "Add a word list to make puzzles from: name and text with one word per line, the clue after a dash.", "POST", "/wordlists", textFields("name text").enum("language", "en", "bcs", "other"), "name text")
+	read("forum", "summary", "Get Pocket Forum at a glance: how many forums the person is in, topics with unread posts, new topics, unread notifications, what waits for review (as a moderator), and the latest topics, events coming up and open questions with their links.", "/summary", "")
+	read("forum", "forums", "List the forums the person is in (slug, name, visibility private/box/public, their role, unread and new counts, members, topics) and the ones they could join.", "/forums", "")
+	read("forum", "forum", "Read one forum by its slug or id: about, rules, categories with their numbers, the people who run it, its numbers this week and the person's membership.", "/forums/{id}", "")
+	read("forum", "topics", "List topics with the person's read state (unread = new posts since they read it, is_new = never opened). forum = a slug (empty = every forum they are in); category = a slug; filter: latest, unread, new, top (period week/month/year/all), unsolved (open questions), solved, noreplies, mine, posted, events; tag; kind (discussion, question, announcement, event).", "/topics", "forum category tag filter kind period page limit")
+	read("forum", "topic", "Read one topic with all its posts in order (author, number, Markdown body, reactions, the accepted answer as solved_post_id, polls with their counts), its category and tags, and for an event who is coming.", "/topics/{id}", "")
+	read("forum", "search", "Search every forum the person can read (full text, accents ignored): titles and posts with a snippet and a link. forum = a slug; solved = yes or no (open questions); titles = 1 for titles only.", "/search", "q forum solved titles tag")
+	read("forum", "notifications", "Read the person's forum notifications (mentions, replies, quotes, reactions, solutions, join requests, flags, reminders) with links; unread=1 for unread only.", "/notifications", "unread limit")
+	read("forum", "bookmarks", "List the posts the person bookmarked, with their notes and reminders.", "/bookmarks", "")
+	read("forum", "events", "List the event topics coming up in the person's forums (date, time, place) with the person's own answer (going, maybe, no).", "/events", "")
+	read("forum", "day", "Read what the person wrote in the forums on one day (topics started and replies, with links) — for the journal.", "/day/{date}", "")
+	topic := textFields("forum title body event_start event_end event_place").integers("category_id").enum("kind", "discussion", "question", "event").strings("tags")
+	topic["forum"].(map[string]any)["description"] = "The forum's slug (see the forums tool)."
+	topic["body"].(map[string]any)["description"] = "The first post, in Markdown; @handle mentions someone."
+	topic["event_start"].(map[string]any)["description"] = "For kind event: local start, YYYY-MM-DDTHH:MM (or a date)."
+	write("forum", "start_topic", "Start a topic in one of the person's forums, as them: a discussion, a question (others can answer, the person marks the solution) or an event (with event_start and event_place). Returns the topic with its link; in some forums it waits for a moderator first.", "POST", "/topics", topic, "forum title body")
+	write("forum", "reply", "Reply to a topic as the person, in Markdown; reply_to = the number of the post answered (optional).", "POST", "/topics/{id}/posts", textFields("body").integers("reply_to"), "body")
+	write("forum", "mark_read", "Mark a topic read up to a post number (empty = all of it).", "POST", "/topics/{id}/read", mcpFields{}.integers("number"), "")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").

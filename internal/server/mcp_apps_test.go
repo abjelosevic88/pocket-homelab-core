@@ -1302,3 +1302,22 @@ func TestMCPPuzzlecraftTools(t *testing.T) {
 		t.Fatal("make_puzzle took an unknown kind")
 	}
 }
+
+func TestMCPForumTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "forum" {
+			tools[op.Name] = op
+		}
+	}
+	st := tools["pocket_forum_start_topic"]
+	if len(tools) != 13 || st == nil || st.Kind != "add" || tools["pocket_forum_reply"] == nil || tools["pocket_forum_topics"] == nil {
+		t.Fatalf("forum tools: %d %+v", len(tools), st)
+	}
+	if err := st.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"forum": "family", "title": "Sunday lunch", "body": "Who is in?"}}); err != nil {
+		t.Fatalf("start_topic refused a topic: %v", err)
+	}
+	if st.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"forum": "family", "title": "x", "body": "y", "kind": "announcement"}}) == nil {
+		t.Fatal("start_topic took an announcement")
+	}
+}
