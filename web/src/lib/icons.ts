@@ -117,6 +117,7 @@ const FILES: Record<string, string> = {
   "forum": "pocket-forum.svg",
   "capsule": "pocket-capsule.svg",
   "slides": "pocket-slides.svg",
+  "vault": "pocket-vault.svg",
   "wallet": "pocket-wallet.svg",
   "weather": "pocket-weather.svg",
   "fitness": "pocket-fitness.svg",

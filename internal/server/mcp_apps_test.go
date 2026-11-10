@@ -1374,3 +1374,15 @@ func TestMCPSlidesTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPVaultTools(t *testing.T) {
+	var tools []*mcpAppTool
+	for _, op := range mcpAppCatalog {
+		if op.App == "vault" {
+			tools = append(tools, op)
+		}
+	}
+	if len(tools) != 1 || tools[0].Name != "pocket_vault_overview" || tools[0].Method != "GET" {
+		t.Fatalf("vault tools: only the read-only overview, got %d", len(tools))
+	}
+}
