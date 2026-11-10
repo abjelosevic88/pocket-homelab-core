@@ -908,6 +908,33 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	}
 	write("rooms", "add_piece", "Add a piece of furniture with its size to the person's measured furniture (for example one they are thinking of buying), so it can be checked against their doors and placed on a plan. Returns the piece with its link.", "POST", "/pieces", piece, "name width depth height")
 	write("rooms", "add_checklist_item", "Add an item to a plan's checklist (measure the alcove, order the sofa, book the movers), with an optional due date (YYYY-MM-DD).", "POST", "/todos", textFields("title due").integers("plan_id"), "plan_id title")
+	read("puzzlecraft", "summary", "Get Pocket Puzzlecraft at a glance: how many puzzles of each kind the person has, how many are shared, escape rooms and treasure hunts coming up (with what is still to set up), today's puzzles of the day and whether they are solved, and their run of days.", "/summary", "")
+	read("puzzlecraft", "today", "Read the person's Today page: the three puzzles of the day (kind, level, solved and the time), the run of days, puzzles they are in the middle of, escape rooms coming up and who solved their shared puzzles in the last week. date=YYYY-MM-DD reads an earlier day.", "/today", "date")
+	read("puzzlecraft", "puzzles", "List the person's puzzles (crossword, wordsearch, sudoku, nonogram = picture puzzle, cryptogram = secret code, scramble, quiz, maze, logic, ladder, jigsaw): title, kind, level, size, ready (fair, one answer), share_on, plays, solves, best_ms. kind, q, tag filter; shared=1 only shared ones; archived=1 the archive.", "/puzzles", "kind q tag shared archived limit")
+	read("puzzlecraft", "puzzle", "Read one puzzle as a player sees it (never its answer), with its share link (share_url, playable without an account when share_on) and how it was played.", "/puzzles/{id}", "")
+	read("puzzlecraft", "results", "Read how one puzzle was played: every go (player, time ms, hints, mistakes, finished), the best times and the average.", "/puzzles/{id}/plays", "")
+	read("puzzlecraft", "adventures", "List the person's escape rooms, treasure hunts, mysteries and party games: title, kind, date, time, place, stages_n, minutes (time limit), status, share_on, plays and live (teams playing right now).", "/adventures", "")
+	read("puzzlecraft", "adventure", "Read one escape room or hunt: its story, stages (title, story, kind of lock — answers and hiding places are left out), setting-up list and share link.", "/adventures/{id}", "")
+	read("puzzlecraft", "books", "List the person's puzzle books (puzzles put together to print or share as one link).", "/books", "")
+	read("puzzlecraft", "wordlists", "List the person's word lists (words with clues to make puzzles from).", "/wordlists", "")
+	read("puzzlecraft", "stats", "Read the person's solving: puzzles solved, by kind with the usual and the best time and hints, the run of days, the last 84 days.", "/stats", "")
+	read("puzzlecraft", "search", "Search the person's puzzles, escape rooms, books and word lists.", "/search", "q")
+	read("puzzlecraft", "day", "Read one day in Pocket Puzzlecraft: what was solved (by the person and by players of their shared puzzles) and escape rooms planned that day.", "/day/{date}", "")
+	read("puzzlecraft", "words", "Find English words that fit a crossword pattern (? = any letter, e.g. C?T), everyday words first, and the person's own word-list words.", "/words", "pattern limit")
+	make := textFields("title instructions words_text theme message text author picture mode style").integers("size count").
+		enum("kind", "crossword", "wordsearch", "sudoku", "nonogram", "cryptogram", "scramble", "quiz", "maze", "logic", "ladder", "jigsaw").
+		enum("level", "easy", "medium", "hard", "expert").enum("language", "en", "bcs", "other").enum("cipher", "random", "caesar", "numbers", "symbols").strings("tags").booleans("share_on")
+	make["words_text"].(map[string]any)["description"] = "Words for a crossword, word search, scramble or quiz, one per line, the clue after a dash: \"apple - fruit that keeps the doctor away\"."
+	make["theme"].(map[string]any)["description"] = "A built-in word list instead of words: animals, fruit, kitchen, space, weather, sports, music, countries, home, ocean, feelings, birthday, school; Bosnian/Croatian/Serbian: zivotinje, voce, grad."
+	make["size"].(map[string]any)["description"] = "Sudoku: 4, 6 or 9. Crossword (style classic), word search, maze: squares across."
+	make["text"].(map[string]any)["description"] = "Secret code (cryptogram): the message to put in code (empty = a famous quote)."
+	make["message"].(map[string]any)["description"] = "Word search: a hidden message spelled by the leftover letters."
+	make["mode"].(map[string]any)["description"] = "Quiz: riddles (ten old riddles) or quiz (multiple choice from words_text)."
+	make["style"].(map[string]any)["description"] = "Crossword: freeform (words criss-crossed, default with words) or classic (a symmetric grid filled with English words; clues left to write)."
+	make["share_on"].(map[string]any)["description"] = "true = switch its share link on, so anyone with share_url can play it without an account."
+	make["picture"].(map[string]any)["description"] = "Picture puzzle (nonogram) from the library: heart, house, cat, tree, star, smile, boat, key, fish, umbrella, apple, mushroom, note, car, bird, duck."
+	write("puzzlecraft", "make_puzzle", "Make a puzzle for the person, tested for one fair answer: give kind and what to make it from (words_text, theme, size, text…); everything else is chosen for them. Returns the puzzle with its link (and share_url, playable without an account when share_on).", "POST", "/puzzles", make, "kind")
+	write("puzzlecraft", "add_wordlist", "Add a word list to make puzzles from: name and text with one word per line, the clue after a dash.", "POST", "/wordlists", textFields("name text").enum("language", "en", "bcs", "other"), "name text")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").

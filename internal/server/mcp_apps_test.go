@@ -1283,3 +1283,22 @@ func TestMCPRoomsTools(t *testing.T) {
 		t.Fatal("add_piece took a piece without its size")
 	}
 }
+
+func TestMCPPuzzlecraftTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "puzzlecraft" {
+			tools[op.Name] = op
+		}
+	}
+	mk := tools["pocket_puzzlecraft_make_puzzle"]
+	if len(tools) != 15 || mk == nil || mk.Kind != "add" || tools["pocket_puzzlecraft_today"] == nil {
+		t.Fatalf("puzzlecraft tools: %d %+v", len(tools), mk)
+	}
+	if err := mk.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"kind": "sudoku", "level": "hard"}}); err != nil {
+		t.Fatalf("make_puzzle refused a sudoku: %v", err)
+	}
+	if mk.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"kind": "chess"}}) == nil {
+		t.Fatal("make_puzzle took an unknown kind")
+	}
+}

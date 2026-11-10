@@ -53,6 +53,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"places/spending": {"/visits", ""}, "places/trips": {"/", ""},
 	"wallet/summary": {"/", ""}, "wallet/overview": {"/", ""}, "wallet/cards": {"/cards", "/cards/{id}"}, "wallet/passes": {"/passes", "/cards/{id}"},
 	"wallet/expiring": {"/ids", "/cards/{id}"}, "wallet/search": {"/cards", "/cards/{id}"}, "wallet/day": {"/passes", ""},
+	"puzzlecraft/summary": {"/", ""}, "puzzlecraft/today": {"/", ""}, "puzzlecraft/puzzles": {"/puzzles", "/puzzles/{id}"}, "puzzlecraft/adventures": {"/adventures", "/adventures/{id}"},
+	"puzzlecraft/books": {"/books", "/books/{id}"}, "puzzlecraft/wordlists": {"/words", ""}, "puzzlecraft/stats": {"/stats", ""}, "puzzlecraft/search": {"/puzzles", ""}, "puzzlecraft/day": {"/", ""},
 	"rooms/summary": {"/", ""}, "rooms/plans": {"/", "/plans/{id}"}, "rooms/layouts": {"/", ""}, "rooms/pieces": {"/furniture", "/furniture/{id}"},
 	"rooms/fit": {"/fit", ""}, "rooms/search": {"/", ""}, "rooms/todos": {"/", ""}, "rooms/day": {"/", ""},
 	"weather/summary": {"/", ""}, "weather/forecast": {"/", ""}, "weather/warnings": {"/warnings", ""}, "weather/day": {"/diary", ""},
