@@ -1321,3 +1321,27 @@ func TestMCPForumTools(t *testing.T) {
 		t.Fatal("start_topic took an announcement")
 	}
 }
+
+func TestMCPCapsuleTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "capsule" {
+			tools[op.Name] = op
+		}
+	}
+	add := tools["pocket_capsule_add_to_capsule"]
+	if len(tools) != 10 || add == nil || add.Kind != "add" || tools["pocket_capsule_start_capsule"] == nil || tools["pocket_capsule_capsule"] == nil {
+		t.Fatalf("capsule tools: %d %+v", len(tools), add)
+	}
+	if err := add.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "id": 3, "data": map[string]any{"kind": "letter", "body": "Dear future me"}}); err != nil {
+		t.Fatalf("add_to_capsule refused a letter: %v", err)
+	}
+	if add.resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "id": 3, "data": map[string]any{"kind": "seal"}}) == nil {
+		t.Fatal("add_to_capsule took an unknown kind")
+	}
+	for name := range tools {
+		if strings.Contains(name, "seal") || strings.Contains(name, "open") {
+			t.Fatalf("a tool may never seal or open a capsule: %s", name)
+		}
+	}
+}

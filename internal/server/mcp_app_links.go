@@ -55,6 +55,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"wallet/expiring": {"/ids", "/cards/{id}"}, "wallet/search": {"/cards", "/cards/{id}"}, "wallet/day": {"/passes", ""},
 	"forum/summary": {"/", ""}, "forum/forums": {"/forums", "/f/{id}"}, "forum/topics": {"/", "/t/{id}"}, "forum/search": {"/search", ""}, "forum/notifications": {"/inbox", ""},
 	"forum/bookmarks": {"/bookmarks", ""}, "forum/events": {"/events", "/t/{id}"}, "forum/day": {"/", ""},
+	"capsule/summary": {"/", ""}, "capsule/capsules": {"/", "/c/{id}"}, "capsule/predictions": {"/predictions", ""}, "capsule/search": {"/", ""}, "capsule/events": {"/", ""},
+	"capsule/day": {"/", ""}, "capsule/templates": {"/new", ""},
 	"puzzlecraft/summary": {"/", ""}, "puzzlecraft/today": {"/", ""}, "puzzlecraft/puzzles": {"/puzzles", "/puzzles/{id}"}, "puzzlecraft/adventures": {"/adventures", "/adventures/{id}"},
 	"puzzlecraft/books": {"/books", "/books/{id}"}, "puzzlecraft/wordlists": {"/words", ""}, "puzzlecraft/stats": {"/stats", ""}, "puzzlecraft/search": {"/puzzles", ""}, "puzzlecraft/day": {"/", ""},
 	"rooms/summary": {"/", ""}, "rooms/plans": {"/", "/plans/{id}"}, "rooms/layouts": {"/", ""}, "rooms/pieces": {"/furniture", "/furniture/{id}"},
