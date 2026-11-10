@@ -1345,3 +1345,32 @@ func TestMCPCapsuleTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPSlidesTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "slides" {
+			tools[op.Name] = op
+		}
+	}
+	mk := tools["pocket_slides_make_deck"]
+	if len(tools) != 11 || mk == nil || mk.Kind != "add" || tools["pocket_slides_add_slide"] == nil || tools["pocket_slides_deck"] == nil {
+		t.Fatalf("slides tools: %d %+v", len(tools), mk)
+	}
+	ok := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "Team update", "slides": []any{
+		map[string]any{"layout": "title", "title": "Team update"},
+		map[string]any{"layout": "poll", "title": "Which first?", "data": map[string]any{"options": []any{"A", "B"}, "correct": 1}},
+	}}}
+	if err := mk.resolved.Validate(ok); err != nil {
+		t.Fatalf("make_deck refused a deck: %v", err)
+	}
+	bad := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "x", "slides": []any{map[string]any{"layout": "video"}}}}
+	if mk.resolved.Validate(bad) == nil {
+		t.Fatal("make_deck took an unknown layout")
+	}
+	for name := range tools {
+		if strings.Contains(name, "present") || strings.Contains(name, "share") || strings.Contains(name, "delete") {
+			t.Fatalf("a tool may never present, share or delete: %s", name)
+		}
+	}
+}

@@ -968,6 +968,38 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	item["body"].(map[string]any)["description"] = "The letter, or the prediction, question or goal itself."
 	item["confidence"].(map[string]any)["description"] = "For a prediction: how sure, 0-100."
 	write("capsule", "add_to_capsule", "Put something in one of the person's time capsules, as them: a letter, a prediction (with how sure), a question for whoever opens it, a goal or a link. A sealed capsule with its slot open takes it unseen — nobody, the person included, sees it until the capsule opens. This never seals or opens a capsule.", "POST", "/capsules/{id}/items", item, "kind")
+	read("slides", "summary", "Get Pocket Slides at a glance: how many decks, slides, talks given and rehearsals, and the next talk (when, where, how often it was rehearsed), with links.", "/summary", "")
+	read("slides", "decks", "List the person's presentation decks: title, number of slides, theme, the talk it is for (talk_at local YYYY-MM-DDTHH:MM, place), rehearsals and talks so far, whether it is shared or being presented now. archived = true for the archived ones.", "/decks", "archived")
+	read("slides", "deck", "Read one deck with every slide in order: layout, title, subtitle, body (short Markdown: - points), second column, data (chart numbers, table rows, poll answers), the speaker notes and whether it is skipped when presenting.", "/decks/{id}", "")
+	read("slides", "shows", "List talks and rehearsals (newest first): when, how long (total_ms), milliseconds per slide id, people following, questions, poll answers and the audience's rating. deck = one deck's only.", "/shows", "deck limit")
+	read("slides", "show", "Read one talk or rehearsal: the time of every slide, the questions the audience asked (answered or not), the poll results per slide and what the audience thought.", "/shows/{id}", "")
+	read("slides", "search", "Search the person's decks by the words on their slides and in their speaker notes, with links to the slide.", "/search", "q limit")
+	read("slides", "day", "Read one day in Pocket Slides (talks given, rehearsals, a talk planned that day) — for the journal.", "/day/{date}", "")
+	read("slides", "layouts", "List the built-in slide layouts (and the fields each uses), themes and deck templates, to make slides that fit.", "/builtins", "")
+	slideData := mcpFields{}.booleans("build").integers("correct").strings("options").field("left", map[string]any{"type": "string", "maxLength": 80}).field("right", map[string]any{"type": "string", "maxLength": 80}).field("lang", map[string]any{"type": "string", "maxLength": 20})
+	slide := textFields("title subtitle body body2 notes").enum("layout", "title", "section", "bullets", "two", "image_right", "image_left", "image", "quote", "number", "chart", "table", "code", "poll", "agenda", "end", "blank").
+		booleans("hidden").integers("seconds").field("data", objectSchema(slideData, ""))
+	slide["body"].(map[string]any)["description"] = "Short Markdown: lines starting \"- \" are points (under 9 words each), \"1. \" numbered, two spaces in front for a point under a point; **bold**. For quote: the quote; for code: the code; for number: where the number comes from."
+	slide["title"].(map[string]any)["description"] = "The heading; for number: the big number itself (\"3 in 4\", \"€2 m\"); for poll: the question."
+	slide["subtitle"].(map[string]any)["description"] = "A line under the heading; for quote: who said it; for number: what it means; for section: the line above (\"Part two\")."
+	slide["notes"].(map[string]any)["description"] = "Speaker notes: what to say, 2 to 5 plain sentences. Never shown to the audience."
+	slideData["options"].(map[string]any)["description"] = "For poll: 2 to 8 short answers the audience picks from on their phones."
+	slideData["correct"].(map[string]any)["description"] = "For poll as a quiz: the right answer, 1-based (0 = none)."
+	slideData["build"].(map[string]any)["description"] = "Show the points one at a time when presenting."
+	deck := textFields("title about talk_title talk_at talk_place source_ref").integers("target_minutes").
+		enum("template", "blank", "talk", "lesson", "update", "pitch", "photos", "workshop").
+		enum("theme", "paper", "night", "chalk", "sunrise", "studio", "ocean", "forest", "mono", "candy", "slate").
+		field("slides", arraySchema(objectSchema(slide, "layout")))
+	deck["talk_at"].(map[string]any)["description"] = "When the talk is given: local YYYY-MM-DDTHH:MM (or YYYY-MM-DD)."
+	deck["slides"].(map[string]any)["description"] = "The slides, in order (start with a title slide, end with an end slide). Without slides the template's slides are made."
+	write("slides", "make_deck", "Make a presentation deck for the person, with the slides given (or from a template). They present, rehearse and share it themselves in Pocket Slides. Returns it with its link.", "POST", "/decks", deck, "title")
+	addSlide := mcpFields{}.integers("after")
+	for k, v := range slide {
+		addSlide[k] = v
+	}
+	addSlide["after"].(map[string]any)["description"] = "Put it after this slide id; without it, at the end."
+	write("slides", "add_slide", "Add one slide to one of the person's decks.", "POST", "/decks/{id}/slides", addSlide, "layout")
+	write("slides", "update_slide", "Change the supplied fields of a slide this app made (slides the person made themselves are left alone).", "PUT", "/slides/{id}", slide, "")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").
