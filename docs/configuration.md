@@ -15,6 +15,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `DB_PATH` / `SECRET_PATH` | `$DATA_DIR/pocket-core.db` / `$DATA_DIR/secret.key` | Override locations. The secret key encrypts stored service credentials; back it up with the database. |
 | `SERVICES_FILE` | — | A JSON list of third-party services a Pocket Box runs, applied at every start (see below). |
 | `BOX_AGENT` | — | The Pocket Box agent's unix socket. Set on a Pocket Box only: adds Settings → System and the first-run box wizard (see below). |
+| `BOX_ADDRESS` | — | The Pocket Box address service's unix socket. Set on a Pocket Box only: adds *Secure address* to Settings → System and the wizard (see below). |
 | `INSTALLER_SOCKET` / `INSTALLER_TOKEN` | — | The installer agent's unix socket and its token: adds **Install app** and a full **Remove app** to the Apps page. See [installer.md](installer.md). |
 | `INSTALLER_ENABLED` | `true` | `false` keeps Install/Remove off on this Core whatever the admin switch says (apps here are set up by hand). |
 | `TZ` | – | Container timezone |
@@ -160,3 +161,20 @@ On a Pocket Box, Core also sets up the machine it runs on. Core runs unprivilege
 | `POST …/restart` | same | restart the box (to finish a kernel update) |
 
 `GET /api/v1/auth/status` carries `box_system` (there is an agent) and `box_wizard`. `box_wizard` is true after the first account exists and until the wizard is finished. While it's true, an admin who opens Core lands on **/welcome**, which walks through time zone, network, Tailscale, the console password and the disk; *Do this later* finishes it too. An agent that doesn't answer never traps anyone in the wizard. Without `BOX_AGENT` none of this exists: the routes answer 404 and Settings has no System tab.
+
+### The box's secure address (`BOX_ADDRESS`)
+
+How phones and computers get a padlock for the box, chosen first on the box's landing page (`http://pocket.local`, before anyone has an account) and changeable here by an admin at any time:
+
+- **Pocket's free address** (recommended): `<random>.box.pockethomelab.com` from Pocket Names, with a Let's Encrypt certificate.
+- **The owner's own domain on Cloudflare**: `<name>.<their zone>`. *Sign in with Cloudflare* (OAuth with PKCE as a public client, scopes `zone.read dns.write offline_access`; Cloudflare sends the browser back through `names.pockethomelab.com/cloudflare/back` to the page that started it) or a pasted API token (a prefilled *Create token* link: Zone · Read, DNS · Edit). The box keeps two A records pointed at its home address and gets its certificate over DNS-01 itself.
+- **The box's own certificate**: no public name; each device installs the box's CA.
+
+| Core (admins) | Address service | What |
+|---|---|---|
+| `GET /api/v1/box/address` | `GET /v1/address` | the mode, the address in use, how far getting it got, the last problem, whether *Sign in with Cloudflare* is on offer |
+| `PUT /api/v1/box/address {mode, zone_id?, sub?, token? \| pending?}` | same | choose; the box moves over once the new address works, then lets the old one go |
+| `POST …/address/cloudflare/zones {token}` | same | the zones a pasted token can change |
+| `POST …/address/cloudflare/start {return_url}` · `POST …/cloudflare/finish {code, state}` | same | *Sign in with Cloudflare*: the URL to open, then the zones and a pending sign-in |
+
+`GET /api/v1/auth/status` carries `box_address`.

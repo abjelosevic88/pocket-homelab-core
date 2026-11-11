@@ -275,7 +275,8 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"sso": s.ssoEnabled() && s.cfg.AuthMode == "local", "sso_name": s.signin().Name, "password_login": s.signin().PasswordLogin || s.cfg.AuthMode != "local",
 		"cookie_warning": s.cookieWarning(r),
 		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
-		"box_system": s.box != nil,
+		"box_system":  s.box != nil,
+		"box_address": s.boxAddr != nil,
 		// One-click install/removal of Pocket apps (admins).
 		"installer": u.IsAdmin() && s.installerState(r.Context()) == "",
 		// Settings → Box: the switch exists when there is an agent; locked by INSTALLER_ENABLED=false.

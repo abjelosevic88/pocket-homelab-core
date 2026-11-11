@@ -53,6 +53,7 @@ type Server struct {
 	connHTTP    *http.Client      // connectors talking to third-party apps
 	ctx         context.Context   // lives as long as the server; background work hangs off it
 	box         *boxAgent         // the Pocket Box agent (BOX_AGENT); nil off a box
+	boxAddr     *boxAgent         // the Pocket Box address service (BOX_ADDRESS); nil off a box
 	inst        *installer.Client // the installer agent (INSTALLER_SOCKET); nil = no one-click installs
 	installs    sync.Map          // job id → *installJob
 	removing    sync.Map          // slug → true: being removed, not health-checked
@@ -84,7 +85,7 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		ctx:        context.Background(),
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute),
 		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute),
-		box: newBoxAgent(cfg.BoxAgent), inst: installer.NewClient(cfg.InstallerSocket, cfg.InstallerToken)}
+		box: newBoxAgent(cfg.BoxAgent), boxAddr: newBoxAgent(cfg.BoxAddress), inst: installer.NewClient(cfg.InstallerSocket, cfg.InstallerToken)}
 	s.remote = newRemoteHub(s)
 	return s
 }
@@ -323,6 +324,8 @@ func (s *Server) Router() http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAdmin)
 				r.HandleFunc("/box/system/*", s.handleBoxSystem)
+				r.HandleFunc("/box/address", s.handleBoxAddress)
+				r.HandleFunc("/box/address/*", s.handleBoxAddress)
 				r.Put("/apps/{slug}", s.handleUpdateApp)
 				r.Delete("/apps/{slug}", s.handleDeleteApp)
 				r.Post("/apps/{slug}/uninstall", s.handleUninstallApp)

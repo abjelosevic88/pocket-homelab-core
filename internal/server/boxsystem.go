@@ -116,6 +116,38 @@ func (s *Server) handleBoxSystem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	s.passToBox(w, r, s.box, target, sub)
+}
+
+// boxAddressRoutes maps Core's admin routes onto the box address service's:
+// how the box gets its padlock (Pocket's address, the owner's own domain on
+// Cloudflare with "Sign in with Cloudflare" or an API token, or the box's own
+// certificate).
+var boxAddressRoutes = map[string]string{
+	"GET ":                    "GET /v1/address",
+	"PUT ":                    "PUT /v1/address",
+	"POST /cloudflare/zones":  "POST /v1/address/cloudflare/zones",
+	"POST /cloudflare/start":  "POST /v1/address/cloudflare/start",
+	"POST /cloudflare/finish": "POST /v1/address/cloudflare/finish",
+}
+
+func (s *Server) handleBoxAddress(w http.ResponseWriter, r *http.Request) {
+	if s.boxAddr == nil {
+		writeErr(w, http.StatusNotFound, "this Core is not on a Pocket Box")
+		return
+	}
+	sub := strings.TrimPrefix(r.URL.Path, "/api/v1/box/address")
+	target, ok := boxAddressRoutes[r.Method+" "+sub]
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	s.passToBox(w, r, s.boxAddr, target, "address"+sub)
+}
+
+// passToBox sends the request to one of the box's root services and its
+// answer back, as it is.
+func (s *Server) passToBox(w http.ResponseWriter, r *http.Request, svc *boxAgent, target, change string) {
 	method, path, _ := strings.Cut(target, " ")
 	var body io.Reader
 	if r.Body != nil && method != http.MethodGet {
@@ -127,9 +159,9 @@ func (s *Server) handleBoxSystem(w http.ResponseWriter, r *http.Request) {
 		}
 		body = bytes.NewReader(raw)
 	}
-	res, err := s.box.call(r.Context(), method, path, body)
+	res, err := svc.call(r.Context(), method, path, body)
 	if err != nil {
-		s.log.Warn("box agent unreachable", "path", path, "err", err)
+		s.log.Warn("box service unreachable", "path", path, "err", err)
 		writeErr(w, http.StatusBadGateway, "the box agent did not answer")
 		return
 	}
@@ -138,9 +170,10 @@ func (s *Server) handleBoxSystem(w http.ResponseWriter, r *http.Request) {
 		s.box.forget()
 	}
 	if method != http.MethodGet && res.StatusCode == http.StatusOK {
-		s.log.Info("box settings changed", "change", sub, "by", s.actorEmail(r))
+		s.log.Info("box settings changed", "change", change, "by", s.actorEmail(r))
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, io.LimitReader(res.Body, 1<<20))
 }

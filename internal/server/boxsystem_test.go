@@ -154,3 +154,68 @@ func TestBoxWizardIgnoresDeadAgent(t *testing.T) {
 		t.Fatalf("dead agent: %d", c)
 	}
 }
+
+func TestBoxAddressThroughService(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "address.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var calls []string
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v1/address":
+			_ = json.NewEncoder(w).Encode(map[string]any{"mode": "pocket", "can_choose": true})
+		case "PUT /v1/address":
+			if r.ContentLength <= 0 {
+				http.Error(w, `{"error":"no Content-Length"}`, http.StatusLengthRequired)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"mode": "own-ca"})
+		case "POST /v1/address/cloudflare/zones":
+			w.WriteHeader(422)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Cloudflare didn't accept this sign-in."})
+		default:
+			http.NotFound(w, r)
+		}
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	t.Setenv("BOX_ADDRESS", sock)
+	e := newEnv(t)
+	var st map[string]any
+	e.do("GET", "/api/v1/auth/status", "", nil, &st)
+	if st["box_address"] != true {
+		t.Fatalf("box_address %v", st["box_address"])
+	}
+	if c := e.do("GET", "/api/v1/box/address", "", nil, nil); c != 401 {
+		t.Fatalf("signed out: %d", c)
+	}
+	var setup map[string]any
+	if c := e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "owner@example.com", "password": "password123"}, &setup); c != 200 {
+		t.Fatalf("setup %d %v", c, setup)
+	}
+	var got map[string]any
+	if c := e.do("GET", "/api/v1/box/address", "", nil, &got); c != 200 || got["mode"] != "pocket" {
+		t.Fatalf("get %d %v", c, got)
+	}
+	if c := e.do("PUT", "/api/v1/box/address", "", map[string]string{"mode": "own-ca"}, &got); c != 200 || got["mode"] != "own-ca" {
+		t.Fatalf("put %d %v", c, got)
+	}
+	var bad map[string]string
+	if c := e.do("POST", "/api/v1/box/address/cloudflare/zones", "", map[string]string{"token": "x"}, &bad); c != 422 || bad["error"] == "" {
+		t.Fatalf("the service's 422 must come through: %d %v", c, bad)
+	}
+	if c := e.do("DELETE", "/api/v1/box/address", "", nil, nil); c != 404 {
+		t.Fatalf("unknown route %d", c)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 3 {
+		t.Fatalf("calls %v", calls)
+	}
+}

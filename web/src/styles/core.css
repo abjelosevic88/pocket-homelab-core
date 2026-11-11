@@ -528,3 +528,10 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .remote-pending { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .remote-device-head { flex-wrap: wrap; row-gap: 8px; }
 .remote-device-head .grow { min-width: 200px; }
+
+/* Settings → System → Secure address: the three ways the box gets its padlock. */
+.address-choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.address-choice.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.address-choice input { margin-top: 3px; }
+.address-choice .badge { margin-left: 8px; vertical-align: 1px; }
+.address-cf { padding: 4px 2px 0; }

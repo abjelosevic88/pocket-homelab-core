@@ -28,6 +28,10 @@ type Config struct {
 	// BoxAgent: the Pocket Box agent's unix socket (time zone, Wi-Fi,
 	// Tailscale, console password). Empty off a Pocket Box.
 	BoxAgent string
+	// BoxAddress: the Pocket Box address service's unix socket (how the box
+	// gets its padlock: Pocket's address, the owner's own domain on
+	// Cloudflare, or its own certificate). Empty off a Pocket Box.
+	BoxAddress string
 	// Installer: the installer agent's unix socket and token (`pocket-core
 	// installer` on the host). Empty = no Install/Remove buttons.
 	InstallerSocket string
@@ -128,6 +132,7 @@ func Load() (*Config, error) {
 		SecretPath:   env("SECRET_PATH", dataDir+"/secret.key"),
 		ServicesFile: env("SERVICES_FILE", ""),
 		BoxAgent:     env("BOX_AGENT", ""),
+		BoxAddress:   env("BOX_ADDRESS", ""),
 
 		InstallerSocket:  env("INSTALLER_SOCKET", ""),
 		InstallerToken:   env("INSTALLER_TOKEN", ""),

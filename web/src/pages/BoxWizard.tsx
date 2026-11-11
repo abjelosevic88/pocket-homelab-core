@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useApp } from '../lib/app-context'
 import { BOX, BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, useBoxStatus } from '../components/BoxSystem'
+import { AddressPanel } from '../components/BoxAddress'
 import { Icon } from '../components/icons'
 import { Spinner } from '../components/ui'
 
 type Step = { id: string; icon: string; title: string; sub: string }
 
 const STEPS: Step[] = [
+  { id: 'address', icon: 'lock', title: 'Secure address', sub: 'How phones and computers get a padlock for the box. Pocket\'s free address is ready in a minute; your own domain on Cloudflare works as well.' },
   { id: 'time', icon: 'clock', title: 'Time zone', sub: 'So reminders, schedules and “today” are right in every app.' },
   { id: 'network', icon: 'wifi', title: 'Network', sub: 'The box is online by cable. Join Wi-Fi too if it should work without one.' },
   { id: 'remote', icon: 'globe', title: 'Away from home', sub: 'Reach the box from your phone and laptop anywhere, through Tailscale.' },
@@ -23,8 +25,9 @@ export default function BoxWizard() {
   const { st, err, reload } = useBoxStatus()
   const [i, setI] = useState(0)
   const [finishing, setFinishing] = useState(false)
-  const step = STEPS[i]
-  const last = i === STEPS.length - 1
+  const steps = STEPS.filter(s => s.id !== 'address' || status?.box_address)
+  const step = steps[Math.min(i, steps.length - 1)]
+  const last = i >= steps.length - 1
 
   const finish = async () => {
     setFinishing(true)
@@ -43,7 +46,7 @@ export default function BoxWizard() {
           <p className="login-tagline">A few things about the box itself. Everything here can be changed later under Settings → System.</p>
         </div>
         <ol className="wizard-steps" aria-label="Steps">
-          {STEPS.map((s, n) => (
+          {steps.map((s, n) => (
             <li key={s.id} className={n === i ? 'on' : n < i ? 'done' : ''}>
               <button type="button" onClick={() => setI(n)} aria-current={n === i ? 'step' : undefined} title={s.title}>
                 {n < i ? <Icon name="check" size={13} /> : <Icon name={s.icon} size={13} />}<span>{s.title}</span>
@@ -55,6 +58,7 @@ export default function BoxWizard() {
           <h2><Icon name={step.icon} size={18} />{step.title}</h2>
           <p className="muted">{step.sub}</p>
           {!st ? <BoxLoading err={err} /> : <>
+            {step.id === 'address' && <AddressPanel />}
             {step.id === 'time' && <TimezonePanel current={st.timezone} onSaved={() => { reload(); setI(i + 1) }} />}
             {step.id === 'network' && <NetworkPanel st={st} onChanged={reload} />}
             {step.id === 'remote' && <TailscalePanel st={st} onChanged={reload} />}
