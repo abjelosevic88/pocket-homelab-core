@@ -8,13 +8,34 @@ import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, u
 import { Icon } from '../components/icons'
 import { InstallModal, RemoveModal } from '../components/Installer'
 
+interface Arriving { state: 'downloading' | 'switching' | 'starting'; message: string; apps: string[]; running: number; total: number }
+
 export default function Apps() {
   const { slug } = useParams()
   const { user, status } = useApp()
   const { data, loading, reload } = useAsync(() => api.get<App[]>(`${V1}/apps`), [])
   const [settings, setSettings] = useState<Settings | null>(null)
   const [installing, setInstalling] = useState(false)
+  const [arriving, setArriving] = useState<Arriving | null>(null)
   useEffect(() => { if (user?.role === 'admin') api.get<Settings>(`${V1}/settings`).then(setSettings).catch(() => {}) }, [user])
+  // A Pocket Box still fetching apps (a Lite box's first boot): show how far, and list each app as it comes up.
+  useEffect(() => {
+    if (!status?.installer || slug) return
+    let stop = false, timer: number | undefined, seen = -1
+    const tick = async () => {
+      try {
+        const r = await api.get<{ status: { installing?: Arriving | null } }>(`${V1}/installer/status`)
+        const now = r.status.installing || null
+        if (stop) return
+        setArriving(now)
+        const n = now ? now.running : -1
+        if (n !== seen) { if (seen !== -1 || !now) reload(); seen = n }
+        if (now) timer = window.setTimeout(tick, 5000)
+      } catch { /* the store's own errors show when it is opened */ }
+    }
+    tick()
+    return () => { stop = true; window.clearTimeout(timer) }
+  }, [status?.installer, slug]) // eslint-disable-line react-hooks/exhaustive-deps
   if (slug) return <AppDetail slug={slug} onChange={reload} />
   if (loading && !data) return <Loading />
   const apps = data || []
@@ -27,6 +48,15 @@ export default function Apps() {
         {status?.installer && <button type="button" className="btn primary" onClick={() => setInstalling(true)}><Icon name="download" size={15} />Install app</button>}
       </>} />
       {installing && <InstallModal onClose={() => setInstalling(false)} onInstalled={reload} />}
+      {arriving && (
+        <div className="callout info mb">
+          <Icon name="download" size={15} />
+          <div className="grow">
+            <b>Installing {arriving.total === 1 ? 'an app' : `${arriving.total} apps`} on this box.</b> {arriving.message}. They appear here as they start.
+            {arriving.state === 'starting' && arriving.total > 0 && <div className="arriving-bar mt-s" role="progressbar" aria-valuemin={0} aria-valuemax={arriving.total} aria-valuenow={arriving.running}><span style={{ width: `${Math.round(100 * arriving.running / arriving.total)}%` }} /></div>}
+          </div>
+        </div>
+      )}
       {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">{status?.installer ? <>Press <b>Install app</b> to add one from the app catalog, or give</> : 'Give'} each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
         <div className="app-summary">
           <span className="pill">{apps.length} apps</span>

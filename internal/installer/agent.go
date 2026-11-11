@@ -89,6 +89,18 @@ type Status struct {
 	Source     string `json:"source"`     // catalog | github
 	SourceURL  string `json:"source_url"` // the catalog, or github.com/<owner>
 	Platform   string `json:"platform"`   // linux/amd64…
+	// Installing is a Pocket Box fetching apps it doesn't carry yet (a Lite box's first boot, or an
+	// Install): how far it got. Nil when nothing is on its way.
+	Installing *Installing `json:"installing,omitempty"`
+}
+
+// Installing is the progress of apps on their way to a Pocket Box.
+type Installing struct {
+	State   string   `json:"state"` // downloading | switching | starting
+	Message string   `json:"message"`
+	Apps    []string `json:"apps"`
+	Running int      `json:"running"`
+	Total   int      `json:"total"`
 }
 
 // Agent does the host-side work.

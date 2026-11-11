@@ -380,3 +380,7 @@ input.bare, textarea.bare { border-color: transparent; background: transparent; 
   .modal-backdrop.closing { animation-duration: .2s; }
   .modal-backdrop.closing .modal { animation: sheet-down .2s ease-in both; }
 }
+/* Apps arriving on a Pocket Box (Apps page): a thin bar of how many are running. */
+.arriving-bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; max-width: 22rem; }
+.arriving-bar > span { display: block; height: 100%; border-radius: inherit; background: currentColor; transition: width .4s ease; }
+

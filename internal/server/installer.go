@@ -161,6 +161,20 @@ func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"status": st, "apps": out, "running_job": running})
 }
 
+// handleInstallerStatus is the agent's status alone (no catalog), cheap enough to poll: on a Pocket
+// Box it says which apps are still on their way.
+func (s *Server) handleInstallerStatus(w http.ResponseWriter, r *http.Request) {
+	if s.installerOff(w, r) {
+		return
+	}
+	st, err := s.inst.Status(r.Context())
+	if err != nil {
+		s.installerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": st})
+}
+
 func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	if s.installerOff(w, r) {
 		return
@@ -295,7 +309,12 @@ func (s *Server) handleInstallJob(w http.ResponseWriter, r *http.Request) {
 
 // followInstall mirrors the agent's job and then does Core's part.
 func (s *Server) followInstall(j *installJob) {
-	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
+	// A Pocket Box may first download an app it doesn't carry; a big one on a slow line takes a while.
+	limit := 30 * time.Minute
+	if j.Kind == "install" {
+		limit = 3 * time.Hour
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, limit)
 	defer cancel()
 	defer s.pruneInstallJobs()
 	if j.Kind == "uninstall" || j.Kind == "update" {
