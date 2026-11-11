@@ -1412,3 +1412,28 @@ func TestMCPMathTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPKaraokeTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "karaoke" {
+			tools[op.Name] = op
+		}
+	}
+	if len(tools) != 14 || tools["pocket_karaoke_queue_song"] == nil || tools["pocket_karaoke_youtube_search"].Method != "GET" {
+		t.Fatalf("karaoke tools: %d", len(tools))
+	}
+	ok := map[string]any{"request_id": "0123456789abcdef", "id": 3, "data": map[string]any{"song_id": 12, "singer": "Ana"}}
+	if err := tools["pocket_karaoke_queue_song"].resolved.Validate(ok); err != nil {
+		t.Fatalf("queue_song refused: %v", err)
+	}
+	bad := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "x", "rotation": "random"}}
+	if tools["pocket_karaoke_plan_night"].resolved.Validate(bad) == nil {
+		t.Fatal("plan_night took an unknown rotation")
+	}
+	for name := range tools {
+		if strings.Contains(name, "delete") || strings.Contains(name, "end") || strings.Contains(name, "start") {
+			t.Fatalf("a tool may never start, end or delete: %s", name)
+		}
+	}
+}

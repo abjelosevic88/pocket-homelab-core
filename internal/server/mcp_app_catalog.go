@@ -1022,6 +1022,27 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	keep["values_text"].(map[string]any)["description"] = "The boxes as 'name = value; name = value' (box names from formulas)."
 	keep["title"].(map[string]any)["description"] = "What it is for, e.g. Bedroom, the trip to Split."
 	write("math", "keep_answer", "Work out a ready calculation (key or formula_id) and keep the answer in the person's kept answers.", "POST", "/runs", keep, "")
+	read("karaoke", "summary", "Get Pocket Karaoke at a glance: how many songs and nights, what was sung this week, the night on now (with its join code and how many wait) and the next one planned, with links.", "/summary", "")
+	read("karaoke", "songs", "List or search the person's karaoke songs (title, artist, language, where from: upload, youtube, music, files, link; whether they have words; best score). q searches title, artist and tags; favourite=1, no_words=1, book=ID, sort = title|artist|added|sung|plays.", "/songs", "q source language favourite no_words book sort limit")
+	read("karaoke", "song", "Read one song: its details, its words (LRC, timed or not) and who sang it with the scores.", "/songs/{id}", "")
+	read("karaoke", "nights", "List the person's karaoke nights: the live one first, then planned (with day, place, join code), then past ones with how many songs were sung and guests.", "/nights", "")
+	read("karaoke", "night", "Read one night: its details, what is on the big screen now, the queue in order (who sings what), songs asked for, guests and what was sung with the scores.", "/nights/{id}", "")
+	read("karaoke", "singers", "List the person's singers with how much they sang, their best and average score.", "/singers", "")
+	read("karaoke", "history", "List what was sung (newest first): song, singer, night or practice, score, cheers and stars. Filter by song, singer, night (ids), practice=1, from=YYYY-MM-DD.", "/performances", "song singer night practice from limit")
+	read("karaoke", "stats", "Karaoke numbers: the most sung songs and singers, songs sung per day, average and best score. period = month|year (empty = ever).", "/stats", "period")
+	read("karaoke", "search", "Search the person's karaoke: songs by title, artist or a line of their words, singers and nights.", "/search", "q limit")
+	read("karaoke", "day", "Read one day in Pocket Karaoke (nights and every song sung, with scores) — for the journal.", "/day/{date}", "")
+	read("karaoke", "youtube_search", "Search YouTube for karaoke videos to add (the person's own 'karaoke' word is added unless exact=1). Returns id, title, channel, length and whether it looks like a karaoke video (have = the song id when already added). Nothing is added.", "/youtube/search", "q exact")
+	ksong := textFields("url title artist lyrics tags notes")
+	ksong["url"].(map[string]any)["description"] = "A YouTube link (watch, youtu.be, shorts) or a link to a song file; with a url the title and artist come from it."
+	ksong["lyrics"].(map[string]any)["description"] = "The words as LRC ([mm:ss.xx] per line) or plain lines. Never invent lyrics; only words the person gave or that were found."
+	write("karaoke", "add_song", "Add a song to the person's karaoke library: a YouTube link (from youtube_search: https://youtu.be/ID) or a song file link — or a title with its words. The words are looked up by themselves when the person allows it. Returns the song (the one already there if it was added before).", "POST", "/songs", ksong, "")
+	knight := textFields("title starts_at place about").enum("rotation", "fair", "order").booleans("approve guest_youtube scores calendar").integers("per_guest autoplay")
+	knight["starts_at"].(map[string]any)["description"] = "Local date and time, YYYY-MM-DDTHH:MM."
+	write("karaoke", "plan_night", "Plan a karaoke night for the person (it starts when they press Start). Guests join on their phones with the code in the answer.", "POST", "/nights", knight, "title")
+	kq := textFields("singer note").integers("song_id singer_id key_shift").booleans("front")
+	kq["singer"].(map[string]any)["description"] = "The name shown in the queue, e.g. Ana or Ana & Marko."
+	write("karaoke", "queue_song", "Put one of the person's songs in a night's queue for someone (id = the night; song_id from songs). It goes round fairly unless front is true.", "POST", "/nights/{id}/queue", kq, "song_id")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").
