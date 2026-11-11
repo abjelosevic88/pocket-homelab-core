@@ -65,7 +65,7 @@ func arraySchema(item any) map[string]any {
 
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
-var mcpChangePosts = map[string]bool{"tasks_complete": true, "photolab_apply": true, "family_take_run": true, "family_done_chore": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
+var mcpChangePosts = map[string]bool{"printfarm_weigh_spool": true, "tasks_complete": true, "photolab_apply": true, "family_take_run": true, "family_done_chore": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
@@ -1075,6 +1075,31 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	kq := textFields("singer note").integers("song_id singer_id key_shift").booleans("front")
 	kq["singer"].(map[string]any)["description"] = "The name shown in the queue, e.g. Ana or Ana & Marko."
 	write("karaoke", "queue_song", "Put one of the person's songs in a night's queue for someone (id = the night; song_id from songs). It goes round fairly unless front is true.", "POST", "/nights/{id}/queue", kq, "song_id")
+	read("printfarm", "summary", "Get Pocket Print Farm at a glance: each 3D printer now (printing what, % done, time left, when it ends, the filament in it and how much is left), how many jobs wait, the week (done, failed, hours, grams) and filament running low, with links.", "/summary", "")
+	read("printfarm", "farm", "Every printer as it is right now: state (idle, printing, paused, done = waiting for the bed to be cleared, stopped, error, offline), the print on it with progress, time left and ends_at, temperatures, the loaded spool, and the next job it would take.", "/farm", "")
+	read("printfarm", "printers", "List the person's 3D printers (model, connection, bed size, materials, print hours, prints and failures).", "/printers", "archived")
+	read("printfarm", "printer", "Read one printer: its state now, upkeep (what is due), log book, last prints and the last 30 days.", "/printers/{id}", "")
+	read("printfarm", "queue", "List the print queue in order: what to print, how many (done of quantity), which printer or filament, for whom, by when, price. status = open (default) | done,cancelled | all.", "/jobs", "status")
+	read("printfarm", "models", "List or search the model library (STL, 3MF, OBJ, G-code): name, tags, size, the slicer's time and grams, how often printed. q searches names, tags, designer and file names; tag=, fav=1, sort = added|name|printed.", "/models", "q tag fav sort limit")
+	read("printfarm", "model", "Read one model: its files with what the slicer said (time, grams, layer height, settings), its prints, the settings that worked and the jobs queued for it.", "/models/{id}", "")
+	read("printfarm", "spools", "List the filament spools on the shelf: material, brand, colour, grams left of how many, where it is, the printer it is loaded in. material= filters; archived=1 includes empty ones.", "/spools", "material archived")
+	read("printfarm", "prints", "List prints, newest first: what, printer, status (printing, done, failed, cancelled), why it failed, time, grams, cost, rating. printer=, model=, status=done,failed, month=YYYY-MM, q=.", "/prints", "printer model status month q limit")
+	read("printfarm", "print", "Read one print: how it went (failure reason and notes), settings, time and filament against the slicer's estimate, what it cost (filament, electricity, wear) and a price to sell one at.", "/prints/{id}", "")
+	read("printfarm", "upkeep", "List printer upkeep: what each printer needs every so many print hours or days, what is due or soon, and the log book of upkeep and repairs.", "/upkeep", "printer")
+	read("printfarm", "stats", "3D printing numbers: by month (prints, hours, grams, cost), per printer, per material, most printed models, why prints failed, totals and the success rate. months = 1..36 (default 12).", "/stats", "months")
+	read("printfarm", "search", "Search the person's 3D printing: models (and their files), printers, filament, prints and queued jobs.", "/search", "q limit")
+	read("printfarm", "day", "Read one day in Pocket Print Farm (prints done, failed or started, upkeep done, models added) — for the journal.", "/day/{date}", "")
+	pjob := textFields("title material due_on for_whom notes").integers("model_id file_id printer_id filament_id quantity price")
+	pjob["due_on"].(map[string]any)["description"] = "The day it is needed by, YYYY-MM-DD."
+	pjob["price"].(map[string]any)["description"] = "What one piece is sold for, in cents of the person's currency (0 = not sold)."
+	pjob["model_id"].(map[string]any)["description"] = "A model from models; its newest G-code is used unless file_id is given."
+	write("printfarm", "add_job", "Put a print job in the person's queue: a model (model_id from models) or just a title, how many, a material (PLA, PETG…) or filament_id, a printer (empty = the first one free), for whom and by when. It is printed when the person starts it; this never starts a printer.", "POST", "/jobs", pjob, "")
+	pspool := textFields("bought_on location notes").integers("filament_id price count").numbers("initial_g left_g")
+	pspool["price"].(map[string]any)["description"] = "What one spool cost, in cents."
+	write("printfarm", "add_spool", "Put spools of a filament the person already has (filament_id from spools) on the shelf: how many, grams on each, price, where it is.", "POST", "/spools", pspool, "filament_id")
+	pweigh := textFields("note").numbers("gross_g left_g used_g")
+	pweigh["gross_g"].(map[string]any)["description"] = "The spool on a scale, with the empty spool."
+	write("printfarm", "weigh_spool", "Set how much filament is left on a spool (id): its weight on a scale (gross_g), the grams left (left_g), or grams used by a print not seen (used_g).", "POST", "/spools/{id}/weigh", pweigh, "")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").

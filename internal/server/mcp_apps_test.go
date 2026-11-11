@@ -1437,3 +1437,27 @@ func TestMCPKaraokeTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPPrintFarmTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "printfarm" {
+			tools[op.Name] = op
+		}
+	}
+	if len(tools) != 17 || tools["pocket_printfarm_add_job"] == nil || tools["pocket_printfarm_farm"].Method != "GET" {
+		t.Fatalf("printfarm tools: %d", len(tools))
+	}
+	ok := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"model_id": 4, "quantity": 2, "material": "PETG"}}
+	if err := tools["pocket_printfarm_add_job"].resolved.Validate(ok); err != nil {
+		t.Fatalf("add_job refused: %v", err)
+	}
+	if tools["pocket_printfarm_add_spool"].resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"count": 2}}) == nil {
+		t.Fatal("add_spool took no filament_id")
+	}
+	for name, op := range tools {
+		if strings.Contains(name, "start") || strings.Contains(name, "cancel") || strings.Contains(name, "control") || strings.Contains(name, "delete") || op.Method == "DELETE" {
+			t.Fatalf("a tool may never start, stop or delete: %s", name)
+		}
+	}
+}
