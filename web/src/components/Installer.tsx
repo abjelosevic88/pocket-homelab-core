@@ -4,6 +4,7 @@ import { bundledIcon } from '../lib/icons'
 import { formatVersion, shortName } from '../lib/format'
 import { Empty, Loading, Modal, Spinner, errMsg } from './ui'
 import { Icon } from './icons'
+import { useApp } from '../lib/app-context'
 
 // One-click install and removal of Pocket apps (the installer agent on the
 // server does the work; see docs/installer.md).
@@ -158,12 +159,14 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
   const avail = list.filter(a => !a.installed).length
   const updates = list.filter(behind).length
   const signed = cat?.status.source === 'catalog'
+  const box = cat?.status.source === 'box'
   return (
     <Modal title="Install an app" onClose={onClose} size="lg">
       <div className="stack tight">
         <p className="muted small" style={{ marginTop: 0 }}>
-          {signed ? <>Newest releases from the signed Pocket app catalog. </> : <>Newest releases from <a href={`https://github.com/${cat?.status.owner || ''}`} target="_blank" rel="noreferrer">github.com/{cat?.status.owner || '…'}</a>. </>}
-          One click pulls the release image, starts it in its own folder{cat?.status.proxy ? ', adds its HTTPS address' : ''} and connects it here: sign-in, links to your other apps and your phones.
+          {box ? <>Every Pocket app comes with this Pocket Box, and new ones arrive with its nightly updates. One click switches an app on and connects it here: sign-in, links to your other apps and your phones. Removing one switches it off; its data stays on the box, so installing it again brings everything back. </>
+            : <>{signed ? <>Newest releases from the signed Pocket app catalog. </> : <>Newest releases from <a href={`https://github.com/${cat?.status.owner || ''}`} target="_blank" rel="noreferrer">github.com/{cat?.status.owner || '…'}</a>. </>}
+          One click pulls the release image, starts it in its own folder{cat?.status.proxy ? ', adds its HTTPS address' : ''} and connects it here: sign-in, links to your other apps and your phones.</>}
         </p>
         <div className="row">
           <input className="grow" type="search" placeholder="Search apps" value={q} onChange={e => setQ(e.target.value)} autoFocus />
@@ -219,6 +222,7 @@ export function RemoveModal({ app, onClose, onRemoved }: { app: { slug: string; 
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [coreOnly, setCoreOnly] = useState(false)
+  const box = !!useApp().status?.box_system
   const { job } = useJob(jobId)
   // Leave the (now gone) app's page only once the result was read.
   const close = job?.state === 'done' ? onRemoved : onClose
@@ -240,13 +244,17 @@ export function RemoveModal({ app, onClose, onRemoved }: { app: { slug: string; 
       </>}>
       {!jobId ? (
         <div className="stack tight">
-          <p style={{ marginTop: 0 }}>This takes <b>{app.name}</b> off the server:</p>
-          <ul className="inst-steps">
+          <p style={{ marginTop: 0 }}>This takes <b>{app.name}</b> off the {box ? 'box' : 'server'}:</p>
+          {box ? <ul className="inst-steps">
+            <li>switches it off: it no longer runs or starts with the box</li>
+            <li>keeps its data on the box — installing it again (Apps → Install an app) brings everything back</li>
+            <li>unregisters it here: its sign-in, service entry, webhooks and app links</li>
+          </ul> : <ul className="inst-steps">
             <li>stops and deletes its containers</li>
             <li>moves its folder, data included, to the archive — nothing is deleted, and installing it again brings the data back</li>
             {app.public_url && <li>removes its HTTPS site <span className="inline-code">{app.public_url.replace(/^https?:\/\//, '')}</span></li>}
             <li>unregisters it here: its sign-in, service entry, webhooks and app links</li>
-          </ul>
+          </ul>}
           {err && <div className="callout danger"><Icon name="alert" size={15} /><span>{err}</span></div>}
         </div>
       ) : <JobView job={job} />}

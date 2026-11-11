@@ -181,7 +181,11 @@ export function PasswordPanel({ st, onSaved }: { st: BoxSystem; onSaved?: () => 
   }
   return (
     <form onSubmit={save} className="stack tight">
-      <p className="muted small">For the account <code>pocket</code> at the box's own screen and keyboard (or serial cable), for repairs. {st.password_set ? 'A password is set.' : 'Until you set one, nobody can sign in there.'}</p>
+      <dl className="kv">
+        <dt>Username</dt><dd><code>pocket</code></dd>
+        <dt>Password</dt><dd>{st.password_set ? 'set — change it below' : <span className="muted">none yet: the login is locked until you set one</span>}</dd>
+      </dl>
+      <p className="muted small">This is not your Pocket account. It is only for the login on the box's own screen and keyboard (or a serial cable), for repairs, and it can change anything on the box, so give it a password of its own. The box's screen shows the username and whether a password is set, never the password.</p>
       <div className="row wrap">
         <input type="password" placeholder="New password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" minLength={8} style={{ flex: '1 1 180px' }} />
         <input type="password" placeholder="Again" value={again} onChange={e => setAgain(e.target.value)} autoComplete="new-password" minLength={8} style={{ flex: '1 1 180px' }} />

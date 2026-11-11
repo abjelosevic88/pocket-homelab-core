@@ -378,7 +378,7 @@ func (s *Server) awaitRegistration(ctx context.Context, j *installJob) {
 	}
 	j.mu.Lock()
 	if j.Result != nil {
-		j.Result.Warnings = append(j.Result.Warnings, "The app runs but has not registered with Pocket Core yet. Check its log: docker logs "+j.Result.Container)
+		j.Result.Warnings = append(j.Result.Warnings, "The app runs but has not registered with Pocket Core yet. Check its log: "+logHint(j.Slug, j.Result))
 	}
 	j.mu.Unlock()
 	j.finish("done", "")
@@ -411,10 +411,18 @@ func (s *Server) awaitVersion(ctx context.Context, j *installJob, res *installer
 	}
 	j.mu.Lock()
 	if j.Result != nil {
-		j.Result.Warnings = append(j.Result.Warnings, "The new version runs but has not reported to Pocket Core yet. Check its log: docker logs "+j.Result.Container)
+		j.Result.Warnings = append(j.Result.Warnings, "The new version runs but has not reported to Pocket Core yet. Check its log: "+logHint(j.Slug, j.Result))
 	}
 	j.mu.Unlock()
 	j.finish("done", "")
+}
+
+// logHint is where an app's log is: its container, or on a Pocket Box (no container) its systemd unit.
+func logHint(slug string, res *installer.Result) string {
+	if res != nil && res.Container != "" {
+		return "docker logs " + res.Container
+	}
+	return "journalctl -u pocket-" + slug
 }
 
 func formatVer(v string) string {

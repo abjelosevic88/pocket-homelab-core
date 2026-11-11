@@ -12,7 +12,7 @@ const STEPS: Step[] = [
   { id: 'time', icon: 'clock', title: 'Time zone', sub: 'So reminders, schedules and “today” are right in every app.' },
   { id: 'network', icon: 'wifi', title: 'Network', sub: 'The box is online by cable. Join Wi-Fi too if it should work without one.' },
   { id: 'remote', icon: 'globe', title: 'Away from home', sub: 'Reach the box from your phone and laptop anywhere, through Tailscale.' },
-  { id: 'console', icon: 'terminal', title: 'Console password', sub: 'Only for repairs at the box itself. Leave it locked if you never plug in a screen.' },
+  { id: 'console', icon: 'terminal', title: 'Console password', sub: 'The login on the box\'s own screen (username pocket), only for repairs. Not your Pocket account. Leave it locked if you never plug in a screen.' },
   { id: 'disk', icon: 'disk', title: 'Your data', sub: 'How the box keeps it safe.' },
 ]
 
