@@ -1461,3 +1461,34 @@ func TestMCPPrintFarmTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPGameBuilderTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "gamebuilder" {
+			tools[op.Name] = op
+		}
+	}
+	if len(tools) != 12 || tools["pocket_gamebuilder_make_game"] == nil || tools["pocket_gamebuilder_plays"].Method != "GET" {
+		t.Fatalf("gamebuilder tools: %d", len(tools))
+	}
+	ok := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"template": "quiz", "title": "Animals", "size": "tall",
+		"questions": []any{map[string]any{"q": "How many legs does a spider have?", "answers": []any{"Eight", "Six", "Ten"}}}}}
+	if err := tools["pocket_gamebuilder_make_game"].resolved.Validate(ok); err != nil {
+		t.Fatalf("make_game refused: %v", err)
+	}
+	if tools["pocket_gamebuilder_make_game"].resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"template": "chess"}}) == nil {
+		t.Fatal("make_game took a template that does not exist")
+	}
+	if tools["pocket_gamebuilder_make_game_from_idea"].resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "x"}}) == nil {
+		t.Fatal("make_game_from_idea took no idea")
+	}
+	for name, op := range tools {
+		if op.Kind == "change" || op.Method == "DELETE" || op.Method == "PUT" || strings.Contains(name, "share") || strings.Contains(op.Path, "share") {
+			t.Fatalf("a tool may only read and add, never share, change or delete: %s", name)
+		}
+		if strings.Join(op.Omit, " ") != "doc" {
+			t.Fatalf("%s: the game itself is not left out: %v", name, op.Omit)
+		}
+	}
+}

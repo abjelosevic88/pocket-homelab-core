@@ -1100,6 +1100,33 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	pweigh := textFields("note").numbers("gross_g left_g used_g")
 	pweigh["gross_g"].(map[string]any)["description"] = "The spool on a scale, with the empty spool."
 	write("printfarm", "weigh_spool", "Set how much filament is left on a spool (id): its weight on a scale (gross_g), the grams left (left_g), or grams used by a print not seen (used_g).", "POST", "/spools/{id}/weigh", pweigh, "")
+	// Pocket Game Builder: the game itself (doc: levels, objects, rules) is large and of no use to the assistant, so it is
+	// left out of every answer; a write never shares a game.
+	gbOps := []*mcpAppTool{
+		read("gamebuilder", "summary", "Get Pocket Game Builder at a glance: how many games the person made, the latest ones (scenes, rules, shared or not, plays by others, plays this week, open to-dos, a play link when shared) and this week's plays, with links.", "/summary", ""),
+		read("gamebuilder", "games", "List the person's games, newest change first: title, template, shared (share_on, share_url), plays, best score, how many scenes, objects and rules, open to-dos, favourite. filter = shared | fav | archived; q searches titles and descriptions.", "/games", "filter q limit"),
+		read("gamebuilder", "game", "Read one game (id from games): title, description, template, whether it is shared and its play link, plays and best score, how many scenes, objects and rules. The game itself (levels, objects, rules) is left out.", "/games/{id}", ""),
+		read("gamebuilder", "plays", "Read who played one game (id) and how: the plays (who, the person's own test plays or others', score, seconds, won or lost, level), the best scores table, plays per day, and whether a low score is best.", "/games/{id}/plays", ""),
+		read("gamebuilder", "todos", "List one game's to-do list (id = the game): what is still to make or fix, done or not, with a link to the task when it went to Pocket Tasks.", "/games/{id}/todos", ""),
+		read("gamebuilder", "templates", "List the templates a new game can start from (platformer, maze, shooter, bricks, catch, quiz, blank): what each is and its screen size.", "/templates", ""),
+		read("gamebuilder", "stats", "Game numbers: plays per day, total plays, the most played games with their best scores, how many games, and the pictures, sounds and music in the library. days = how many days back (default 30).", "/stats", "days"),
+		read("gamebuilder", "search", "Search the person's games (titles, descriptions and the words in them) and their library (pictures, sounds, music).", "/search", "q limit"),
+		read("gamebuilder", "day", "Read one day in Pocket Game Builder (games started, games worked on, the person's test plays, plays by others and which games they played) — for the journal.", "/day/{date}", ""),
+	}
+	gbQuestion := objectSchema(mcpFields{"q": map[string]any{"type": "string", "maxLength": 500},
+		"answers": map[string]any{"type": "array", "items": map[string]any{"type": "string", "maxLength": 200}, "minItems": 2, "maxItems": 6, "description": "The right answer first, then the wrong ones."}}, "q answers")
+	gbNew := textFields("title description").enum("template", "platformer", "maze", "shooter", "bricks", "catch", "quiz", "blank").enum("size", "wide", "tall", "square", "big").field("questions", arraySchema(gbQuestion))
+	gbNew["questions"].(map[string]any)["description"] = "For a quiz: the questions, each with the right answer first and then the wrong ones (the game mixes them)."
+	gbIdea := textFields("idea")
+	gbIdea["idea"].(map[string]any)["description"] = "The game in a sentence or two, e.g. a cat catching falling fish, faster each level."
+	gbOps = append(gbOps,
+		write("gamebuilder", "make_game", "Make a new game for the person from a template (platformer, maze, shooter, bricks, catch, quiz or blank), with a title, a screen size and, for a quiz, the questions. It is the person's to change and play; this never shares it.", "POST", "/games", gbNew, "template"),
+		write("gamebuilder", "make_game_from_idea", "Make a new game from an idea in plain words: Pocket AI picks the template and fills it in. It is the person's to try and change; this never shares it.", "POST", "/ai/game", gbIdea, "idea"),
+		write("gamebuilder", "add_todo", "Put a line on one game's to-do list (id = the game): something to make or fix in it.", "POST", "/games/{id}/todos", textFields("text"), "text"),
+	)
+	for _, op := range gbOps {
+		op.Omit = []string{"doc"}
+	}
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").
