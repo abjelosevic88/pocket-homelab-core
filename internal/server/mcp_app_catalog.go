@@ -819,6 +819,38 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		op.Omit = []string{"pre_context", "post_context", "hours"}
 	}
 
+	// Pocket Errors → Logs: every line this box's containers and services (the systemd journal: system and user units, the kernel)
+	// wrote, for an admin of Errors (others get 403). Times are unix milliseconds; level = that level and worse.
+	logSpan := map[string]any{"type": "string", "pattern": `^\d{1,4}(m|h|d)$`, "description": "How far back: 30m, 6h, 24h, 7d (default 24h)."}
+	logLevel := map[string]any{"type": "string", "enum": []string{"debug", "info", "warning", "error", "fatal"}, "description": "This level and worse."}
+	logTools := []*mcpAppTool{
+		read("errors", "logs", "Search this box's log lines, newest first (an admin's): q = words that must all be in the line (\"a phrase\" in quotes, -word to leave out), source = a source id, container or unit name (pocket-notes, caddy, user:pocket-ai.service; comma separated), group = pocket|docker|system|user|kernel, level = that level and worse, since = how far back (24h, 7d) or from/to (unix ms or RFC 3339), pattern = a pattern id from pocket_errors_log_patterns, before = a line id to page on, limit (max 1000). Lines: id, at (unix ms), source, source_label, group, level, msg, attrs (the fields it logged; Caddy requests have method, host, uri, status, ms). more = there are older ones.", "/logs", "q source group level since from to pattern before limit"),
+		read("errors", "log_overview", "Get how much this box logged in a span (range = 1h, 24h, 7d…): totals by level and the same span before (previous), bytes written, the sources with their lines, errors and warnings, busiest first. Use it for \"what is noisy\", \"what is failing\" or \"did something change\".", "/logs/overview", "range"),
+		read("errors", "log_patterns", "List the messages that repeat (values like numbers, ids and addresses taken out): sort = top (most lines), errors (warnings and worse) or new (first seen in the span: what changed); range, source, limit. Each: id (use as pattern in pocket_errors_logs), source_label, level, template, sample, n (in the span), share, first_at, last_at, new.", "/logs/patterns", "range sort source limit"),
+		read("errors", "log_web", "Get the web traffic Caddy logged in a span (range): total requests, errors (5xx), client (4xx), slow (over a second), avg_ms and per site (host): n, ok, redirects, client_errors, server_errors, slow, avg_ms.", "/logs/web", "range"),
+		read("errors", "log_sources", "List every log source (containers and journal units) with what is kept of it (keep = all, warn, error, count) and its lines, errors and warnings in the span (range).", "/logs/sources", "range"),
+		read("errors", "log_context", "Read the lines its source wrote around one line (id from pocket_errors_logs; n before and after, default 25), oldest first.", "/logs/lines/{id}/context", "n"),
+		read("errors", "issue_logs", "Read what an issue's container wrote two minutes either side of an event (id = the issue; event = an event id, default the newest): lines oldest first, hit = the line nearest the event, source.", "/issues/{id}/logs", "event"),
+	}
+	for _, name := range []string{"since"} {
+		errQuery(logTools[0], name, logSpan)
+	}
+	errQuery(logTools[0], "level", logLevel)
+	errQuery(logTools[0], "limit", map[string]any{"type": "integer", "minimum": 1, "maximum": 1000})
+	errQuery(logTools[1], "range", logSpan)
+	errQuery(logTools[2], "range", logSpan)
+	errQuery(logTools[2], "sort", map[string]any{"type": "string", "enum": []string{"top", "errors", "new"}})
+	errQuery(logTools[3], "range", logSpan)
+	errQuery(logTools[4], "range", logSpan)
+	for _, op := range logTools {
+		compileMCPAppTool(op)
+	}
+	// the bars behind the charts never reach the assistant
+	logTools[1].Omit = []string{"volume", "heat", "groups", "spark"}
+	logTools[2].Omit = []string{"spark"}
+	logTools[3].Omit = []string{"classes", "ms", "spark", "error_spark"}
+	logTools[4].Omit = []string{"spark"}
+
 	// Pocket Wardrobe: the person's clothes (items: category top|knit|bottom|dress|outerwear|shoes|bag|accessory|active|other, kind such as
 	// shirt, jeans, sneakers, coat; colours with a family name; warmth 0-5, formality 1-5 = sporty…black tie; status ready|laundry|repair|lent|stored),
 	// saved outfits (item_ids), wears (what was worn on a day, or planned when planned=true), packing lists and ideas worth buying.

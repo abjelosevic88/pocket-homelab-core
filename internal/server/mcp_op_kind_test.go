@@ -19,7 +19,7 @@ func TestMCPOpKind(t *testing.T) {
 		"pocket_rentals_today": "read", "pocket_rentals_repairs": "read", "pocket_rentals_report_repair": "add", "pocket_rentals_add_note": "add",
 		"pocket_wardrobe_today": "read", "pocket_wardrobe_suggest": "read", "pocket_wardrobe_add_item": "add", "pocket_wardrobe_log_outfit": "add",
 		"pocket_family_today": "read", "pocket_family_add_items": "add", "pocket_family_add_run": "add", "pocket_family_take_run": "change", "pocket_family_done_chore": "change",
-		"pocket_errors_issues": "read", "pocket_errors_latest_event": "read", "pocket_errors_update_issue": "change",
+		"pocket_errors_issues": "read", "pocket_errors_latest_event": "read", "pocket_errors_update_issue": "change", "pocket_errors_logs": "read", "pocket_errors_log_overview": "read",
 		"pocket_map_features": "read", "pocket_map_day": "read", "pocket_map_add_spot": "add",
 		"pocket_trails_today": "read", "pocket_trails_get_route": "read", "pocket_trails_plan_outing": "add", "pocket_trails_outing_status": "change",
 		"pocket_tables_summary": "read", "pocket_tables_rows": "read", "pocket_tables_add_row": "add",

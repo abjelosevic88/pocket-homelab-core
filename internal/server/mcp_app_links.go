@@ -98,6 +98,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"family/lists": {"/shopping", "/shopping/{id}"}, "family/school": {"/school", ""}, "family/letters": {"/school", "/school/letters/{id}"},
 	"family/posts": {"/board", ""}, "family/info": {"/family", ""}, "family/search": {"/", ""}, "family/day": {"/week", ""},
 	"errors/summary": {"/", ""}, "errors/issues": {"/", "/issues/{id}"}, "errors/projects": {"/projects", "/projects/{id}"}, "errors/search": {"/", ""}, "errors/day": {"/", ""},
+	"errors/logs": {"/logs/explore", ""}, "errors/log_overview": {"/logs", ""}, "errors/log_patterns": {"/logs/patterns", ""}, "errors/log_web": {"/logs/web", ""}, "errors/log_sources": {"/logs/sources", ""},
 	"trails/summary": {"/", ""}, "trails/today": {"/", ""}, "trails/routes": {"/routes", "/routes/{id}"}, "trails/outings": {"/outings", "/outings/{id}"},
 	"trails/day": {"/outings", ""}, "trails/search": {"/", ""}, "trails/stats": {"/year", ""}, "trails/gear": {"/gear", ""}, "trails/packs": {"/gear", ""},
 	"blog/stats": {"/readers", ""}, "blog/day": {"/posts", ""}, "blog/tags": {"/posts", ""}, "blog/ideas": {"/", ""},
