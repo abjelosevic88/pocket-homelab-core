@@ -1386,3 +1386,29 @@ func TestMCPVaultTools(t *testing.T) {
 		t.Fatalf("vault tools: only the read-only overview, got %d", len(tools))
 	}
 }
+
+func TestMCPMathTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "math" {
+			tools[op.Name] = op
+		}
+	}
+	calc := tools["pocket_math_calculate"]
+	if len(tools) != 14 || calc == nil || calc.Method != "GET" || tools["pocket_math_run"] == nil || tools["pocket_math_make_notebook"] == nil {
+		t.Fatalf("math tools: %d", len(tools))
+	}
+	ok := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "Trip", "cells": []any{map[string]any{"kind": "calc", "body": "2 * 320 km"}}}}
+	if err := tools["pocket_math_make_notebook"].resolved.Validate(ok); err != nil {
+		t.Fatalf("make_notebook refused: %v", err)
+	}
+	bad := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "x", "cells": []any{map[string]any{"kind": "video"}}}}
+	if tools["pocket_math_make_notebook"].resolved.Validate(bad) == nil {
+		t.Fatal("make_notebook took an unknown cell kind")
+	}
+	for name := range tools {
+		if strings.Contains(name, "share") || strings.Contains(name, "delete") {
+			t.Fatalf("a tool may never share or delete: %s", name)
+		}
+	}
+}

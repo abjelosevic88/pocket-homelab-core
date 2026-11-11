@@ -56,6 +56,7 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"forum/summary": {"/", ""}, "forum/forums": {"/forums", "/f/{id}"}, "forum/topics": {"/", "/t/{id}"}, "forum/search": {"/search", ""}, "forum/notifications": {"/inbox", ""},
 	"forum/bookmarks": {"/bookmarks", ""}, "forum/events": {"/events", "/t/{id}"}, "forum/day": {"/", ""},
 	"vault/overview": {"/health", ""},
+	"math/summary":   {"/", ""}, "math/formulas": {"/formulas", ""}, "math/answers": {"/answers", ""}, "math/notebooks": {"/notebooks", "/n/{id}"}, "math/search": {"/notebooks", ""}, "math/day": {"/", ""}, "math/practice": {"/practice", ""},
 	"slides/summary": {"/", ""}, "slides/decks": {"/", "/d/{id}"}, "slides/shows": {"/talks", ""}, "slides/search": {"/", ""}, "slides/day": {"/talks", ""}, "slides/layouts": {"/library", ""},
 	"capsule/summary": {"/", ""}, "capsule/capsules": {"/", "/c/{id}"}, "capsule/predictions": {"/predictions", ""}, "capsule/search": {"/", ""}, "capsule/events": {"/", ""},
 	"capsule/day": {"/", ""}, "capsule/templates": {"/new", ""},

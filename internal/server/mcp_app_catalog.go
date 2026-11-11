@@ -1001,6 +1001,27 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	addSlide["after"].(map[string]any)["description"] = "Put it after this slide id; without it, at the end."
 	write("slides", "add_slide", "Add one slide to one of the person's decks.", "POST", "/decks/{id}/slides", addSlide, "layout")
 	write("slides", "update_slide", "Change the supplied fields of a slide this app made (slides the person made themselves are left alone).", "PUT", "/slides/{id}", slide, "")
+	read("math", "summary", "Get Pocket Math at a glance: notebooks, own calculations, kept answers and today's practice (each child and the person against the daily goal), with links.", "/summary", "")
+	read("math", "calculate", "Work out sums exactly with Pocket Math's calculator — use it instead of doing arithmetic yourself. Units (5 km + 300 m, 60 mph to km/h, 6.5 L/100km to mpg, 3 kW * 2 h * 0.19 BAM/kWh), money with the European Central Bank's rates (100 EUR in BAM, $20 + €15), percentages (20% of 80, 50 + 10%, 10% off 80), dates (2026-12-25 - today, today + 3 weeks), names on earlier lines (x = 4 then x^2 + 1, several lines separated by newlines), equations solved (2x + 3 = 11, solve(x^2 = 9)), statistics (mean(…), sd(…)), loans (pmt(4%/12, 240, 150000 EUR)), integral(x^2, x, 0, 3), and 'to fraction|hex|%'. result.text is the answer as the person reads it; result.number and result.unit the value. angle = deg (default) or rad for sin/cos/tan.", "/calculate", "q angle")
+	read("math", "convert", "Convert an amount between units or currencies (value, from, to), e.g. 5 km to mi, 180 °C to °F, 100 EUR to BAM.", "/convert", "value from to")
+	read("math", "formulas", "List the ready calculations: the person's own (mine) and the built-ins (library: paint, floor, wallpaper, loan, savings, vat, tip, trip_fuel, bmi, calories, pace, days_until, quadratic, circle and more), each with its key or id, the boxes to fill in (name, label, unit, example) and the answers.", "/formulas", "q")
+	read("math", "run", "Work out one ready calculation without keeping it: key (a built-in) or formula_id (the person's own), and values as 'name = value; name = value' using the box names from formulas (a bare number takes the box's unit; omitted boxes use their example). Returns every answer and the main one.", "/run", "key formula_id values")
+	read("math", "answers", "List the answers the person kept from ready calculations (newest first): what for, what was filled in, the answers.", "/runs", "key formula_id limit")
+	read("math", "notebooks", "List the person's maths notebooks (title, folder, first line, kinds of cells). q searches titles and sums.", "/notebooks", "q subject archived")
+	read("math", "notebook", "Read one notebook: every cell in order — calculations with the answer of each line (results), text, graphs (data.exprs), geometry, tables of data (data.columns) and equations.", "/notebooks/{id}", "")
+	read("math", "search", "Search the person's notebooks, calculations and kept answers.", "/search", "q limit")
+	read("math", "day", "Read one day in Pocket Math (notebooks worked on, answers kept, practice rounds) — for the journal.", "/day/{date}", "")
+	read("math", "practice", "How practice goes: per person (the person and each child) today against the goal, the streak, the last 30 days and accuracy per skill; recent rounds. learner = one child's name only.", "/practice", "learner limit")
+	mcell := textFields("title body").enum("kind", "calc", "text")
+	mcell["body"].(map[string]any)["description"] = "For calc: one sum per line in Pocket Math's calculator syntax (as for calculate; names set on a line are known on the lines and cells below; 'Label: 450 EUR' lines and 'total'). For text: Markdown words."
+	nbook := textFields("title subject about source_ref").field("cells", arraySchema(objectSchema(mcell, "kind")))
+	nbook["subject"].(map[string]any)["description"] = "A folder, like Home, Money, School, Travel."
+	write("math", "make_notebook", "Make a maths notebook for the person with calculation and text cells; Pocket Math works every line out. Returns it with its link.", "POST", "/notebooks", nbook, "title")
+	write("math", "add_cell", "Add a calculation or text cell at the end of one of the person's notebooks.", "POST", "/notebooks/{id}/cells", mcell, "kind")
+	keep := textFields("key values_text title note").integers("formula_id")
+	keep["values_text"].(map[string]any)["description"] = "The boxes as 'name = value; name = value' (box names from formulas)."
+	keep["title"].(map[string]any)["description"] = "What it is for, e.g. Bedroom, the trip to Split."
+	write("math", "keep_answer", "Work out a ready calculation (key or formula_id) and keep the answer in the person's kept answers.", "POST", "/runs", keep, "")
 	read("jobs", "lookup", "Find the jobs connected to one person (email, e.g. a recruiter) or one company: for a contact from another app. Give email, company or both.", "/lookup", "email company")
 	job := textFields("title company location url posting currency apply_by stage contact_name contact_email notes next_action next_due note").
 		numbers("min_amount max_amount").integers("excitement").
