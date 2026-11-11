@@ -164,7 +164,7 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
     <Modal title="Install an app" onClose={onClose} size="lg">
       <div className="stack tight">
         <p className="muted small" style={{ marginTop: 0 }}>
-          {box ? <>Every Pocket app comes with this Pocket Box, and new ones arrive with its nightly updates. One click switches an app on and connects it here: sign-in, links to your other apps and your phones. Removing one switches it off; its data stays on the box, so installing it again brings everything back. </>
+          {box ? <>Every Pocket app is ready for this Pocket Box, and new ones arrive with its nightly updates. One click installs an app and connects it here: sign-in, links to your other apps and your phones. One the box doesn't carry yet (Pocket Box Lite, or a box set up with a few bundles) is downloaded first, which takes a few minutes. Removing one switches it off; its data stays on the box, so installing it again brings everything back. </>
             : <>{signed ? <>Newest releases from the signed Pocket app catalog. </> : <>Newest releases from <a href={`https://github.com/${cat?.status.owner || ''}`} target="_blank" rel="noreferrer">github.com/{cat?.status.owner || '…'}</a>. </>}
           One click pulls the release image, starts it in its own folder{cat?.status.proxy ? ', adds its HTTPS address' : ''} and connects it here: sign-in, links to your other apps and your phones.</>}
         </p>
