@@ -256,6 +256,7 @@ func (s *Server) Router() http.Handler {
 			r.Use(s.requireAuth)
 			r.Post("/auth/logout", s.handleLogout)
 			r.Get("/auth/me", s.handleMe)
+			r.Post("/auth/device/web-session", s.handleDeviceWebSession)
 			r.Put("/auth/me", s.handleUpdateMe)
 			r.Post("/auth/introspect", s.handleIntrospect)
 			r.Post("/auth/subject", s.handleSubject)

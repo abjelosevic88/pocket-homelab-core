@@ -23,6 +23,7 @@ See [MCP setup, tools and examples](mcp.md).
 | GET | `/auth/status` | – | `needs_setup`, `auth_mode`, `authenticated`, `user`, `version`, `title`, `box_name` |
 | POST | `/auth/setup` · `/auth/login` · `/auth/logout` | – | `{email, password, name, box_name}` for setup |
 | GET/PUT | `/auth/me` | anyone | the calling principal (`kind`, `user`, `app`, `device`); PUT `{name, password, current_password}` |
+| POST | `/auth/device/web-session` | device | a paired device (`pcd_`) opens a Core web session for its owner → `{cookie, session, secure, expires_at, domain, base_url}`; a native app puts the cookie in its web views so Pocket apps open signed in (no login page, no passkey in a web view). Other callers get `403` |
 | POST | `/auth/introspect` | app, admin | `{token}` → `{active, kind, scope, user, device, app}`; when an app asks about a person outside the audience of the service mirroring it, `{active: false, reason: "not_in_audience"}` |
 | GET/POST/DELETE | `/tokens`, `/tokens/{id}` | user | personal access tokens; POST returns `{token, secret}` once |
 | GET/POST/PUT/DELETE | `/users`, `/users/{id}` | admin | `{email, name, password, role, disabled}`; creating a person runs every connector set to *create accounts for new people* in the background |
