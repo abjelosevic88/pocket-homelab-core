@@ -97,6 +97,7 @@ export function NetworkPanel({ st, onChanged }: { st: BoxSystem; onChanged?: () 
   const [pick, setPick] = useState<WifiNetwork | null>(null)
   const [pw, setPw] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [all, setAll] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const wifi = st.network.wifi
@@ -115,6 +116,10 @@ export function NetworkPanel({ st, onChanged }: { st: BoxSystem; onChanged?: () 
       setPick(null); setPw(''); onChanged?.(); scan()
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
+  // Strongest first (the connected one on top); a long list shows the few nearest until asked.
+  const FEW = 6
+  const sorted = useMemo(() => [...(nets || [])].sort((a, b) => Number(b.active) - Number(a.active) || b.signal - a.signal), [nets])
+  const shown = all ? sorted : sorted.filter((n, k) => k < FEW || n.ssid === pick?.ssid)
   const cable = st.network.addresses.filter(a => !a.interface.startsWith('w'))
   const air = st.network.addresses.filter(a => a.interface.startsWith('w'))
   return (
@@ -137,7 +142,7 @@ export function NetworkPanel({ st, onChanged }: { st: BoxSystem; onChanged?: () 
         {!nets && scanning && <div className="box-wifi-list">{[0, 1, 2].map(n => <div key={n} className="box-wifi skeleton" />)}</div>}
         {nets && !nets.length && <p className="muted small">No networks in range.</p>}
         {nets && nets.length > 0 && <div className="box-wifi-list">
-          {nets.map(n => (
+          {shown.map(n => (
             <div key={n.ssid} className={`box-wifi-item ${pick?.ssid === n.ssid ? 'on' : ''}`}>
               <button type="button" className="box-wifi" onClick={() => { setPick(pick?.ssid === n.ssid ? null : n); setPw(''); setErr('') }} disabled={n.active} aria-expanded={pick?.ssid === n.ssid}>
                 <Signal pct={n.signal} />
@@ -153,6 +158,8 @@ export function NetworkPanel({ st, onChanged }: { st: BoxSystem; onChanged?: () 
               </form>}
             </div>
           ))}
+          {sorted.length > shown.length && <button type="button" className="btn sm ghost box-wifi-more" onClick={() => setAll(true)}><Icon name="chevron-down" size={14} />Show all {sorted.length} networks</button>}
+          {all && sorted.length > FEW && <button type="button" className="btn sm ghost box-wifi-more" onClick={() => setAll(false)}><Icon name="chevron-up" size={14} />Show fewer</button>}
         </div>}
         <p className="muted small">Join while the cable is still in. The box keeps using the cable too if you leave it plugged in.</p>
       </div>}
