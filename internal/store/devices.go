@@ -18,6 +18,8 @@ type Device struct {
 	LastSeenAt  string `json:"last_seen_at,omitempty"`
 	LastIP      string `json:"last_ip"`
 	CreatedAt   string `json:"created_at"`
+	// Push is the device's Pocket Hub notifications (nil = never turned on); filled by ListDevices.
+	Push *DevicePush `json:"push,omitempty"`
 }
 
 const deviceCols = `id, user_id, name, platform, token_prefix, last_seen_at, last_ip, created_at`
@@ -53,7 +55,18 @@ func (s *Store) ListDevices(ctx context.Context, userID int64) ([]Device, error)
 		}
 		out = append(out, *d)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	push, err := s.pushByDevice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Push = push[out[i].ID]
+	}
+	return out, nil
 }
 
 // GetDevice loads by id.

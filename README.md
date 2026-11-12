@@ -489,6 +489,7 @@ Report anything you find privately before opening an issue.
 | [docs/platform-contract.md](docs/platform-contract.md) | upgrade order, permissions, identity, retries, validation and remaining delivery boundaries |
 | [docs/events.md](docs/events.md) | publishing, SSE, webhooks and signatures |
 | [docs/pairing.md](docs/pairing.md) | the QR flow and the profile format |
+| [docs/push.md](docs/push.md) | notifications to Pocket Hub through the Pocket Push relay |
 | [docs/oidc.md](docs/oidc.md) | endpoints, claims, relying-party recipes |
 | [docs/links.md](docs/links.md) | App links: one Pocket app acting for a person in another (`uses` / `offers`, `pcx_` tokens, per-person switches) |
 | [docs/connectors.md](docs/connectors.md) | Core acting on third-party apps: accounts, sign-in, events (Immich first); how to write one |

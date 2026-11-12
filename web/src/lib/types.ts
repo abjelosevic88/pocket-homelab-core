@@ -17,7 +17,8 @@ export interface Service {
 }
 export interface Credential { service: Service; url: string; fields: Record<string, string>; set: boolean; source?: 'user' | 'connector'; visible: boolean }
 export interface AppChoice { slot: string; title: string; env_key: string; options: { value: string; name: string; type: string }[]; available: Record<string, boolean>; choice: string; effective: string; explicit: boolean }
-export interface Device { id: number; user_id: number; name: string; platform: string; token_prefix: string; last_seen_at?: string; last_ip: string; created_at: string }
+export interface DevicePush { enabled: boolean; sound: boolean; last_sent_at?: string; last_error?: string }
+export interface Device { id: number; user_id: number; name: string; platform: string; token_prefix: string; last_seen_at?: string; last_ip: string; created_at: string; push?: DevicePush }
 export interface Event { id: number; topic: string; source: string; subject: string; payload: unknown; created_at: string }
 export interface Topic { topic: string; count: number; last: string }
 export interface Webhook { id: number; app_id?: number; name: string; url: string; topics: string; has_secret: boolean; enabled: boolean; created_at: string }

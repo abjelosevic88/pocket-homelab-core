@@ -29,7 +29,7 @@ export default function Devices() {
         <Card flush><table className="table">
           <thead><tr><th>Device</th>{admin && <th>User</th>}<th>Token</th><th>Last seen</th><th>Paired</th><th></th></tr></thead>
           <tbody>{list.map(d => <tr key={d.id}>
-            <td><b>{d.name}</b> <span className="muted small">{d.platform}</span></td>
+            <td><b>{d.name}</b> <span className="muted small">{d.platform}</span><div style={{ marginTop: 3 }}><PushBadge push={d.push} /></div></td>
             {admin && <td>{who(d.user_id)?.name || who(d.user_id)?.email || d.user_id}</td>}
             <td className="mono small">{d.token_prefix}…</td>
             <td className="muted small" title={when(d.last_seen_at)}>{ago(d.last_seen_at)}{d.last_ip && <div>{d.last_ip}</div>}</td>
@@ -42,6 +42,14 @@ export default function Devices() {
       {del && <Confirm title="Revoke device" message={<>Revoke <b>{del.name}</b>? Its token stops working for Core and every Pocket app at once. Pair again to restore.</>} onConfirm={async () => { await api.del(`${V1}/devices/${del.id}`); setDel(null); reload() }} onCancel={() => setDel(null)} />}
     </>
   )
+}
+
+/** Whether a device (Pocket Hub) gets notifications: on, off, or never turned on. */
+function PushBadge({ push }: { push?: Device['push'] }) {
+  if (!push) return <span className="muted small">Notifications off</span>
+  if (!push.enabled) return <span className="muted small" title="Registered, turned off in Pocket Hub">Notifications off</span>
+  const tip = [push.last_sent_at ? `Last sent ${when(push.last_sent_at)}` : 'Nothing sent yet', push.sound ? 'with sound' : 'silent', push.last_error ? `Last problem: ${push.last_error}` : ''].filter(Boolean).join(' · ')
+  return <span className={push.last_error ? 'badge warn' : 'badge ok'} title={tip}><Icon name="bell" size={11} />Notifications on</span>
 }
 
 /** Which app a place in Pocket Homelab uses when this person has both (Money: Pocket Money or Firefly III). */

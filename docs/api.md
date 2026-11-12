@@ -92,7 +92,18 @@ See [events.md](events.md). `POST /events`, `GET /events`, `/events/{id}`, `/eve
 | GET | `/pair/{code}/qr.png` · `.svg` | – | the QR image |
 | POST | `/pair/claim` | – | `{code, name, platform}` → the [profile](pairing.md) with `token` |
 | GET | `/pair/profile?format=env` | user/device | the profile again (device tokens get their `pcd_` filled in; users get a preview) |
-| GET | `/devices` · DELETE `/devices/{id}` | user (own) / admin (all) | |
+| GET | `/devices` · DELETE `/devices/{id}` | user (own) / admin (all) | each device carries `push: {enabled, sound, last_sent_at, last_error}` once it registered for notifications; revoking a device removes its registration |
+
+## Notifications (Pocket Hub)
+See [push.md](push.md).
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| PUT | `/devices/me/push` | device (`pcd_` only) | `{token, environment, topic, public_key, enabled?, sound?}`: APNs token in hex (64–200), `development` or `production`, a topic from `PUSH_TOPICS`, the install's X25519 public key (standard base64, 32 bytes); `enabled`/`sound` default true → `{registered: true, enabled, sound, relay: "ready" \| "no_relay" \| "no_apple_key"}`. Replaces the device's earlier registration; the same APNs token on another device row is dropped |
+| GET | `/devices/me/push` | device | `{registered, enabled, sound, relay, last_sent_at, last_error}` (+ `environment`, `topic`, `updated_at` when registered) |
+| DELETE | `/devices/me/push` | device | `{registered: false}` |
+| POST | `/devices/me/push/test` | device | seals "Notifications work" for this device → `{status: "sent" \| "failed" \| "gone", reason}`; `404` when not registered |
+| POST | `/push/notify` | app (`pca_`) or admin | `{email \| user_id, title, body, url, source, id, sound, thread}` → `{devices, sent, failed, gone, reason}` across the person's enabled registrations. `devices: 0` is not an error. An app may only notify people in its audience (`403 {reason: "not_in_audience"}`); unknown person `404`; no title and no body, or a non-http(s) `url`, `400`. Nothing sent because the relay was unreachable → `502`, over the relay's limit → `503` (same body; retry later). Device tokens are refused (`403`) |
 
 ## Box
 | Method | Path | Who | Notes |

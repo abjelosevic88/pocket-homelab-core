@@ -37,6 +37,10 @@ Everything is read from environment variables; every value has a default so a ba
 | `MCP_TOKEN_HASH` | disabled | Hex SHA-256 digest of a dedicated status-only MCP bearer token; see [MCP setup](mcp.md) |
 | `MCP_APPS` | none | Required with `MCP_TOKEN_HASH`: comma-separated registered app slugs, or `*` for all |
 | `MCP_CLIENTS_FILE` | disabled | JSON file of named clients with token hashes, app grants and expiry; reloaded each request. Use instead of `MCP_TOKEN_HASH`/`MCP_APPS`. See [MCP setup](mcp.md). |
+| `PUSH_RELAY_URL` | `https://push.pockethomelab.com` | The Pocket Push relay that forwards Pocket Hub notifications to Apple; see [push.md](push.md) |
+| `PUSH_RELAY_TOKEN` | none | The relay's `pps_` sender token for this box. Without it (and without `PUSH_NAMES_ACCOUNT`) notifications report `no_relay` |
+| `PUSH_NAMES_ACCOUNT` | none | Path to a Pocket Names account file `{"name","token"}`; with no `PUSH_RELAY_TOKEN`, Core enrolls at the relay with it and keeps the sender token in `DATA_DIR/push-relay.token` |
+| `PUSH_TOPICS` | `org.bjelke.pockethub,org.bjelke.pockethub.mac` | APNs topics (app IDs) a device may register for |
 
 ## Auth modes
 

@@ -83,7 +83,16 @@ type Config struct {
 	MCPClientsFile     string
 	MCPOAuthEnabled    bool
 	MCPAppToolsEnabled bool
+
+	// Notifications to Pocket Hub through the Pocket Push relay (docs/push.md).
+	PushRelayURL     string   // PUSH_RELAY_URL; default https://push.pockethomelab.com
+	PushRelayToken   string   // PUSH_RELAY_TOKEN: the relay's pps_ sender token
+	PushNamesAccount string   // PUSH_NAMES_ACCOUNT: Pocket Names {"name","token"} JSON to enroll with
+	PushTopics       []string // PUSH_TOPICS: APNs topics a device may register for
 }
+
+// DefaultPushTopics are Pocket Hub's App IDs (iPhone/iPad, Mac).
+var DefaultPushTopics = []string{"org.bjelke.pockethub", "org.bjelke.pockethub.mac"}
 
 func env(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
@@ -173,6 +182,11 @@ func Load() (*Config, error) {
 		MCPAppToolsEnabled: envBool("MCP_APP_TOOLS_ENABLED", false),
 		MCPClientsFile:     env("MCP_CLIENTS_FILE", ""),
 		MCPApps:            strings.FieldsFunc(env("MCP_APPS", ""), func(r rune) bool { return r == ',' || r == ' ' }),
+
+		PushRelayURL:     strings.TrimRight(env("PUSH_RELAY_URL", "https://push.pockethomelab.com"), "/"),
+		PushRelayToken:   env("PUSH_RELAY_TOKEN", ""),
+		PushNamesAccount: env("PUSH_NAMES_ACCOUNT", ""),
+		PushTopics:       strings.FieldsFunc(env("PUSH_TOPICS", strings.Join(DefaultPushTopics, ",")), func(r rune) bool { return r == ',' || r == ' ' }),
 	}
 	if c.MCPTokenHash != "" {
 		b, err := hex.DecodeString(c.MCPTokenHash)

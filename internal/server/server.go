@@ -28,6 +28,7 @@ import (
 	"github.com/abjelosevic88/pocket-homelab-core/internal/events"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/installer"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/oidc"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/push"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 )
 
@@ -73,6 +74,8 @@ type Server struct {
 	regLimit   *limiter // per IP: 10 bad registration keys / 15 min
 
 	remote *remoteHub // remote access through the relay (remote.go)
+
+	pushRelay *push.Relay // Pocket Hub notifications through the Pocket Push relay (push.go)
 }
 
 // New creates a server.
@@ -87,6 +90,8 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute),
 		box: newBoxAgent(cfg.BoxAgent), boxAddr: newBoxAgent(cfg.BoxAddress), inst: installer.NewClient(cfg.InstallerSocket, cfg.InstallerToken)}
 	s.remote = newRemoteHub(s)
+	s.pushRelay = push.NewRelay(push.Config{URL: cfg.PushRelayURL, Token: cfg.PushRelayToken, NamesAccount: cfg.PushNamesAccount,
+		DataDir: cfg.DataDir, UserAgent: ua, Log: log})
 	return s
 }
 
@@ -257,6 +262,11 @@ func (s *Server) Router() http.Handler {
 			r.Post("/auth/logout", s.handleLogout)
 			r.Get("/auth/me", s.handleMe)
 			r.Post("/auth/device/web-session", s.handleDeviceWebSession)
+			// Pocket Hub notifications: a paired device (pcd_) registers itself (push.go).
+			r.Put("/devices/me/push", s.handlePutDevicePush)
+			r.Get("/devices/me/push", s.handleGetDevicePush)
+			r.Delete("/devices/me/push", s.handleDeleteDevicePush)
+			r.Post("/devices/me/push/test", s.handleTestDevicePush)
 			r.Put("/auth/me", s.handleUpdateMe)
 			r.Post("/auth/introspect", s.handleIntrospect)
 			r.Post("/auth/subject", s.handleSubject)
@@ -294,6 +304,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/apps/{slug}", s.handleGetApp)
 				r.Get("/resolve", s.handleResolve)
 				r.Get("/people", s.handlePeople)
+				r.Post("/push/notify", s.handlePushNotify)
 
 				r.Get("/services", s.handleListServices)
 				r.Get("/services/{id}", s.handleGetService)
