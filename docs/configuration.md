@@ -16,6 +16,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `SERVICES_FILE` | — | A JSON list of third-party services a Pocket Box runs, applied at every start (see below). |
 | `BOX_AGENT` | — | The Pocket Box agent's unix socket. Set on a Pocket Box only: adds Settings → System and the first-run box wizard (see below). |
 | `BOX_ADDRESS` | — | The Pocket Box address service's unix socket. Set on a Pocket Box only: adds *Secure address* to Settings → System and the wizard (see below). |
+| `BOX_DOWNLOADS` | — | The Pocket Box downloads service's unix socket. Set on a Pocket Box only: adds *Downloads* (Usenet provider, indexers, subtitles) to Settings → System and the wizard when Pocket Watch, Requests or Subtitles are installed (see below). |
 | `INSTALLER_SOCKET` / `INSTALLER_TOKEN` | — | The installer agent's unix socket and its token: adds **Install app** and a full **Remove app** to the Apps page. See [installer.md](installer.md). |
 | `INSTALLER_ENABLED` | `true` | `false` keeps Install/Remove off on this Core whatever the admin switch says (apps here are set up by hand). |
 | `TZ` | – | Container timezone |
@@ -182,3 +183,16 @@ How phones and computers get a padlock for the box, chosen first on the box's la
 | `POST …/address/cloudflare/start {return_url}` · `POST …/cloudflare/finish {code, state}` | same | *Sign in with Cloudflare*: the URL to open, then the zones and a pending sign-in |
 
 `GET /api/v1/auth/status` carries `box_address`.
+
+### Downloads on the box (`BOX_DOWNLOADS`)
+
+On a box with Pocket Watch, Requests or Subtitles, the box runs Radarr, Sonarr, Prowlarr, SABnzbd (and Lidarr with Pocket Music, Bazarr with Subtitles) on loopback and wires them together itself. The owner only types in a Usenet provider and an indexer's API key (and, for subtitles, the languages and an optional OpenSubtitles.com login) under Settings → System → **Downloads** (deep link `/settings/system#downloads`, which Pocket Requests uses) or the wizard's optional *Downloads* step. Both appear only when the service's `installed` is true.
+
+| Core (admins) | Downloads service | What |
+|---|---|---|
+| `GET /api/v1/box/downloads` | `GET /v1/downloads` | installed, ready, the services, the Usenet server (never its password), the indexers with their status, subtitles, the provider and indexer presets |
+| `PUT …/downloads/usenet {host, port, ssl, username, password?, connections}` · `DELETE …/usenet` | same | save the Usenet server in SABnzbd and test it; remove it |
+| `POST …/downloads/indexers {preset?, name?, url?, api_key}` · `DELETE …/indexers/{id}` | same | add an indexer in Prowlarr and test it; remove one |
+| `PUT …/downloads/subtitles {languages, opensubtitles?: {username, password}}` | same | Bazarr's languages and OpenSubtitles.com login |
+
+A failed test still answers 200 with `status: "error"` and a plain message; 400 is for bad input (`{"error": "…"}`). `GET /api/v1/auth/status` carries `box_downloads`.

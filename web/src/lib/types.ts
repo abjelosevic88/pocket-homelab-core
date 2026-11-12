@@ -1,6 +1,6 @@
 export interface User { id: number; email: string; name: string; role: 'admin' | 'member'; disabled: boolean; created_at: string; updated_at: string }
 export interface Principal { kind: 'user' | 'app' | 'device'; user?: User | null; app?: App | null; device?: Device | null; scope?: string }
-export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; family_name?: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string; box_system?: boolean; box_address?: boolean; box_wizard?: boolean; installer?: boolean; installer_agent?: boolean; installer_locked?: boolean }
+export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; family_name?: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string; box_system?: boolean; box_address?: boolean; box_downloads?: boolean; box_wizard?: boolean; installer?: boolean; installer_agent?: boolean; installer_locked?: boolean }
 export interface Settings { title: string; box_name: string; family_name: string; registration_key: string; setup_complete: boolean; installs_off?: boolean; auto_update?: boolean; auto_update_hour?: number; notify_updates?: boolean; notify_url?: string }
 export interface App {
   id: number; slug: string; name: string; app_name: string; custom_name: string; description: string; icon: string; version: string; url: string; public_url: string
@@ -123,3 +123,18 @@ export interface BoxAddress {
   options: { oauth: boolean; token_link: string }
 }
 export interface CloudflareZone { id: string; name: string }
+
+/** Downloads on the Pocket Box (the box downloads service, BOX_DOWNLOADS): the Usenet provider,
+ *  indexers and subtitles behind Pocket Watch, Requests and Subtitles. */
+export type DownloadsStatus = 'ok' | 'error' | 'untested'
+export interface UsenetPreset { id: string; name: string; host: string; port: number; ssl: boolean }
+export interface IndexerPreset { id: string; name: string; url: string; signup: string }
+export interface BoxDownloads {
+  installed: boolean
+  ready: boolean
+  services: { type: string; ready: boolean }[]
+  usenet: { configured: boolean; host: string; port: number; ssl: boolean; username: string; connections: number; status: DownloadsStatus; message: string }
+  indexers: { id: number; name: string; preset?: string; status: DownloadsStatus; message: string }[]
+  subtitles: { installed: boolean; languages: string[]; opensubtitles: { configured: boolean; username: string } }
+  presets: { providers: UsenetPreset[]; indexers: IndexerPreset[] }
+}

@@ -32,6 +32,10 @@ type Config struct {
 	// gets its padlock: Pocket's address, the owner's own domain on
 	// Cloudflare, or its own certificate). Empty off a Pocket Box.
 	BoxAddress string
+	// BoxDownloads: the Pocket Box downloads service's unix socket (the
+	// Usenet provider, indexers and subtitles behind Pocket Watch, Requests
+	// and Subtitles). Empty off a Pocket Box.
+	BoxDownloads string
 	// Installer: the installer agent's unix socket and token (`pocket-core
 	// installer` on the host). Empty = no Install/Remove buttons.
 	InstallerSocket string
@@ -142,6 +146,7 @@ func Load() (*Config, error) {
 		ServicesFile: env("SERVICES_FILE", ""),
 		BoxAgent:     env("BOX_AGENT", ""),
 		BoxAddress:   env("BOX_ADDRESS", ""),
+		BoxDownloads: env("BOX_DOWNLOADS", ""),
 
 		InstallerSocket:  env("INSTALLER_SOCKET", ""),
 		InstallerToken:   env("INSTALLER_TOKEN", ""),

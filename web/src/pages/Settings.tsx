@@ -12,13 +12,14 @@ import { Select } from '../components/Select'
 import { MyLinks } from './Links'
 import { SignInMethods } from './SignInMethods'
 import { AddressPanel } from '../components/BoxAddress'
+import { DownloadsPanel, useBoxDownloads } from '../components/BoxDownloads'
 import { BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, UpdatesPanel, useBoxStatus } from '../components/BoxSystem'
 
 type TabId = 'box' | 'system' | 'sso' | 'profile' | 'links' | 'logins' | 'tokens' | 'about'
 
 const TABS: { id: TabId; label: string; icon: string; sub: string; admin?: boolean; member?: boolean; box?: boolean }[] = [
   { id: 'box', label: 'Box', icon: 'server', sub: 'The box’s name and title, and the key Pocket apps use to join it.', admin: true },
-  { id: 'system', label: 'System', icon: 'settings', sub: 'The Pocket Box itself: its secure address, updates, time zone, network, remote access, the console password and the disk.', admin: true, box: true },
+  { id: 'system', label: 'System', icon: 'settings', sub: 'The Pocket Box itself: its secure address, downloads, updates, time zone, network, remote access, the console password and the disk.', admin: true, box: true },
   { id: 'sso', label: 'Single sign-on', icon: 'shield', sub: 'How people sign in to Core (passwords, PocketID…), and the services that sign people in with their Core account.', admin: true },
   { id: 'profile', label: 'Profile', icon: 'user', sub: 'Your name, password and how Core looks for you.' },
   { id: 'links', label: 'Apps acting for me', icon: 'nodes', sub: 'Pocket apps that can do things in another app as you. Switching one off stops it at once, for you only.' },
@@ -87,9 +88,9 @@ export default function Settings() {
 }
 
 /** A settings card: title, explanation, actions on the right — Pocket Calendar's section. */
-function Section({ title, sub, icon, actions, children }: { title: React.ReactNode; sub?: React.ReactNode; icon?: string; actions?: React.ReactNode; children?: React.ReactNode }) {
+function Section({ title, sub, icon, actions, children, id }: { title: React.ReactNode; sub?: React.ReactNode; icon?: string; actions?: React.ReactNode; children?: React.ReactNode; id?: string }) {
   return (
-    <section className="set-section">
+    <section className="set-section" id={id}>
       <div className="set-section-head">
         {icon && <span className="set-app-ico"><Icon name={icon} size={17} /></span>}
         <div className="grow"><h3>{title}</h3>{sub && <p>{sub}</p>}</div>
@@ -144,6 +145,7 @@ function BoxSystemSettings() {
   return (
     <div className="stack loose">
       {status?.box_address && <Section title="Secure address" icon="lock" sub="How phones and computers get a padlock for the box: Pocket's free address, your own domain on Cloudflare, or the box's own certificate."><AddressPanel /></Section>}
+      {status?.box_downloads && <DownloadsSection />}
       <Section title="Updates" icon="refresh" sub="New releases install at night, and the box goes back by itself if an app does not start afterwards."><UpdatesPanel /></Section>
       <Section title="Time zone" icon="clock" sub="Reminders, schedules and “today” in every app follow it."><TimezonePanel current={st.timezone} onSaved={reload} /></Section>
       <Section title="Network" icon="wifi" sub={`The box answers at ${st.domain} on this network.`}><NetworkPanel st={st} onChanged={reload} /></Section>
@@ -151,6 +153,29 @@ function BoxSystemSettings() {
       <Section title="Console password" icon="terminal" sub="Repairs at the box's own screen and keyboard."><PasswordPanel st={st} onSaved={reload} /></Section>
       <Section title="Disk" icon="disk"><DiskPanel st={st} /></Section>
     </div>
+  )
+}
+
+/** Downloads, only on a box with Pocket Watch, Requests or Subtitles. /settings/system#downloads
+ *  (Pocket Requests' "Finish Downloads setup") scrolls here once it has loaded. */
+function DownloadsSection() {
+  const { dl, setDl, err } = useBoxDownloads()
+  const shown = !!dl?.installed || (!dl && !!err)
+  useEffect(() => {
+    if (!shown || window.location.hash !== '#downloads') return
+    // The panels above load too and push it down; follow it for a moment unless the owner scrolls.
+    let stop = false
+    const quit = () => { stop = true }
+    const go = () => { if (!stop) document.getElementById('downloads')?.scrollIntoView({ block: 'start' }) }
+    const ids = [0, 300, 900, 1800].map(ms => window.setTimeout(go, ms))
+    window.addEventListener('wheel', quit, { once: true }); window.addEventListener('touchmove', quit, { once: true })
+    return () => { ids.forEach(window.clearTimeout); window.removeEventListener('wheel', quit); window.removeEventListener('touchmove', quit) }
+  }, [shown])
+  if (!shown) return null
+  return (
+    <Section id="downloads" title="Downloads" icon="download" sub="So Pocket Requests and Pocket Watch can fetch films and shows. The box does the rest; it only needs your Usenet provider and an indexer.">
+      {dl ? <DownloadsPanel dl={dl} onChange={setDl} /> : <div className="callout danger"><Icon name="alert" size={15} /><span>{err}</span></div>}
+    </Section>
   )
 }
 

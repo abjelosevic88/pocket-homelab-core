@@ -279,3 +279,23 @@
 .box-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); }
 .box-checks span { display: inline-flex; align-items: center; gap: 5px; }
 .box-checks span.ok { color: var(--success); }
+
+/* ---------- Pocket Box: Downloads (Usenet provider, indexers, subtitles) ---------- */
+.dl-head { display: flex; align-items: flex-start; gap: 10px; }
+.dl-head b { display: block; font-size: 14px; }
+.dl-head .grow > span { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.dl-head-ico { flex: none; width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.dl-checks { margin-top: 10px; }
+.dl-form { padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); }
+.dl-server { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 14px; }
+.dl-server > .field:first-child { flex: 1 1 240px; }
+.dl-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; }
+.dl-item .box-link .badge { flex: none; }
+.dl-item .box-link .btn { flex: none; color: var(--muted); }
+.dl-item .box-link .btn:hover { color: var(--danger); }
+.box-link .grow > span.dl-err { color: var(--danger); }
+.box-link .badge .icon, .dl .badge svg { margin-right: 2px; }
+.dl-langs { margin-top: 0; }
+.dl-langs .box-chip svg { color: var(--muted); }
+.dl-os { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); display: grid; gap: 10px; }
+#downloads { scroll-margin-top: 16px; }

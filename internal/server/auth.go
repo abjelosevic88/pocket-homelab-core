@@ -277,6 +277,8 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
 		"box_system":  s.box != nil,
 		"box_address": s.boxAddr != nil,
+		// The downloads service exists; whether Watch/Requests/Subtitles are installed is in its GET.
+		"box_downloads": s.boxDL != nil,
 		// One-click install/removal of Pocket apps (admins).
 		"installer": u.IsAdmin() && s.installerState(r.Context()) == "",
 		// Settings → Box: the switch exists when there is an agent; locked by INSTALLER_ENABLED=false.

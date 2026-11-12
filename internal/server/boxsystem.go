@@ -145,6 +145,48 @@ func (s *Server) handleBoxAddress(w http.ResponseWriter, r *http.Request) {
 	s.passToBox(w, r, s.boxAddr, target, "address"+sub)
 }
 
+// boxDownloadsRoutes maps Core's admin routes onto the box downloads
+// service's: the Usenet provider (SABnzbd), the indexers (Prowlarr) and
+// subtitles (Bazarr) behind Pocket Watch, Requests and Subtitles. Removing an
+// indexer (DELETE /indexers/{id}) is matched in handleBoxDownloads.
+var boxDownloadsRoutes = map[string]string{
+	"GET ":           "GET /v1/downloads",
+	"PUT /usenet":    "PUT /v1/downloads/usenet",
+	"DELETE /usenet": "DELETE /v1/downloads/usenet",
+	"POST /indexers": "POST /v1/downloads/indexers",
+	"PUT /subtitles": "PUT /v1/downloads/subtitles",
+}
+
+func (s *Server) handleBoxDownloads(w http.ResponseWriter, r *http.Request) {
+	if s.boxDL == nil {
+		writeErr(w, http.StatusNotFound, "this Core is not on a Pocket Box")
+		return
+	}
+	sub := strings.TrimPrefix(r.URL.Path, "/api/v1/box/downloads")
+	target, ok := boxDownloadsRoutes[r.Method+" "+sub]
+	if id, isIndexer := strings.CutPrefix(sub, "/indexers/"); !ok && isIndexer && r.Method == http.MethodDelete && allDigits(id) {
+		target, ok = "DELETE /v1/downloads/indexers/"+id, true
+	}
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	s.passToBox(w, r, s.boxDL, target, "downloads"+sub)
+}
+
+// allDigits: an indexer id, nothing that could steer the path elsewhere.
+func allDigits(s string) bool {
+	if s == "" || len(s) > 18 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // passToBox sends the request to one of the box's root services and its
 // answer back, as it is.
 func (s *Server) passToBox(w http.ResponseWriter, r *http.Request, svc *boxAgent, target, change string) {

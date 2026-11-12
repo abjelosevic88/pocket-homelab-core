@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -217,5 +218,108 @@ func TestBoxAddressThroughService(t *testing.T) {
 	defer mu.Unlock()
 	if len(calls) != 3 {
 		t.Fatalf("calls %v", calls)
+	}
+}
+
+func TestBoxDownloadsThroughService(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "downloads.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var calls []string
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		if r.Method != http.MethodGet && r.Method != http.MethodDelete && r.ContentLength <= 0 {
+			http.Error(w, `{"error":"no Content-Length"}`, http.StatusLengthRequired)
+			return
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v1/downloads", "DELETE /v1/downloads/usenet", "DELETE /v1/downloads/indexers/3", "PUT /v1/downloads/subtitles":
+			_ = json.NewEncoder(w).Encode(map[string]any{"installed": true, "ready": false})
+		case "PUT /v1/downloads/usenet":
+			// A failed test is still a 200, with the reason.
+			_ = json.NewEncoder(w).Encode(map[string]any{"installed": true, "usenet": map[string]any{"status": "error", "message": "The provider turned down the username or password."}})
+		case "POST /v1/downloads/indexers":
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Paste the indexer's API key."})
+		default:
+			http.NotFound(w, r)
+		}
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	t.Setenv("BOX_DOWNLOADS", sock)
+	e := newEnv(t)
+	var st map[string]any
+	e.do("GET", "/api/v1/auth/status", "", nil, &st)
+	if st["box_downloads"] != true {
+		t.Fatalf("box_downloads %v", st["box_downloads"])
+	}
+	if c := e.do("GET", "/api/v1/box/downloads", "", nil, nil); c != 401 {
+		t.Fatalf("signed out: %d", c)
+	}
+	if c := e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "owner@example.com", "password": "password123"}, nil); c != 200 {
+		t.Fatalf("setup %d", c)
+	}
+	var got map[string]any
+	if c := e.do("GET", "/api/v1/box/downloads", "", nil, &got); c != 200 || got["installed"] != true {
+		t.Fatalf("get %d %v", c, got)
+	}
+	if c := e.do("PUT", "/api/v1/box/downloads/usenet", "", map[string]any{"host": "news.eweka.nl", "port": 563, "ssl": true, "username": "u", "password": "p", "connections": 20}, &got); c != 200 || got["usenet"].(map[string]any)["status"] != "error" {
+		t.Fatalf("usenet %d %v", c, got)
+	}
+	var bad map[string]string
+	if c := e.do("POST", "/api/v1/box/downloads/indexers", "", map[string]string{"preset": "nzbgeek"}, &bad); c != 400 || bad["error"] == "" {
+		t.Fatalf("the service's 400 must come through: %d %v", c, bad)
+	}
+	if c := e.do("DELETE", "/api/v1/box/downloads/indexers/3", "", nil, nil); c != 200 {
+		t.Fatalf("remove indexer %d", c)
+	}
+	if c := e.do("DELETE", "/api/v1/box/downloads/usenet", "", nil, nil); c != 200 {
+		t.Fatalf("remove usenet %d", c)
+	}
+	if c := e.do("PUT", "/api/v1/box/downloads/subtitles", "", map[string]any{"languages": []string{"en", "sr"}}, nil); c != 200 {
+		t.Fatalf("subtitles %d", c)
+	}
+	// Not on the list: never reaches the service.
+	for _, p := range []string{"DELETE /api/v1/box/downloads/indexers/x", "DELETE /api/v1/box/downloads/indexers/3/..", "GET /api/v1/box/downloads/indexers/3", "DELETE /api/v1/box/downloads", "GET /api/v1/box/downloads/nonsense"} {
+		m, path, _ := strings.Cut(p, " ")
+		if c := e.do(m, path, "", nil, nil); c != 404 {
+			t.Fatalf("%s: %d", p, c)
+		}
+	}
+
+	// A member may not touch it.
+	if c := e.do("POST", "/api/v1/users", "", map[string]any{"email": "kid@example.com", "name": "Kid", "password": "password123", "role": "member"}, nil); c != 201 && c != 200 {
+		t.Fatalf("create member %d", c)
+	}
+	e.cj = nil
+	if c := e.do("POST", "/api/v1/auth/login", "", map[string]string{"email": "kid@example.com", "password": "password123"}, nil); c != 200 {
+		t.Fatalf("member login %d", c)
+	}
+	if c := e.do("GET", "/api/v1/box/downloads", "", nil, nil); c != 403 {
+		t.Fatalf("member read downloads: %d", c)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 6 {
+		t.Fatalf("calls %v", calls)
+	}
+}
+
+func TestBoxDownloadsOffABox(t *testing.T) {
+	e := newEnv(t)
+	var st map[string]any
+	e.do("GET", "/api/v1/auth/status", "", nil, &st)
+	if st["box_downloads"] != false {
+		t.Fatalf("box_downloads %v", st["box_downloads"])
+	}
+	e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "owner@example.com", "password": "password123"}, nil)
+	if c := e.do("GET", "/api/v1/box/downloads", "", nil, nil); c != 404 {
+		t.Fatalf("no service: %d", c)
 	}
 }

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useApp } from '../lib/app-context'
-import type { BoxAddress, BoxSystem } from '../lib/types'
+import type { BoxAddress, BoxDownloads, BoxSystem } from '../lib/types'
 import { BOX, BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, useBoxStatus } from '../components/BoxSystem'
 import { ADDRESS, AddressPanel } from '../components/BoxAddress'
+import { DownloadsPanel, downloadsSummary, useBoxDownloads } from '../components/BoxDownloads'
 import { Icon } from '../components/icons'
 import { Spinner } from '../components/ui'
 
@@ -16,12 +17,13 @@ const STEPS: Step[] = [
   { id: 'network', icon: 'wifi', title: 'Network', short: 'Network', sub: 'The box is online by cable. Join Wi-Fi too if it should work without one.', optional: true },
   { id: 'remote', icon: 'globe', title: 'Away from home', short: 'Remote', sub: 'Reach the box from your phone and laptop anywhere, through Tailscale.', optional: true },
   { id: 'console', icon: 'terminal', title: 'Console password', short: 'Console', sub: 'The login on the box\'s own screen (username pocket), only for repairs. Not your Pocket account. Leave it locked if you never plug in a screen.', optional: true },
+  { id: 'downloads', icon: 'download', title: 'Downloads', short: 'Downloads', sub: 'So Pocket Requests can fetch the films and shows you ask for. No Usenet account yet? Skip this and come back to it under Settings → System.', optional: true },
   { id: 'disk', icon: 'shield', title: 'Your data', short: 'Data', sub: 'How the box keeps it safe.' },
   { id: 'done', icon: 'check', title: 'All set', short: 'Done', sub: 'Here is how the box is set up. Tap a line to change it; everything stays under Settings → System as well.' },
 ]
 
 /** One line of the summary at the end: what each step ended up as. */
-function summary(id: string, st: BoxSystem, addr: BoxAddress | null): { text: string; ok: boolean } {
+function summary(id: string, st: BoxSystem, addr: BoxAddress | null, dl: BoxDownloads | null): { text: string; ok: boolean } {
   switch (id) {
     case 'address':
       if (!addr || addr.mode === null) return { text: 'Not chosen yet', ok: false }
@@ -32,6 +34,7 @@ function summary(id: string, st: BoxSystem, addr: BoxAddress | null): { text: st
     case 'network': return st.network.wifi.connected ? { text: `Cable and Wi-Fi (${st.network.wifi.connected})`, ok: true } : { text: st.network.addresses.length ? 'Cable' : 'No address yet', ok: st.network.addresses.length > 0 }
     case 'remote': return st.tailscale.state === 'Running' ? { text: `On Tailscale as ${st.tailscale.name || st.hostname}`, ok: true } : { text: 'Only at home', ok: false }
     case 'console': return { text: st.password_set ? 'Password set' : 'Locked', ok: true }
+    case 'downloads': return downloadsSummary(dl)
     case 'disk': return { text: st.encryption.encrypted ? (st.encryption.tpm ? 'Encrypted, unlocks with the TPM' : 'Encrypted') : 'Not encrypted', ok: st.encryption.encrypted }
   }
   return { text: '', ok: true }
@@ -46,7 +49,9 @@ export default function BoxWizard() {
   const [seen, setSeen] = useState(0)
   const [finishing, setFinishing] = useState(false)
   const [addr, setAddr] = useState<BoxAddress | null>(null)
-  const steps = STEPS.filter(s => s.id !== 'address' || status?.box_address)
+  // Downloads only on a box with Pocket Watch, Requests or Subtitles.
+  const { dl, setDl, reload: reloadDl } = useBoxDownloads(!!status?.box_downloads)
+  const steps = STEPS.filter(s => (s.id !== 'address' || status?.box_address) && (s.id !== 'downloads' || dl?.installed))
   const step = steps[Math.min(i, steps.length - 1)]
   const last = step.id === 'done'
   const total = steps.length - 1
@@ -56,6 +61,7 @@ export default function BoxWizard() {
   useEffect(() => {
     if (!last) return
     if (status?.box_address) api.get<BoxAddress>(ADDRESS).then(setAddr).catch(() => setAddr(null))
+    if (dl?.installed) reloadDl()
     reload()
   }, [last])
 
@@ -114,10 +120,11 @@ export default function BoxWizard() {
                 {step.id === 'network' && <NetworkPanel st={st} onChanged={reload} />}
                 {step.id === 'remote' && <TailscalePanel st={st} onChanged={reload} />}
                 {step.id === 'console' && <PasswordPanel st={st} onSaved={() => { reload(); go(i + 1) }} />}
+                {step.id === 'downloads' && dl && <DownloadsPanel dl={dl} onChange={setDl} />}
                 {step.id === 'disk' && <DiskPanel st={st} />}
                 {step.id === 'done' && <ul className="wz-summary">
                   {steps.filter(s => s.id !== 'done').map(s => {
-                    const sm = summary(s.id, st, addr)
+                    const sm = summary(s.id, st, addr, dl)
                     return (
                       <li key={s.id}><button type="button" onClick={() => go(steps.indexOf(s))}>
                         <span className={`wz-sum-ico ${sm.ok ? 'ok' : ''}`}><Icon name={sm.ok ? 'check' : s.icon} size={14} /></span>
