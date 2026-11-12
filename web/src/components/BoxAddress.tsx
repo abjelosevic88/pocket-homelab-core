@@ -10,10 +10,10 @@ import { Icon } from './icons'
 
 export const ADDRESS = `${V1}/box/address`
 
-const MODES: { id: Exclude<BoxAddressMode, 'off'>; title: string; text: string; tag?: string }[] = [
-  { id: 'pocket', title: "Pocket's free address", tag: 'Recommended', text: 'Ready in about a minute, nothing to install. A name like x7k2m9.box.pockethomelab.com that points at the box\'s home address.' },
-  { id: 'cloudflare', title: 'My own domain on Cloudflare', text: 'Like pocket.yourname.com. Sign in with Cloudflare and the box looks after the DNS records and the certificate itself; nothing goes through Pocket\'s servers.' },
-  { id: 'own-ca', title: "The box's own certificate", text: 'No name on the internet. Install the box\'s certificate once on each phone and computer; works without internet.' },
+const MODES: { id: Exclude<BoxAddressMode, 'off'>; title: string; text: string; tag?: string; icon: string; facts: string[] }[] = [
+  { id: 'pocket', icon: 'zap', title: "Pocket's free address", tag: 'Recommended', text: 'A name like x7k2m9.box.pockethomelab.com that points at the box\'s home address. Every browser trusts it.', facts: ['Ready in a minute', 'Nothing to install', 'Free'] },
+  { id: 'cloudflare', icon: 'globe', title: 'My own domain on Cloudflare', text: 'Like pocket.yourname.com. Sign in with Cloudflare and the box looks after the DNS records and the certificate itself.', facts: ['Your own name', 'Nothing through Pocket'] },
+  { id: 'own-ca', icon: 'shield', title: "The box's own certificate", text: 'No name on the internet. Install the box\'s certificate once on each phone and computer.', facts: ['Works offline', 'Fully private'] },
 ]
 
 const WAITING = ['asking', 'certificate', 'waiting']
@@ -34,7 +34,7 @@ function describe(a: BoxAddress): React.ReactNode {
 }
 
 /** The box's address: what it is now, and choosing another. */
-export function AddressPanel({ onChosen }: { onChosen?: () => void }) {
+export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; startOpen?: boolean }) {
   const [a, setA] = useState<BoxAddress | null>(null)
   const [err, setErr] = useState('')
   const [open, setOpen] = useState(false)
@@ -54,7 +54,14 @@ export function AddressPanel({ onChosen }: { onChosen?: () => void }) {
     setZone(zs[0]?.id || '')
     if (!zs.length) setErr("This sign-in can't change any domain. Add your domain to Cloudflare first, or give the token access to it.")
   }
-  const load = async () => { try { setA(await api.get<BoxAddress>(ADDRESS)); setErr('') } catch (e) { setErr(errMsg(e)) } }
+  const load = async () => {
+    try {
+      const got = await api.get<BoxAddress>(ADDRESS)
+      setA(got); setErr('')
+      // In the setup wizard, a box that has no address yet shows the choices straight away.
+      if (startOpen && got.mode === null && got.can_choose) setOpen(true)
+    } catch (e) { setErr(errMsg(e)) }
+  }
   useEffect(() => {
     // Back from "Sign in with Cloudflare": Cloudflare → names.pockethomelab.com → here, with the code.
     const q = new URLSearchParams(window.location.search)
@@ -135,7 +142,13 @@ export function AddressPanel({ onChosen }: { onChosen?: () => void }) {
           {MODES.map(m => (
             <label key={m.id} className={`address-choice ${mode === m.id ? 'on' : ''}`}>
               <input type="radio" name="box-address" checked={mode === m.id} onChange={() => { setMode(m.id); setErr('') }} />
-              <span><b>{m.title}</b>{m.tag && <span className="badge cat">{m.tag}</span>}{a.mode === m.id && <span className="muted small"> · now</span>}<br /><span className="muted small">{m.text}</span></span>
+              <span className={`address-ico ${m.id}`}><Icon name={m.icon} size={19} /></span>
+              <span className="grow">
+                <b>{m.title}</b>{m.tag && <span className="badge ok">{m.tag}</span>}{a.mode === m.id && <span className="badge">Now</span>}
+                <span className="address-text">{m.text}</span>
+                <span className="address-facts">{m.facts.map(f => <span key={f}><Icon name="check" size={11} />{f}</span>)}</span>
+              </span>
+              <span className="address-radio" aria-hidden="true" />
             </label>
           ))}
         </div>
@@ -173,7 +186,7 @@ export function AddressPanel({ onChosen }: { onChosen?: () => void }) {
         <Problem text={err} />
         <div className="row wrap">
           {mode !== 'cloudflare' && <button type="button" className="btn primary" onClick={choose} disabled={busy || mode === a.mode}>{busy ? <Spinner /> : null}{mode === 'own-ca' ? "Use the box's own certificate" : "Use Pocket's address"}</button>}
-          <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr(''); setZones(null) }}>Cancel</button>
+          {!(startOpen && a.mode === null) && <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr(''); setZones(null) }}>Cancel</button>}
         </div>
       </div>}
       {!open && <Problem text={err} />}

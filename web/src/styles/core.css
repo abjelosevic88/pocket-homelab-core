@@ -530,8 +530,26 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .remote-device-head .grow { min-width: 200px; }
 
 /* Settings → System → Secure address: the three ways the box gets its padlock. */
-.address-choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
-.address-choice.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.address-choice input { margin-top: 3px; }
+.address-choice {
+  position: relative; display: flex; gap: 13px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.address-choice:hover { border-color: var(--border-strong); }
+.address-choice.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: linear-gradient(135deg, var(--accent-soft), transparent 60%), var(--surface); }
+.address-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.address-choice:has(input:focus-visible) { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+.address-choice b { font-size: 14.5px; }
 .address-choice .badge { margin-left: 8px; vertical-align: 1px; }
+.address-ico { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; }
+.address-ico.pocket { background: linear-gradient(135deg, #4f46e5, #0ea5e9); }
+.address-ico.cloudflare { background: linear-gradient(135deg, #f6821f, #fbad41); }
+.address-ico.own-ca { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
+.address-text { display: block; color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 2px; }
+.address-facts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.address-facts span { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--border); font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+.address-facts .icon { color: var(--success); }
+.address-radio { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border-strong); margin-top: 2px; display: grid; place-items: center; }
+.address-radio::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .15s; }
+.address-choice.on .address-radio { border-color: var(--accent); }
+.address-choice.on .address-radio::after { transform: scale(1); }
 .address-cf { padding: 4px 2px 0; }

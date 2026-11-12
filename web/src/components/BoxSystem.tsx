@@ -28,12 +28,26 @@ export function browserZone(): string {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || '' } catch { return '' }
 }
 
+/** The time now in a zone, ticking. */
+function useClock(tz: string) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => { const id = window.setInterval(() => setNow(new Date()), 15000); return () => window.clearInterval(id) }, [])
+  try {
+    return {
+      time: new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(now),
+      date: new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' }).format(now),
+    }
+  } catch { return { time: '', date: '' } }
+}
+
 export function TimezonePanel({ current, onSaved }: { current: string; onSaved?: (tz: string) => void }) {
   const { toast } = useToast()
   const [zones, setZones] = useState<string[]>([])
-  const [tz, setTz] = useState(current === 'UTC' && browserZone() ? browserZone() : current)
+  const device = browserZone()
+  const [tz, setTz] = useState(current === 'UTC' && device ? device : current)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const clock = useClock(tz)
   useEffect(() => { api.get<{ timezones: string[] }>(`${BOX}/timezones`).then(r => setZones(r.timezones)).catch(e => setErr(errMsg(e))) }, [])
   const options = useMemo(() => zones.map(z => ({ value: z, label: z.replace(/_/g, ' '), group: z.includes('/') ? z.split('/')[0] : 'Other' })), [zones])
   const save = async () => {
@@ -44,15 +58,35 @@ export function TimezonePanel({ current, onSaved }: { current: string; onSaved?:
       onSaved?.(tz)
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
+  const city = (tz.split('/').pop() || tz).replace(/_/g, ' ')
   return (
     <div className="stack tight">
+      <div className="box-clock">
+        <div className="box-clock-time">{clock.time}</div>
+        <div className="grow">
+          <b>{city}</b>
+          <span>{clock.date}{tz.includes('/') ? ` · ${tz.split('/')[0].replace(/_/g, ' ')}` : ''}</span>
+        </div>
+        {tz === current ? <span className="badge ok">Now</span> : <span className="badge warn">Not saved</span>}
+      </div>
       <div className="row wrap">
         <div style={{ flex: '1 1 260px' }}><Select value={tz} onChange={setTz} options={options} placeholder="Search a city or region…" ariaLabel="Time zone" disabled={!zones.length} /></div>
         <button type="button" className="btn primary" disabled={busy || !tz || tz === current} onClick={save}>{busy ? <Spinner /> : null}Save</button>
       </div>
-      <p className="muted small">Now: <b>{current}</b>{tz !== current && browserZone() === tz ? `. Your device is in ${tz}` : ''}.</p>
+      {device && device !== tz && <button type="button" className="box-chip" onClick={() => setTz(device)}><Icon name="smartphone" size={13} />Use this device's zone: {device.replace(/_/g, ' ')}</button>}
+      {tz !== current && <p className="muted small">The box is on <b>{current.replace(/_/g, ' ')}</b> until you save.</p>}
       <Problem text={err} />
     </div>
+  )
+}
+
+/** Four bars, lit by the signal strength. */
+function Signal({ pct }: { pct: number }) {
+  const lit = pct >= 75 ? 4 : pct >= 50 ? 3 : pct >= 25 ? 2 : 1
+  return (
+    <svg className="box-signal" width="18" height="14" viewBox="0 0 18 14" aria-label={`Signal ${pct}%`} role="img">
+      {[0, 1, 2, 3].map(n => <rect key={n} x={n * 4.6} y={10 - n * 3.2} width="3.2" height={4 + n * 3.2} rx="1" className={n < lit ? 'on' : ''} />)}
+    </svg>
   )
 }
 
@@ -62,6 +96,7 @@ export function NetworkPanel({ st, onChanged }: { st: BoxSystem; onChanged?: () 
   const [scanning, setScanning] = useState(false)
   const [pick, setPick] = useState<WifiNetwork | null>(null)
   const [pw, setPw] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const wifi = st.network.wifi
@@ -80,31 +115,47 @@ export function NetworkPanel({ st, onChanged }: { st: BoxSystem; onChanged?: () 
       setPick(null); setPw(''); onChanged?.(); scan()
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
+  const cable = st.network.addresses.filter(a => !a.interface.startsWith('w'))
+  const air = st.network.addresses.filter(a => a.interface.startsWith('w'))
   return (
-    <div className="stack tight">
-      <div className="box-addrs">
-        {st.network.addresses.length ? st.network.addresses.map(a => (
-          <div key={a.interface + a.address} className="box-addr"><Icon name={a.interface.startsWith('w') ? 'wifi' : 'nodes'} size={15} /><span>{a.interface.startsWith('w') ? 'Wi-Fi' : 'Cable'}</span><code>{a.address}</code></div>
-        )) : <p className="muted small">No network address yet.</p>}
+    <div className="stack">
+      <div className="box-links">
+        <div className={`box-link ${cable.length ? 'on' : ''}`}>
+          <span className="box-link-ico"><Icon name="nodes" size={17} /></span>
+          <div className="grow"><b>Cable</b><span>{cable.length ? cable.map(a => a.address).join(', ') : 'Not plugged in'}</span></div>
+          {cable.length > 0 && <span className="badge ok">Connected</span>}
+        </div>
+        <div className={`box-link ${wifi.connected ? 'on' : ''}`}>
+          <span className="box-link-ico"><Icon name="wifi" size={17} /></span>
+          <div className="grow"><b>Wi-Fi</b><span>{!wifi.available ? 'No Wi-Fi in this box' : wifi.connected ? `${wifi.connected}${air.length ? ` · ${air.map(a => a.address).join(', ')}` : ''}` : 'Not joined'}</span></div>
+          {wifi.connected && <span className="badge ok">Connected</span>}
+        </div>
       </div>
       {!wifi.available && <p className="muted small">This box has no Wi-Fi, so it stays on the network by cable.</p>}
-      {wifi.available && <>
-        <div className="row"><b className="grow">Wi-Fi{wifi.connected ? ` · ${wifi.connected}` : ''}</b><button type="button" className="btn sm ghost" onClick={scan} disabled={scanning}>{scanning ? <Spinner /> : <Icon name="refresh" size={14} />}Scan</button></div>
+      {wifi.available && <div className="stack tight">
+        <div className="row"><b className="grow box-section-title">Networks nearby</b><button type="button" className="btn sm ghost" onClick={scan} disabled={scanning}>{scanning ? <Spinner /> : <Icon name="refresh" size={14} />}{scanning ? 'Scanning…' : 'Scan again'}</button></div>
+        {!nets && scanning && <div className="box-wifi-list">{[0, 1, 2].map(n => <div key={n} className="box-wifi skeleton" />)}</div>}
         {nets && !nets.length && <p className="muted small">No networks in range.</p>}
         {nets && nets.length > 0 && <div className="box-wifi-list">
           {nets.map(n => (
-            <button type="button" key={n.ssid} className={`box-wifi ${pick?.ssid === n.ssid ? 'on' : ''}`} onClick={() => { setPick(n); setPw('') }} disabled={n.active}>
-              <Icon name="wifi" size={15} /><span className="grow">{n.ssid}</span>
-              {n.active ? <span className="badge accent">Connected</span> : <span className="muted xsmall">{n.signal}%{n.secure ? ' · locked' : ''}</span>}
-            </button>
+            <div key={n.ssid} className={`box-wifi-item ${pick?.ssid === n.ssid ? 'on' : ''}`}>
+              <button type="button" className="box-wifi" onClick={() => { setPick(pick?.ssid === n.ssid ? null : n); setPw(''); setErr('') }} disabled={n.active} aria-expanded={pick?.ssid === n.ssid}>
+                <Signal pct={n.signal} />
+                <span className="grow">{n.ssid}</span>
+                {n.active ? <span className="badge ok">Connected</span> : n.secure ? <Icon name="lock" size={13} /> : <span className="muted xsmall">Open</span>}
+              </button>
+              {pick?.ssid === n.ssid && <form onSubmit={join} className="box-wifi-join">
+                {n.secure && <div className="box-pw">
+                  <input type={showPw ? 'text' : 'password'} placeholder={`Password for ${n.ssid}`} value={pw} onChange={e => setPw(e.target.value)} autoFocus autoComplete="off" />
+                  <button type="button" className="btn ghost icon-only sm" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'}><Icon name={showPw ? 'eye-off' : 'eye'} size={15} /></button>
+                </div>}
+                <button className="btn primary" disabled={busy || (n.secure && !pw)}>{busy ? <Spinner /> : null}Join</button>
+              </form>}
+            </div>
           ))}
         </div>}
-        {pick && <form onSubmit={join} className="row wrap">
-          {pick.secure && <input type="password" placeholder={`Password for ${pick.ssid}`} value={pw} onChange={e => setPw(e.target.value)} autoFocus style={{ flex: '1 1 220px' }} />}
-          <button className="btn primary" disabled={busy || (pick.secure && !pw)}>{busy ? <Spinner /> : null}Join {pick.ssid}</button>
-        </form>}
-        <p className="muted small">Join from here while the cable is still in; the box keeps the cable as well if you leave it plugged.</p>
-      </>}
+        <p className="muted small">Join while the cable is still in. The box keeps using the cable too if you leave it plugged in.</p>
+      </div>}
       <Problem text={err} />
     </div>
   )
@@ -141,15 +192,25 @@ export function TailscalePanel({ st, onChanged }: { st: BoxSystem; onChanged?: (
   }
   if (ts.state === 'Running') return (
     <div className="stack tight">
-      <div className="callout"><Icon name="check" size={15} /><span>On your tailnet{ts.tailnet ? ` ${ts.tailnet}` : ''} as <b>{ts.name || st.hostname}</b>{ts.addresses?.length ? ` (${ts.addresses[0]})` : ''}. Devices on the same tailnet reach the box from anywhere.</span></div>
-      <div className="row"><button type="button" className="btn sm danger-text" onClick={down} disabled={busy}>Leave the tailnet</button></div>
+      <div className="box-hero ok">
+        <span className="box-hero-ico"><Icon name="check" size={20} /></span>
+        <div className="grow"><b>On your tailnet{ts.tailnet ? ` ${ts.tailnet}` : ''}</b>
+          <span>Devices on the same tailnet reach the box from anywhere.</span>
+          <div className="box-chips"><span className="box-chip static"><Icon name="server" size={13} />{ts.name || st.hostname}</span>{ts.addresses?.[0] && <span className="box-chip static"><code>{ts.addresses[0]}</code></span>}</div>
+        </div>
+      </div>
+      <div className="row"><button type="button" className="btn sm danger-ghost" onClick={down} disabled={busy}>Leave the tailnet</button></div>
       <Problem text={err} />
     </div>
   )
   return (
-    <div className="stack tight">
-      <p className="muted small">Tailscale connects the box to your own devices wherever they are, without opening anything on your router. It's free for personal use.</p>
-      {ts.auth_url && <div className="callout"><Icon name="external" size={15} /><span>Finish signing in on <a href={ts.auth_url} target="_blank" rel="noopener noreferrer">Tailscale's page</a>; this updates by itself when the box is in.</span></div>}
+    <div className="stack">
+      <ul className="box-perks">
+        <li><span><Icon name="smartphone" size={16} /></span><div><b>Your phone and laptop, anywhere</b>Open the apps away from home as if you were on the home Wi-Fi.</div></li>
+        <li><span><Icon name="shield" size={16} /></span><div><b>Nothing opened on your router</b>Only your own devices get in; the box stays hidden from the internet.</div></li>
+        <li><span><Icon name="zap" size={16} /></span><div><b>Free for personal use</b>Install the Tailscale app on each device and sign in with the same account.</div></li>
+      </ul>
+      {ts.auth_url && <div className="callout info"><Icon name="external" size={15} /><span>Finish signing in on <a href={ts.auth_url} target="_blank" rel="noopener noreferrer">Tailscale's page</a>; this updates by itself when the box is in.</span></div>}
       {withKey ? (
         <form onSubmit={up} className="row wrap">
           <input value={key} onChange={e => setKey(e.target.value)} placeholder="tskey-auth-…" style={{ flex: '1 1 240px' }} autoFocus />
@@ -171,6 +232,7 @@ export function PasswordPanel({ st, onSaved }: { st: BoxSystem; onSaved?: () => 
   const { toast } = useToast()
   const [pw, setPw] = useState('')
   const [again, setAgain] = useState('')
+  const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const save = async (e: React.FormEvent) => {
@@ -179,18 +241,27 @@ export function PasswordPanel({ st, onSaved }: { st: BoxSystem; onSaved?: () => 
     setBusy(true); setErr('')
     try { await api.put(`${BOX}/password`, { password: pw }); setPw(''); setAgain(''); toast('Console password saved'); onSaved?.() } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
+  const long = pw.length >= 8
+  const same = !!again && pw === again
   return (
-    <form onSubmit={save} className="stack tight">
-      <dl className="kv">
-        <dt>Username</dt><dd><code>pocket</code></dd>
-        <dt>Password</dt><dd>{st.password_set ? 'set — change it below' : <span className="muted">none yet: the login is locked until you set one</span>}</dd>
-      </dl>
-      <p className="muted small">This is not your Pocket account. It is only for the login on the box's own screen and keyboard (or a serial cable), for repairs, and it can change anything on the box, so give it a password of its own. The box's screen shows the username and whether a password is set, never the password.</p>
-      <div className="row wrap">
-        <input type="password" placeholder="New password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" minLength={8} style={{ flex: '1 1 180px' }} />
-        <input type="password" placeholder="Again" value={again} onChange={e => setAgain(e.target.value)} autoComplete="new-password" minLength={8} style={{ flex: '1 1 180px' }} />
-        <button className="btn primary" disabled={busy || pw.length < 8 || !again}>{busy ? <Spinner /> : null}{st.password_set ? 'Change' : 'Set password'}</button>
+    <form onSubmit={save} className="stack">
+      <div className="box-tiles">
+        <div className="box-tile"><span>Username</span><b><code>pocket</code></b></div>
+        <div className={`box-tile ${st.password_set ? 'ok' : ''}`}><span>Login</span><b><Icon name={st.password_set ? 'check' : 'lock'} size={14} />{st.password_set ? 'Password set' : 'Locked'}</b></div>
       </div>
+      <p className="muted small">It can change anything on the box, so give it a password of its own. The box's screen never shows it.</p>
+      <div className="stack tight">
+        <div className="box-pw">
+          <input type={show ? 'text' : 'password'} placeholder={st.password_set ? 'New password' : 'Password'} value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" minLength={8} aria-label="New password" />
+          <button type="button" className="btn ghost icon-only sm" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}><Icon name={show ? 'eye-off' : 'eye'} size={15} /></button>
+        </div>
+        <input type={show ? 'text' : 'password'} placeholder="The same again" value={again} onChange={e => setAgain(e.target.value)} autoComplete="new-password" minLength={8} aria-label="The same again" />
+        <div className="box-checks">
+          <span className={long ? 'ok' : ''}><Icon name={long ? 'check' : 'circle'} size={13} />At least 8 characters</span>
+          <span className={same ? 'ok' : ''}><Icon name={same ? 'check' : 'circle'} size={13} />Both the same</span>
+        </div>
+      </div>
+      <div className="row"><button className="btn primary" disabled={busy || !long || !same}>{busy ? <Spinner /> : null}{st.password_set ? 'Change password' : 'Set password'}</button></div>
       <Problem text={err} />
     </form>
   )
@@ -198,12 +269,24 @@ export function PasswordPanel({ st, onSaved }: { st: BoxSystem; onSaved?: () => 
 
 export function DiskPanel({ st }: { st: BoxSystem }) {
   const d = st.encryption
-  if (!d.encrypted) return <div className="callout"><Icon name="info" size={15} /><span>The disk is not encrypted: this box had no TPM chip when it was installed. Keep it somewhere safe.</span></div>
+  if (!d.encrypted) return (
+    <div className="box-hero warn">
+      <span className="box-hero-ico"><Icon name="alert" size={20} /></span>
+      <div className="grow"><b>The disk is not encrypted</b><span>This box had no TPM chip when it was installed. Keep it somewhere safe.</span></div>
+    </div>
+  )
   return (
-    <div className="callout"><Icon name="lock" size={15} /><span>
-      The disk is encrypted{d.tpm ? ' and unlocks itself with this box’s TPM chip, so it starts without a password' : ''}. Taken out of the box, it can’t be read.
-      {d.recovery_key ? ' Keep the recovery key from the installation somewhere safe: it is the only way in if the board is replaced.' : ''}
-    </span></div>
+    <div className="stack tight">
+      <div className="box-hero ok">
+        <span className="box-hero-ico"><Icon name="shield" size={20} /></span>
+        <div className="grow"><b>Your data is encrypted</b><span>Taken out of the box, the disk can't be read.</span></div>
+      </div>
+      <ul className="box-perks">
+        {d.tpm && <li><span><Icon name="zap" size={16} /></span><div><b>Starts by itself</b>The box's TPM chip unlocks the disk, so no password at power-on.</div></li>}
+        {d.recovery_key && <li><span><Icon name="key" size={16} /></span><div><b>Keep the recovery key safe</b>The one from the installation is the only way in if the board is ever replaced.</div></li>}
+        <li><span><Icon name="refresh" size={16} /></span><div><b>Backups</b>Pocket Backups copies the apps' data elsewhere; set it up from its app.</div></li>
+      </ul>
+    </div>
   )
 }
 
