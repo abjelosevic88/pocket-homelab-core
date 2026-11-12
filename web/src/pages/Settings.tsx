@@ -173,7 +173,7 @@ function DownloadsSection() {
   }, [shown])
   if (!shown) return null
   return (
-    <Section id="downloads" title="Downloads" icon="download" sub="So Pocket Requests and Pocket Watch can fetch films and shows. The box does the rest; it only needs your Usenet provider and an indexer.">
+    <Section id="downloads" title="Downloads" icon="download" sub="So Pocket Requests and Pocket Watch can fetch films and shows. The box does the rest; it needs your Usenet provider or torrents switched on, and an indexer.">
       {dl ? <DownloadsPanel dl={dl} onChange={setDl} /> : <div className="callout danger"><Icon name="alert" size={15} /><span>{err}</span></div>}
     </Section>
   )

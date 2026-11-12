@@ -17,7 +17,7 @@ const STEPS: Step[] = [
   { id: 'network', icon: 'wifi', title: 'Network', short: 'Network', sub: 'The box is online by cable. Join Wi-Fi too if it should work without one.', optional: true },
   { id: 'remote', icon: 'globe', title: 'Away from home', short: 'Remote', sub: 'Reach the box from your phone and laptop anywhere, through Tailscale.', optional: true },
   { id: 'console', icon: 'terminal', title: 'Console password', short: 'Console', sub: 'The login on the box\'s own screen (username pocket), only for repairs. Not your Pocket account. Leave it locked if you never plug in a screen.', optional: true },
-  { id: 'downloads', icon: 'download', title: 'Downloads', short: 'Downloads', sub: 'So Pocket Requests can fetch the films and shows you ask for. No Usenet account yet? Skip this and come back to it under Settings → System.', optional: true },
+  { id: 'downloads', icon: 'download', title: 'Downloads', short: 'Downloads', sub: 'So Pocket Requests can fetch the films and shows you ask for: over Usenet, torrents or both, all on this one page. Not sure yet? Skip it and come back under Settings → System.', optional: true },
   { id: 'disk', icon: 'shield', title: 'Your data', short: 'Data', sub: 'How the box keeps it safe.' },
   { id: 'done', icon: 'check', title: 'All set', short: 'Done', sub: 'Here is how the box is set up. Tap a line to change it; everything stays under Settings → System as well.' },
 ]

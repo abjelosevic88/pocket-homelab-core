@@ -187,13 +187,15 @@ How phones and computers get a padlock for the box, chosen first on the box's la
 
 ### Downloads on the box (`BOX_DOWNLOADS`)
 
-On a box with Pocket Watch, Requests or Subtitles, the box runs Radarr, Sonarr, Prowlarr, SABnzbd (and Lidarr with Pocket Music, Bazarr with Subtitles) on loopback and wires them together itself. The owner only types in a Usenet provider and an indexer's API key (and, for subtitles, the languages and an optional OpenSubtitles.com login) under Settings → System → **Downloads** (deep link `/settings/system#downloads`, which Pocket Requests uses) or the wizard's optional *Downloads* step. Both appear only when the service's `installed` is true.
+On a box with Pocket Watch, Requests or Subtitles, the box runs Radarr, Sonarr, Prowlarr, SABnzbd, qBittorrent (and Lidarr with Pocket Music, Bazarr with Subtitles) on loopback and wires them together itself. The owner only types in a Usenet provider and an indexer's API key, and/or switches torrents on (qBittorrent, with an optional WireGuard VPN and public torrent sites that need nothing); either one is enough to be ready (and, for subtitles, the languages and an optional OpenSubtitles.com login) under Settings → System → **Downloads** (deep link `/settings/system#downloads`, which Pocket Requests uses) or the wizard's optional *Downloads* step. Both appear only when the service's `installed` is true.
 
 | Core (admins) | Downloads service | What |
 |---|---|---|
 | `GET /api/v1/box/downloads` | `GET /v1/downloads` | installed, ready, the services, the Usenet server (never its password), the indexers with their status, subtitles, the provider and indexer presets |
 | `PUT …/downloads/usenet {host, port, ssl, username, password?, connections}` · `DELETE …/usenet` | same | save the Usenet server in SABnzbd and test it; remove it |
-| `POST …/downloads/indexers {preset?, name?, url?, api_key}` · `DELETE …/indexers/{id}` | same | add an indexer in Prowlarr and test it; remove one |
+| `POST …/downloads/indexers {preset?, kind?, name?, url?, api_key?, username?, password?}` · `DELETE …/indexers/{id}` | same | add an indexer in Prowlarr and test it; remove one |
 | `PUT …/downloads/subtitles {languages, opensubtitles?: {username, password}}` | same | Bazarr's languages and OpenSubtitles.com login |
+| `PUT …/downloads/torrents {enabled, seeding?: {ratio, days}}` | same | torrents through qBittorrent (off until switched on; Usenet stays first), and how long to share back |
+| `PUT …/downloads/vpn {wireguard}` · `DELETE …/vpn` | same | a WireGuard `.conf` that all torrent traffic must use (no tunnel, no torrents); remove it |
 
 A failed test still answers 200 with `status: "error"` and a plain message; 400 is for bad input (`{"error": "…"}`). `GET /api/v1/auth/status` carries `box_downloads`.

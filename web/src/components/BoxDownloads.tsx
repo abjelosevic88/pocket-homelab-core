@@ -1,9 +1,11 @@
 // Downloads on the Pocket Box, through the box downloads service (BOX_DOWNLOADS). The box runs and
-// wires Radarr, Sonarr, Prowlarr, SABnzbd (Lidarr, Bazarr) by itself; the owner only brings a Usenet
-// provider and an indexer's API key, and for subtitles the languages and an optional
-// OpenSubtitles.com login. Settings → System → Downloads (/settings/system#downloads, where Pocket
-// Requests sends people) and the setup wizard's optional Downloads step share this panel.
-import { useEffect, useMemo, useState } from 'react'
+// wires Radarr, Sonarr, Prowlarr, SABnzbd, qBittorrent (Lidarr, Bazarr) by itself; the owner only brings a
+// Usenet provider and an indexer's API key, and/or switches torrents on (optionally through a WireGuard
+// VPN), and for subtitles the languages and an optional OpenSubtitles.com login. Either Usenet or
+// torrents is enough; with both the box tries Usenet first. Settings → System → Downloads
+// (/settings/system#downloads, where Pocket Requests sends people) and the setup wizard's optional
+// Downloads step share this panel.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import type { BoxDownloads, DownloadsStatus, IndexerPreset } from '../lib/types'
 import { Confirm, errMsg, Field, Spinner, Switch, useToast } from './ui'
@@ -23,19 +25,45 @@ export function useBoxDownloads(on = true) {
   return { dl, setDl, err, reload }
 }
 
-/** One line for the wizard's summary. */
+type Kind = 'usenet' | 'torrent'
+const kindOf = (x: { kind?: string }): Kind => (x.kind === 'torrent' ? 'torrent' : 'usenet')
+const okIndexers = (dl: BoxDownloads, kind: Kind) => dl.indexers.filter(x => kindOf(x) === kind && x.status === 'ok').length
+
+/** Where each way of downloading stands (the box's `ready` = either one works). */
+function routes(dl: BoxDownloads) {
+  const t = dl.torrents
+  const provider = dl.usenet.configured && dl.usenet.status === 'ok'
+  const torrentsOn = !!t?.enabled && t.status === 'ok'
+  return {
+    provider, usenetIndexer: okIndexers(dl, 'usenet') > 0, usenet: provider && okIndexers(dl, 'usenet') > 0,
+    torrentsOn, torrentIndexer: okIndexers(dl, 'torrent') > 0, torrents: torrentsOn && okIndexers(dl, 'torrent') > 0,
+  }
+}
+
+/** One line for the wizard's summary, like "Eweka, 2 indexers · torrents via VPN". */
 export function downloadsSummary(dl: BoxDownloads | null): { text: string; ok: boolean } {
   if (!dl) return { text: 'Not set up yet', ok: false }
-  const usenet = dl.usenet.configured && dl.usenet.status === 'ok'
-  const indexers = dl.indexers.filter(x => x.status === 'ok').length
-  if (dl.ready) return { text: `${providerName(dl)}, ${indexers} indexer${indexers === 1 ? '' : 's'}`, ok: true }
-  if (!dl.usenet.configured && !dl.indexers.length) return { text: 'Not set up yet', ok: false }
-  if (!usenet) return { text: dl.usenet.configured ? 'The Usenet provider has a problem' : 'Usenet provider still missing', ok: false }
-  return { text: dl.indexers.length ? 'No indexer works yet' : 'Indexer still missing', ok: false }
+  const r = routes(dl)
+  const t = dl.torrents
+  const n = dl.indexers.filter(x => x.status === 'ok').length
+  const count = `${n} indexer${n === 1 ? '' : 's'}`
+  const via = t?.enabled ? (t.vpn.configured ? 'torrents via VPN' : 'torrents without a VPN') : ''
+  if (dl.ready) {
+    if (r.usenet) return { text: `${providerName(dl)}, ${count}${via ? ` · ${via}` : ''}`, ok: true }
+    return { text: `${via.charAt(0).toUpperCase()}${via.slice(1)}, ${count}`, ok: true }
+  }
+  if (!dl.usenet.configured && !dl.indexers.length && !t?.enabled) return { text: 'Not set up yet', ok: false }
+  if (dl.usenet.configured && dl.usenet.status === 'error') return { text: 'The Usenet provider has a problem', ok: false }
+  if (t?.enabled && t.status === 'error') return { text: 'Torrents have a problem', ok: false }
+  if (!n) return { text: dl.indexers.length ? 'No indexer works yet' : 'Indexer still missing', ok: false }
+  if (r.provider) return { text: 'Add a Usenet indexer', ok: false }
+  if (r.torrentsOn) return { text: 'Add a torrent site', ok: false }
+  return { text: t ? 'Usenet provider or torrents still missing' : 'Usenet provider still missing', ok: false }
 }
 
 const SERVICE: Record<string, string> = {
   radarr: 'Films (Radarr)', sonarr: 'Shows (Sonarr)', lidarr: 'Music (Lidarr)', prowlarr: 'Indexers (Prowlarr)', sabnzbd: 'Downloader (SABnzbd)', bazarr: 'Subtitles (Bazarr)',
+  qbittorrent: 'Torrents (qBittorrent)',
 }
 
 // Subtitle languages on offer (ISO 639-1), named in the browser's language.
@@ -68,33 +96,46 @@ function PasswordInput({ value, onChange, placeholder, label }: { value: string;
   )
 }
 
-/** Everything about downloads on the box: ready or not, the provider, the indexers, subtitles. */
+function Check({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  return <span className={ok ? 'ok' : ''}><Icon name={ok ? 'check' : 'circle'} size={13} />{children}</span>
+}
+
+/** Everything about downloads on the box: ready or not, Usenet, torrents, the indexers, subtitles. */
 export function DownloadsPanel({ dl, onChange }: { dl: BoxDownloads; onChange: (dl: BoxDownloads) => void }) {
-  const usenetOk = dl.usenet.configured && dl.usenet.status === 'ok'
-  const indexerOk = dl.indexers.some(x => x.status === 'ok')
-  const starting = dl.services.filter(s => !s.ready)
+  const r = routes(dl)
+  const t = dl.torrents
+  // qBittorrent is stopped while torrents are off: not "starting".
+  const starting = dl.services.filter(s => !s.ready && (s.type !== 'qbittorrent' || t?.enabled))
+  const started = r.provider || r.usenetIndexer || r.torrentsOn || r.torrentIndexer
+  let readyText = 'Pocket Requests can now find and download the films and shows you ask for.'
+  if (r.usenet && r.torrents) readyText += ' Usenet first; torrents when Usenet has nothing.'
+  if (r.torrents && t?.vpn.configured && t.vpn.status !== 'up') readyText += ' The VPN is down, so torrents are paused until it is back.'
+  else if (r.torrents && !r.usenet) readyText += t?.vpn.configured ? ' Torrents go only through your VPN.' : ' Torrents run without a VPN, so others sharing a file see your home address.'
+  if (dl.subtitles.installed) readyText += ' Subtitles come by themselves.'
   return (
     <div className="stack loose dl">
       {dl.ready ? (
         <div className="box-hero ok">
           <span className="box-hero-ico"><Icon name="check" size={20} /></span>
-          <div className="grow"><b>Downloads are ready</b><span>Pocket Requests can now find and download the films and shows you ask for.{dl.subtitles.installed ? ' Subtitles come by themselves.' : ''}</span></div>
+          <div className="grow"><b>Downloads are ready</b><span>{readyText}</span></div>
         </div>
       ) : (
         <div className="box-hero">
           <span className="box-hero-ico"><Icon name="download" size={20} /></span>
-          <div className="grow"><b>{usenetOk || indexerOk ? 'One thing left' : 'Two things to finish'}</b>
-            <span>{usenetOk ? 'Add an indexer that works and the box can start.' : indexerOk ? (dl.usenet.configured ? 'Your Usenet provider has to work too; see below.' : 'Add your Usenet provider and the box can start.')
+          <div className="grow"><b>{started ? 'Almost there' : t ? 'Choose how the box downloads' : 'Two things to finish'}</b>
+            <span>{t
+              ? 'Usenet is a paid service: fast and private. Torrents are free, but others sharing a file see your home address unless you use a VPN. One of them is enough; with both, the box tries Usenet first.'
               : 'The box has everything else installed and connected. It needs your Usenet provider and one indexer; both are services you sign up for yourself.'}</span>
-            <div className="box-checks dl-checks">
-              <span className={usenetOk ? 'ok' : ''}><Icon name={usenetOk ? 'check' : 'circle'} size={13} />A Usenet provider that works</span>
-              <span className={indexerOk ? 'ok' : ''}><Icon name={indexerOk ? 'check' : 'circle'} size={13} />An indexer that works</span>
+            <div className="dl-routes">
+              <div className="box-checks"><b>Usenet</b><Check ok={r.provider}>A provider that works</Check><Check ok={r.usenetIndexer}>A Usenet indexer</Check></div>
+              {t && <div className="box-checks"><b>Torrents</b><Check ok={r.torrentsOn}>Switched on</Check><Check ok={r.torrentIndexer}>A torrent site</Check></div>}
             </div>
           </div>
         </div>
       )}
       {starting.length > 0 && <div className="callout"><Icon name="clock" size={15} /><span>Still starting: {starting.map(s => SERVICE[s.type] || s.type).join(', ')}. Give it a minute, then open this page again.</span></div>}
       <UsenetPart dl={dl} onChange={onChange} />
+      {t && <TorrentsPart dl={dl} onChange={onChange} />}
       <IndexersPart dl={dl} onChange={onChange} />
       {dl.subtitles.installed && <SubtitlesPart dl={dl} onChange={onChange} />}
     </div>
@@ -208,34 +249,64 @@ function UsenetPart({ dl, onChange }: { dl: BoxDownloads; onChange: (dl: BoxDown
   )
 }
 
+const CUSTOM_TORRENT = 'custom-torrent'
+const NEED_LABEL: Record<string, string> = { api_key: 'API key', username: 'Username', password: 'Password', passkey: 'Passkey', cookie: 'Cookie' }
+const needLabel = (k: string) => NEED_LABEL[k] || (k.charAt(0).toUpperCase() + k.slice(1)).replace(/_/g, ' ')
+const bare = (u: string) => u.replace(/^https?:\/\//, '').replace(/\/$/, '')
+
 function IndexersPart({ dl, onChange }: { dl: BoxDownloads; onChange: (dl: BoxDownloads) => void }) {
   const { toast } = useToast()
+  const t = dl.torrents
   const taken = new Set(dl.indexers.map(x => x.preset).filter(Boolean))
-  const free = dl.presets.indexers.filter(p => !taken.has(p.id))
   const [open, setOpen] = useState(dl.indexers.length === 0)
   const [preset, setPreset] = useState('')
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [key, setKey] = useState('')
+  const [needs, setNeeds] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [removing, setRemoving] = useState<{ id: number; name: string } | null>(null)
   const p: IndexerPreset | undefined = dl.presets.indexers.find(x => x.id === preset)
-  const options = useMemo(() => [...free.map(x => ({ value: x.id, label: x.name, hint: x.signup.replace(/^https?:\/\//, '').replace(/\/$/, '') })), { value: CUSTOM, label: 'Another indexer', hint: 'type in its address' }], [free])
-  const valid = !!key.trim() && (!!p || (preset === CUSTOM && !!name.trim() && /^https?:\/\/\S+$/.test(url.trim())))
+  const torrentPick = preset === CUSTOM_TORRENT || (!!p && kindOf(p) === 'torrent')
+  // Usenet first, then torrent sites (only on a box with torrents), each with its own "another".
+  const options = useMemo(() => {
+    const free = dl.presets.indexers.filter(x => !taken.has(x.id))
+    const group = (k: Kind) => (t ? (k === 'usenet' ? 'Usenet indexers' : 'Torrent sites') : undefined)
+    const usenet = free.filter(x => kindOf(x) === 'usenet').map(x => ({ value: x.id, label: x.name, hint: x.signup ? bare(x.signup) : '', group: group('usenet') }))
+    const out = [...usenet, { value: CUSTOM, label: 'Another Usenet indexer', hint: 'type in its address', group: group('usenet') }]
+    if (t) {
+      const torrent = free.filter(x => kindOf(x) === 'torrent').sort((a, b) => Number(!!b.public) - Number(!!a.public) || a.name.localeCompare(b.name))
+        .map(x => ({ value: x.id, label: x.name, hint: x.public ? 'public · nothing to type in' : 'private · needs an account', group: group('torrent') }))
+      out.push(...torrent, { value: CUSTOM_TORRENT, label: 'Another torrent indexer', hint: 'Torznab address', group: group('torrent') })
+    }
+    return out
+  }, [dl.presets.indexers, dl.indexers, t])
+  const need = p && kindOf(p) === 'torrent' && !p.public ? (p.needs?.length ? p.needs : ['api_key']) : []
+  const okUrl = /^https?:\/\/\S+$/.test(url.trim())
+  let valid = false
+  if (p && kindOf(p) === 'usenet') valid = !!key.trim()
+  else if (p) valid = need.every(k => !!(needs[k] || '').trim())
+  else if (preset === CUSTOM) valid = !!key.trim() && !!name.trim() && okUrl
+  else if (preset === CUSTOM_TORRENT) valid = !!name.trim() && okUrl
 
+  const reset = () => { setPreset(''); setName(''); setUrl(''); setKey(''); setNeeds({}) }
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
     setBusy(true); setErr('')
     try {
-      const body = p ? { preset: p.id, api_key: key.trim() } : { name: name.trim(), url: url.trim(), api_key: key.trim() }
+      let body: Record<string, unknown>
+      if (p && kindOf(p) === 'usenet') body = { preset: p.id, api_key: key.trim() }
+      else if (p) { body = { kind: 'torrent', preset: p.id }; for (const k of need) body[k] = k === 'password' ? needs[k] : (needs[k] || '').trim() }
+      else if (preset === CUSTOM_TORRENT) body = { kind: 'torrent', name: name.trim(), url: url.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) }
+      else body = { name: name.trim(), url: url.trim(), api_key: key.trim() }
       const got = await api.post<BoxDownloads>(`${DOWNLOADS}/indexers`, body)
       onChange(got)
       // How the test went: the new one is the indexer that was not there before.
       const before = new Set(dl.indexers.map(x => x.id))
       const added = got.indexers.find(x => !before.has(x.id))
       // A failed test still adds it: the list shows why, with Remove next to it.
-      setOpen(false); setPreset(''); setName(''); setUrl(''); setKey('')
+      setOpen(false); reset()
       if (!added || added.status === 'ok') toast(`${added?.name || 'The indexer'} works`)
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
@@ -250,45 +321,184 @@ function IndexersPart({ dl, onChange }: { dl: BoxDownloads; onChange: (dl: BoxDo
     } catch (e) { setErr(errMsg(e)) }
   }
 
+  const groups: { kind: Kind; title: string }[] = t && dl.indexers.some(x => kindOf(x) === 'torrent') ? [{ kind: 'usenet', title: 'Usenet' }, { kind: 'torrent', title: 'Torrents' }] : [{ kind: 'usenet', title: '' }, { kind: 'torrent', title: '' }]
   return (
     <div className="stack tight">
-      <PartHead icon="search" title="Indexers" text="Websites that list what is on Usenet, so the box can find what you ask for. You need at least one; most have a free plan, and a paid one costs a few euros a year." />
-      {dl.indexers.length > 0 && <div className="stack tight">
-        {dl.indexers.map(x => (
-          <div key={x.id} className="dl-item">
-            <div className={`box-link ${x.status === 'ok' ? 'on' : ''}`}>
-              <span className="box-link-ico"><Icon name={x.status === 'error' ? 'alert' : 'search'} size={17} /></span>
-              <div className="grow"><b>{x.name}</b>{x.status === 'error' && x.message ? <span className="dl-err">{x.message}</span> : x.status === 'ok' ? <span>Answering searches</span> : null}</div>
-              <StatusBadge status={x.status} />
-              <button type="button" className="btn ghost icon-only sm" onClick={() => setRemoving({ id: x.id, name: x.name })} aria-label={`Remove ${x.name}`} title="Remove"><Icon name="trash" size={14} /></button>
-            </div>
+      <PartHead icon="search" title="Indexers" text={t
+        ? 'Websites that list what can be downloaded, so the box finds what you ask for. Usenet needs a Usenet indexer (most have a free plan); for torrents, public sites need nothing at all.'
+        : 'Websites that list what is on Usenet, so the box can find what you ask for. You need at least one; most have a free plan, and a paid one costs a few euros a year.'} />
+      {groups.map(g => {
+        const items = dl.indexers.filter(x => kindOf(x) === g.kind)
+        if (!items.length) return null
+        return (
+          <div key={g.kind} className="stack tight">
+            {g.title && <b className="box-section-title">{g.title}</b>}
+            {items.map(x => {
+              const idle = g.kind === 'torrent' && !t?.enabled
+              return (
+                <div key={x.id} className="dl-item">
+                  <div className={`box-link ${x.status === 'ok' && !idle ? 'on' : ''}`}>
+                    <span className="box-link-ico"><Icon name={x.status === 'error' ? 'alert' : g.kind === 'torrent' ? 'share' : 'search'} size={17} /></span>
+                    <div className="grow"><b>{x.name}{x.public && <span className="badge">Public</span>}</b>
+                      {x.status === 'error' && x.message ? <span className="dl-err">{x.message}</span> : idle ? <span>Not used while torrents are off</span> : x.status === 'ok' ? <span>Answering searches</span> : null}</div>
+                    <StatusBadge status={x.status} />
+                    <button type="button" className="btn ghost icon-only sm" onClick={() => setRemoving({ id: x.id, name: x.name })} aria-label={`Remove ${x.name}`} title="Remove"><Icon name="trash" size={14} /></button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        ))}
-      </div>}
+        )
+      })}
       {!open && <div className="row"><button type="button" className="btn sm" onClick={() => { setOpen(true); setErr('') }}><Icon name="plus" size={14} />Add an indexer</button></div>}
       {open && <form onSubmit={add} className="stack tight dl-form">
-        <Field label="Which indexer?">
-          <Select value={preset} onChange={v => { setPreset(v); setErr('') }} options={options} placeholder="Pick an indexer…" ariaLabel="Indexer" />
+        <Field label={t ? 'Which indexer or torrent site?' : 'Which indexer?'}>
+          <Select value={preset} onChange={v => { setPreset(v); setErr(''); setNeeds({}) }} options={options} placeholder="Pick one…" ariaLabel="Indexer" />
         </Field>
-        {p && <ol className="dl-steps">
-          <li>Make an account at <a href={p.signup} target="_blank" rel="noopener noreferrer">{p.signup.replace(/^https?:\/\//, '').replace(/\/$/, '')} <Icon name="external" size={12} /></a> if you have none.</li>
+        {p && kindOf(p) === 'usenet' && <ol className="dl-steps">
+          {p.signup && <li>Make an account at <a href={p.signup} target="_blank" rel="noopener noreferrer">{bare(p.signup)} <Icon name="external" size={12} /></a> if you have none.</li>}
           <li>Copy the <b>API key</b> from your profile or account page there.</li>
           <li>Paste it here:</li>
         </ol>}
-        {preset === CUSTOM && <div className="two-col tight">
-          <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="My indexer" autoComplete="off" /></Field>
-          <Field label="Address" help="Its Newznab API address, like https://api.example.com."><input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" autoComplete="off" spellCheck={false} /></Field>
+        {p && kindOf(p) === 'torrent' && p.public && <div className="callout info"><Icon name="check" size={15} /><span><b>{p.name}</b> is public: nothing to type in.</span></div>}
+        {p && kindOf(p) === 'torrent' && !p.public && <p className="small">{p.name} is private: it needs your account there{p.signup ? <> (<a href={p.signup} target="_blank" rel="noopener noreferrer">{bare(p.signup)} <Icon name="external" size={12} /></a>)</> : null}.</p>}
+        {need.length > 0 && <div className="two-col tight">
+          {need.map(k => <Field key={k} label={needLabel(k)}>{k === 'password'
+            ? <PasswordInput value={needs[k] || ''} onChange={v => setNeeds({ ...needs, [k]: v })} label={needLabel(k)} placeholder="" />
+            : <input value={needs[k] || ''} onChange={e => setNeeds({ ...needs, [k]: e.target.value })} autoComplete="off" spellCheck={false} />}</Field>)}
         </div>}
-        {preset && <Field label="API key"><input value={key} onChange={e => setKey(e.target.value)} placeholder="Paste the API key" autoComplete="off" spellCheck={false} /></Field>}
+        {torrentPick && !t?.enabled && <p className="muted small">Torrents are off: the box uses this site once you switch them on above.</p>}
+        {(preset === CUSTOM || preset === CUSTOM_TORRENT) && <div className="two-col tight">
+          <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder={preset === CUSTOM ? 'My indexer' : 'My tracker'} autoComplete="off" /></Field>
+          <Field label="Address" help={preset === CUSTOM ? 'Its Newznab API address, like https://api.example.com.' : 'Its Torznab address, like https://tracker.example.com/api.'}><input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" autoComplete="off" spellCheck={false} /></Field>
+        </div>}
+        {(p && kindOf(p) === 'usenet' || preset === CUSTOM || preset === CUSTOM_TORRENT) && <Field label={preset === CUSTOM_TORRENT ? 'API key (if it has one)' : 'API key'}><input value={key} onChange={e => setKey(e.target.value)} placeholder="Paste the API key" autoComplete="off" spellCheck={false} /></Field>}
         <Problem text={err} />
         <div className="row wrap">
           <button className="btn primary" disabled={busy || !valid}>{busy ? <><Spinner />Testing…</> : 'Add and test'}</button>
-          {dl.indexers.length > 0 && <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr('') }} disabled={busy}>Cancel</button>}
+          {dl.indexers.length > 0 && <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr(''); reset() }} disabled={busy}>Cancel</button>}
         </div>
       </form>}
       {!open && <Problem text={err} />}
-      {removing && <Confirm title={`Remove ${removing.name}`} message="The box stops searching it. You can add it again any time with the same API key." confirmLabel="Remove"
+      {removing && <Confirm title={`Remove ${removing.name}`} message="The box stops searching it. You can add it again any time." confirmLabel="Remove"
         onConfirm={remove} onCancel={() => setRemoving(null)} />}
+    </div>
+  )
+}
+
+function TorrentsPart({ dl, onChange }: { dl: BoxDownloads; onChange: (dl: BoxDownloads) => void }) {
+  const { toast } = useToast()
+  const t = dl.torrents!
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [askOn, setAskOn] = useState(false)
+  const [ratio, setRatio] = useState(String(t.seeding.ratio))
+  const [days, setDays] = useState(String(t.seeding.days))
+  useEffect(() => { setRatio(String(t.seeding.ratio)); setDays(String(t.seeding.days)) }, [t.seeding.ratio, t.seeding.days])
+  const put = async (body: Record<string, unknown>) => {
+    setBusy(true); setErr('')
+    try { const got = await api.put<BoxDownloads>(`${DOWNLOADS}/torrents`, body); onChange(got); return got } catch (e) { setErr(errMsg(e)); return null } finally { setBusy(false) }
+  }
+  const turn = async (on: boolean) => {
+    setAskOn(false)
+    const got = await put({ enabled: on })
+    if (got) toast(!on ? 'Torrents are off' : got.torrents?.status === 'error' ? 'Torrents are on, but not working yet' : 'Torrents are on')
+  }
+  const r = Number(ratio.replace(',', '.')), d = Number(days)
+  const seedValid = r > 0 && r <= 100 && Number.isInteger(d) && d >= 1 && d <= 365
+  const seedChanged = r !== t.seeding.ratio || d !== t.seeding.days
+  const state = !t.enabled ? 'Off' : t.status === 'error' ? 'On, but not working' : t.vpn.configured ? (t.vpn.status === 'up' ? 'On, only through your VPN' : 'On, paused until the VPN is back') : 'On, without a VPN'
+  return (
+    <div className="stack tight">
+      <PartHead icon="share" title="Torrents" text="Free: the box downloads from other people sharing the same file, and shares it back for a while. Off until you switch it on." />
+      <div className={`box-link ${t.enabled && t.status === 'ok' ? 'on' : ''}`}>
+        <span className="box-link-ico"><Icon name={t.enabled && t.status === 'error' ? 'alert' : 'share'} size={17} /></span>
+        <div className="grow"><b>Use torrents</b><span>{state}</span></div>
+        {t.enabled && t.status !== 'off' && (t.status === 'ok' && t.vpn.configured && t.vpn.status !== 'up' ? <span className="badge warn"><Icon name="pause" size={11} />Paused</span> : <StatusBadge status={t.status === 'ok' ? 'ok' : 'error'} />)}
+        <Switch on={t.enabled} disabled={busy} label="Use torrents" onChange={on => (on && !t.vpn.configured ? setAskOn(true) : turn(on))} />
+      </div>
+      {t.enabled && t.status === 'error' && <Problem text={t.message || 'qBittorrent is not answering.'} />}
+      {!t.vpn.configured && <div className={`callout ${t.enabled ? 'warn' : ''}`}><Icon name="alert" size={15} />
+        <span><b>{t.enabled ? 'Your home address is visible:' : 'Before you switch them on:'}</b> everyone sharing the same file sees the box's internet address, and in many countries rights holders write to your internet provider about films and shows. A VPN hides it; add one below.</span></div>}
+      <VpnBlock dl={dl} onChange={onChange} />
+      {t.enabled && <div className="dl-os">
+        <span className="small"><b>Sharing back</b><br /><span className="muted">After a download, the box keeps sharing it until it has sent this many times its size, or for this many days, whichever comes first.</span></span>
+        <div className="row wrap dl-seed">
+          <Field label="Times its size"><input value={ratio} onChange={e => setRatio(e.target.value.replace(/[^\d.,]/g, ''))} inputMode="decimal" style={{ width: 90 }} /></Field>
+          <Field label="Days"><input value={days} onChange={e => setDays(e.target.value.replace(/\D/g, ''))} inputMode="numeric" style={{ width: 90 }} /></Field>
+          {seedChanged && <button type="button" className="btn primary" disabled={busy || !seedValid} onClick={async () => { if (await put({ enabled: t.enabled, seeding: { ratio: r, days: d } })) toast('Saved') }}>{busy ? <Spinner /> : null}Save</button>}
+        </div>
+      </div>}
+      <Problem text={err} />
+      {askOn && <Confirm title="Use torrents without a VPN?" confirmLabel="Switch on anyway"
+        message="Everyone sharing a file will see your home internet address. You can add a VPN first (below) and switch torrents on afterwards."
+        onConfirm={() => turn(true)} onCancel={() => setAskOn(false)} />}
+    </div>
+  )
+}
+
+function VpnBlock({ dl, onChange }: { dl: BoxDownloads; onChange: (dl: BoxDownloads) => void }) {
+  const { toast } = useToast()
+  const t = dl.torrents!
+  const v = t.vpn
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const file = useRef<HTMLInputElement>(null)
+  const looksRight = /\[Interface\]/i.test(text) && /\[Peer\]/i.test(text)
+  const pick = async (f?: File) => {
+    if (!f) return
+    if (f.size > 32 << 10) { setErr("That file is too big for a WireGuard configuration."); return }
+    setText(await f.text()); setErr('')
+  }
+  const save = async () => {
+    setBusy(true); setErr('')
+    try {
+      const got = await api.put<BoxDownloads>(`${DOWNLOADS}/vpn`, { wireguard: text })
+      onChange(got)
+      if (got.torrents?.vpn.status === 'up') { setOpen(false); setText(''); toast('The VPN is connected') }
+      else setErr(got.torrents?.vpn.message || "The VPN didn't come up with this configuration.")
+    } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
+  }
+  const remove = async () => {
+    setRemoving(false); setBusy(true); setErr('')
+    try { onChange(await api.del<BoxDownloads>(`${DOWNLOADS}/vpn`)) } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
+  }
+  return (
+    <div className="dl-os">
+      <div className="row wrap">
+        <span className="grow small"><b>VPN</b> <span className="muted">(recommended for torrents)</span><br />
+          <span className="muted">{v.configured
+            ? <>Torrents go out only through {v.endpoint ? <b>{v.endpoint}</b> : 'your VPN'}. When it is down they stop, so your address never shows.</>
+            : 'Most VPN services (Mullvad, Proton VPN, AirVPN, IVPN…) let you download a WireGuard configuration file from your account.'}</span></span>
+        {v.configured && (v.status === 'up' ? <span className="badge ok"><Icon name="check" size={11} />Connected</span> : <span className="badge danger"><Icon name="alert" size={11} />Down</span>)}
+        {!open && <button type="button" className="btn sm" onClick={() => { setOpen(true); setErr('') }} disabled={busy}>{v.configured ? 'Replace' : 'Add a VPN'}</button>}
+        {v.configured && !open && <button type="button" className="btn sm danger-ghost" onClick={() => setRemoving(true)} disabled={busy}>Remove</button>}
+      </div>
+      {v.configured && v.status !== 'up' && !open && <Problem text={v.message || 'The VPN is down, so torrents are paused.'} />}
+      {open && <div className="stack tight">
+        <ol className="dl-steps">
+          <li>In your VPN's account, make a <b>WireGuard</b> configuration for a server near you (some call it “manual setup” or “router”).</li>
+          <li>Download the <code>.conf</code> file, or copy its text.</li>
+          <li>Upload or paste it here:</li>
+        </ol>
+        <div className="row"><button type="button" className="btn sm" onClick={() => file.current?.click()}><Icon name="upload" size={14} />Choose the .conf file</button>
+          <input ref={file} type="file" accept=".conf,text/plain" hidden onChange={e => { pick(e.target.files?.[0]); e.target.value = '' }} /></div>
+        <textarea className="dl-conf" value={text} onChange={e => { setText(e.target.value); setErr('') }} rows={7} spellCheck={false} aria-label="WireGuard configuration"
+          placeholder={'[Interface]\nPrivateKey = …\nAddress = …\n\n[Peer]\nPublicKey = …\nEndpoint = …'} />
+        {text.trim() && !looksRight && <p className="muted small">This doesn't look like a WireGuard configuration: it should have an [Interface] and a [Peer] part.</p>}
+        <Problem text={err} />
+        <div className="row wrap">
+          <button type="button" className="btn primary" disabled={busy || !looksRight} onClick={save}>{busy ? <><Spinner />Connecting…</> : 'Save and connect'}</button>
+          <button type="button" className="btn ghost" onClick={() => { setOpen(false); setText(''); setErr('') }} disabled={busy}>Cancel</button>
+        </div>
+      </div>}
+      {!open && v.configured && <Problem text={err} />}
+      {removing && <Confirm title="Remove the VPN" confirmLabel="Remove"
+        message={t.enabled ? 'Torrents keep running, without the VPN: others sharing a file will see your home address.' : 'The box deletes the configuration.'}
+        onConfirm={remove} onCancel={() => setRemoving(false)} />}
     </div>
   )
 }

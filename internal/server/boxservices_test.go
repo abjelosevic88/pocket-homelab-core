@@ -44,10 +44,18 @@ func (f *tinyNavidrome) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func writeServicesFile(t *testing.T, path, url string) {
 	t.Helper()
+	// As the box writes it: a service with accounts and a connector, and the
+	// household tools without accounts (owner_credential, connector off).
 	b, _ := json.Marshal([]map[string]any{{
 		"type": "navidrome", "url": url, "public_url": "https://navidrome.pocket.local",
 		"fields":    map[string]string{"USER": "pocket-box", "PASSWORD": "box-pass"},
 		"connector": map[string]bool{"enabled": true, "provision_on_create": true},
+	}, {
+		"type": "radarr", "url": "http://127.0.0.1:7878", "public_url": "https://radarr.pocket.local", "fields": map[string]string{"API_KEY": "rk"},
+		"audience": "admins", "connector": map[string]bool{"enabled": false, "provision_on_create": false}, "owner_credential": true,
+	}, {
+		"type": "qbittorrent", "url": "http://127.0.0.1:8090", "public_url": "", "fields": map[string]string{"USERNAME": "pocket", "PASSWORD": "qp"},
+		"audience": "admins", "connector": map[string]bool{"enabled": false, "provision_on_create": false}, "owner_credential": true,
 	}})
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
@@ -96,6 +104,14 @@ func TestServicesFileAndSetupProvisioning(t *testing.T) {
 	}
 	if acct == nil || acct.user != "owner" {
 		t.Fatalf("owner's account = %+v", acct)
+	}
+	// The box keys copied for the owner did not get in the way, and are there.
+	owner, _ := e.st.GetUserByEmail(ctx, "owner@example.com")
+	ovs, _ := e.st.ListOverrides(ctx, owner.ID)
+	qb, _ := e.st.GetServiceByType(ctx, "qbittorrent")
+	rd, _ := e.st.GetServiceByType(ctx, "radarr")
+	if ovs[rd.ID].Fields["API_KEY"] != "rk" || ovs[qb.ID].Fields["USERNAME"] != "pocket" || ovs[qb.ID].Fields["PASSWORD"] != "qp" || ovs[sv.ID].Source != "connector" {
+		t.Fatalf("owner's credentials = %+v", ovs)
 	}
 
 	// At the next start the box's values win, an admin's connector switches stay.

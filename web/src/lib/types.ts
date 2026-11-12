@@ -128,13 +128,22 @@ export interface CloudflareZone { id: string; name: string }
  *  indexers and subtitles behind Pocket Watch, Requests and Subtitles. */
 export type DownloadsStatus = 'ok' | 'error' | 'untested'
 export interface UsenetPreset { id: string; name: string; host: string; port: number; ssl: boolean }
-export interface IndexerPreset { id: string; name: string; url: string; signup: string }
+/** An indexer preset: Usenet (API key) or a torrent site (public: nothing to type in; private: `needs`). */
+export interface IndexerPreset { id: string; name: string; url?: string; signup?: string; kind?: 'usenet' | 'torrent'; public?: boolean; needs?: string[] }
+/** Torrents through qBittorrent: off until the owner switches them on; an optional WireGuard VPN carries all of it. */
+export interface DownloadsTorrents {
+  enabled: boolean; status: 'ok' | 'error' | 'off'; message: string
+  seeding: { ratio: number; days: number }
+  vpn: { configured: boolean; status: 'up' | 'down' | 'none'; message: string; endpoint: string }
+}
 export interface BoxDownloads {
   installed: boolean
   ready: boolean
   services: { type: string; ready: boolean }[]
   usenet: { configured: boolean; host: string; port: number; ssl: boolean; username: string; connections: number; status: DownloadsStatus; message: string }
-  indexers: { id: number; name: string; preset?: string; status: DownloadsStatus; message: string }[]
+  indexers: { id: number; name: string; preset?: string; kind?: 'usenet' | 'torrent'; public?: boolean; status: DownloadsStatus; message: string }[]
   subtitles: { installed: boolean; languages: string[]; opensubtitles: { configured: boolean; username: string } }
+  /** Missing from a box without qBittorrent. */
+  torrents?: DownloadsTorrents
   presets: { providers: UsenetPreset[]; indexers: IndexerPreset[] }
 }

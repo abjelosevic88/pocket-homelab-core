@@ -147,14 +147,18 @@ func (s *Server) handleBoxAddress(w http.ResponseWriter, r *http.Request) {
 
 // boxDownloadsRoutes maps Core's admin routes onto the box downloads
 // service's: the Usenet provider (SABnzbd), the indexers (Prowlarr) and
-// subtitles (Bazarr) behind Pocket Watch, Requests and Subtitles. Removing an
-// indexer (DELETE /indexers/{id}) is matched in handleBoxDownloads.
+// subtitles (Bazarr) behind Pocket Watch, Requests and Subtitles, and
+// torrents (qBittorrent, off until switched on) with an optional WireGuard VPN.
+// Removing an indexer (DELETE /indexers/{id}) is matched in handleBoxDownloads.
 var boxDownloadsRoutes = map[string]string{
 	"GET ":           "GET /v1/downloads",
 	"PUT /usenet":    "PUT /v1/downloads/usenet",
 	"DELETE /usenet": "DELETE /v1/downloads/usenet",
 	"POST /indexers": "POST /v1/downloads/indexers",
 	"PUT /subtitles": "PUT /v1/downloads/subtitles",
+	"PUT /torrents":  "PUT /v1/downloads/torrents",
+	"PUT /vpn":       "PUT /v1/downloads/vpn",
+	"DELETE /vpn":    "DELETE /v1/downloads/vpn",
 }
 
 func (s *Server) handleBoxDownloads(w http.ResponseWriter, r *http.Request) {

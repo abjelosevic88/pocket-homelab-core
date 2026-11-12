@@ -238,11 +238,15 @@ func TestBoxDownloadsThroughService(t *testing.T) {
 			return
 		}
 		switch r.Method + " " + r.URL.Path {
-		case "GET /v1/downloads", "DELETE /v1/downloads/usenet", "DELETE /v1/downloads/indexers/3", "PUT /v1/downloads/subtitles":
+		case "GET /v1/downloads", "DELETE /v1/downloads/usenet", "DELETE /v1/downloads/indexers/3", "PUT /v1/downloads/subtitles",
+			"PUT /v1/downloads/torrents", "DELETE /v1/downloads/vpn":
 			_ = json.NewEncoder(w).Encode(map[string]any{"installed": true, "ready": false})
 		case "PUT /v1/downloads/usenet":
 			// A failed test is still a 200, with the reason.
 			_ = json.NewEncoder(w).Encode(map[string]any{"installed": true, "usenet": map[string]any{"status": "error", "message": "The provider turned down the username or password."}})
+		case "PUT /v1/downloads/vpn":
+			// A config that does not come up is still a 200, with the reason.
+			_ = json.NewEncoder(w).Encode(map[string]any{"installed": true, "torrents": map[string]any{"vpn": map[string]any{"configured": true, "status": "down", "message": "The VPN server did not answer."}}})
 		case "POST /v1/downloads/indexers":
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Paste the indexer's API key."})
@@ -285,8 +289,17 @@ func TestBoxDownloadsThroughService(t *testing.T) {
 	if c := e.do("PUT", "/api/v1/box/downloads/subtitles", "", map[string]any{"languages": []string{"en", "sr"}}, nil); c != 200 {
 		t.Fatalf("subtitles %d", c)
 	}
+	if c := e.do("PUT", "/api/v1/box/downloads/torrents", "", map[string]any{"enabled": true, "seeding": map[string]any{"ratio": 1.5, "days": 7}}, nil); c != 200 {
+		t.Fatalf("torrents %d", c)
+	}
+	if c := e.do("PUT", "/api/v1/box/downloads/vpn", "", map[string]string{"wireguard": "[Interface]\nPrivateKey = x\n"}, &got); c != 200 || got["torrents"].(map[string]any)["vpn"].(map[string]any)["status"] != "down" {
+		t.Fatalf("vpn %d %v", c, got)
+	}
+	if c := e.do("DELETE", "/api/v1/box/downloads/vpn", "", nil, nil); c != 200 {
+		t.Fatalf("remove vpn %d", c)
+	}
 	// Not on the list: never reaches the service.
-	for _, p := range []string{"DELETE /api/v1/box/downloads/indexers/x", "DELETE /api/v1/box/downloads/indexers/3/..", "GET /api/v1/box/downloads/indexers/3", "DELETE /api/v1/box/downloads", "GET /api/v1/box/downloads/nonsense"} {
+	for _, p := range []string{"DELETE /api/v1/box/downloads/indexers/x", "DELETE /api/v1/box/downloads/indexers/3/..", "GET /api/v1/box/downloads/indexers/3", "DELETE /api/v1/box/downloads", "GET /api/v1/box/downloads/nonsense", "GET /api/v1/box/downloads/vpn", "DELETE /api/v1/box/downloads/torrents"} {
 		m, path, _ := strings.Cut(p, " ")
 		if c := e.do(m, path, "", nil, nil); c != 404 {
 			t.Fatalf("%s: %d", p, c)
@@ -306,7 +319,7 @@ func TestBoxDownloadsThroughService(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(calls) != 6 {
+	if len(calls) != 9 {
 		t.Fatalf("calls %v", calls)
 	}
 }
