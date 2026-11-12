@@ -1,12 +1,16 @@
 # Notifications to Pocket Hub
 
-Pocket Hub (Mac, iPhone, iPad) gets real system notifications — Pocket Alerts uses this for its
+Pocket Hub (Mac, iPhone, iPad, Android) gets real system notifications — Pocket Alerts uses this for its
 "Pocket Hub" channel. Three parts:
 
 ```
 app (Pocket Alerts) ──pca_──► Pocket Core ──pps_──► Pocket Push relay ──.p8──► APNs ──► Pocket Hub
-                     POST /api/v1/push/notify     POST /v1/send
+                     POST /api/v1/push/notify     POST /v1/send      └─Firebase─► FCM ──► Pocket Hub for Android
 ```
+
+- **Android** registers the same way with `environment: "fcm"`, its Firebase registration token
+  (case-sensitive, kept as sent) and topic `org.bjelke.pockethub`. The relay delivers a data-only
+  Firebase message with the sealed blob; the phone opens it with its own key.
 
 - **Pocket Hub** makes an X25519 key pair per install (the private key stays in the Keychain),
   asks Apple for a device token and registers both with Core: `PUT /api/v1/devices/me/push`
@@ -52,8 +56,9 @@ sound on. APNs keeps a notification for an offline device for 24 hours.
 The `relay` value a device sees (`GET /devices/me/push`) comes from the relay's `GET /v1/status`,
 cached for a minute:
 
-- `ready` — the relay answers and has Apple's key
+- `ready` — the relay answers and has Apple's key (for an Android registration: Google's)
 - `no_apple_key` — the relay answers but has no Apple push key yet (messages fail with that reason)
+- `no_google_key` — Android only: the relay has no Firebase key yet, or is older than Pocket Push 0.2.0
 - `no_relay` — no sender token, or the relay can't be reached or refuses the token
 
 `POST /push/notify` answers `200` with the counts whenever it got an answer; with no relay token every

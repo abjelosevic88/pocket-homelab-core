@@ -23,6 +23,7 @@ type fakeRelay struct {
 	srv    *httptest.Server
 	mu     sync.Mutex
 	apple  string            // ready | missing
+	google string            // ready | missing | "" (an old relay that doesn't say)
 	answer map[string]string // device token → status (default sent)
 	got    []push.Out
 	calls  int
@@ -40,7 +41,11 @@ func newFakeRelay(t *testing.T) *fakeRelay {
 		}
 		switch r.URL.Path {
 		case "/v1/status":
-			writeJSON(w, 200, map[string]any{"sender": "home", "apple": f.apple})
+			st := map[string]any{"sender": "home", "apple": f.apple}
+			if f.google != "" {
+				st["google"] = f.google
+			}
+			writeJSON(w, 200, st)
 		case "/v1/send":
 			var in struct {
 				Messages []push.Out `json:"messages"`
@@ -56,7 +61,9 @@ func newFakeRelay(t *testing.T) *fakeRelay {
 				switch {
 				case st != "":
 					res = append(res, push.Result{Status: st, Reason: "Unregistered"})
-				case f.apple != "ready":
+				case m.Environment == push.EnvironmentFCM && f.google != "ready":
+					res = append(res, push.Result{Status: "failed", Reason: "no Firebase key on the relay yet"})
+				case m.Environment != push.EnvironmentFCM && f.apple != "ready":
 					res = append(res, push.Result{Status: "failed", Reason: "no Apple push key on the relay yet"})
 				default:
 					res = append(res, push.Result{Status: "sent"})
@@ -405,5 +412,62 @@ func TestPushRelayUnreachable(t *testing.T) {
 	var tally pushTally
 	if c := e.do("POST", "/api/v1/push/notify", "", map[string]any{"email": "a@b.c", "title": "x"}, &tally); c != 502 || tally.Failed != 1 || !strings.Contains(tally.Reason, "unreachable") {
 		t.Fatalf("notify: %d %+v", c, tally)
+	}
+}
+
+// Pocket Hub for Android signs up with environment "fcm" and its Firebase registration token.
+func TestAndroidPushRegistration(t *testing.T) {
+	f := newFakeRelay(t)
+	e := pushEnv(t, f.srv.URL, "pps_test")
+	phone := newInstall(t, e, 0, "Pixel")
+	fcmTok := "dQw4w9WgXcQ:APA91bH-Abc_DEF123ghiJKLmnoPQRstuVWXyz0123456789abcdefABCDEF-_ghijklmno"
+	body := map[string]any{"token": fcmTok, "environment": "fcm", "topic": "org.bjelke.pockethub",
+		"public_key": base64.StdEncoding.EncodeToString(phone.key.PublicKey().Bytes()), "enabled": true, "sound": true}
+
+	for i, bad := range []string{"short", "has spaces in it and is long enough to pass the length check", strings.Repeat("a", 1001)} {
+		b := map[string]any{}
+		for k, v := range body {
+			b[k] = v
+		}
+		b["token"] = bad
+		if c := e.do("PUT", "/api/v1/devices/me/push", phone.device, b, nil); c != 400 {
+			t.Fatalf("bad fcm token %d accepted: %d", i, c)
+		}
+	}
+
+	// An old relay says nothing about Google: Android can't be reached through it.
+	var reg struct{ Relay string }
+	if c := e.do("PUT", "/api/v1/devices/me/push", phone.device, body, &reg); c != 200 || reg.Relay != push.StatusNoGoogleKey {
+		t.Fatalf("register: %d %+v", c, reg)
+	}
+
+	f.mu.Lock()
+	f.google = "ready"
+	f.mu.Unlock()
+	e2 := pushEnv(t, f.srv.URL, "pps_test") // a fresh Core: no cached relay state
+	phone2 := newInstall(t, e2, 0, "Pixel")
+	body["public_key"] = base64.StdEncoding.EncodeToString(phone2.key.PublicKey().Bytes())
+	if c := e2.do("PUT", "/api/v1/devices/me/push", phone2.device, body, &reg); c != 200 || reg.Relay != "ready" {
+		t.Fatalf("register: %d %+v", c, reg)
+	}
+	var test struct{ Status, Reason string }
+	if c := e2.do("POST", "/api/v1/devices/me/push/test", phone2.device, nil, &test); c != 200 || test.Status != "sent" {
+		t.Fatalf("test: %d %+v", c, test)
+	}
+	got := f.sent()
+	last := got[len(got)-1]
+	if last.Token != fcmTok || last.Environment != "fcm" || last.Topic != "org.bjelke.pockethub" {
+		t.Fatalf("relay got %+v (the FCM token must keep its case)", last)
+	}
+	if m := phone2.open(t, last.Sealed); m.Body != "Notifications work" {
+		t.Fatalf("sealed %+v", m)
+	}
+
+	// Google says the token is gone: the registration is removed and the reason names Google.
+	f.mu.Lock()
+	f.answer[fcmTok] = "gone"
+	f.mu.Unlock()
+	if c := e2.do("POST", "/api/v1/devices/me/push/test", phone2.device, nil, &test); c != 200 || test.Status != "gone" || !strings.Contains(test.Reason, "Google") {
+		t.Fatalf("gone: %d %+v", c, test)
 	}
 }

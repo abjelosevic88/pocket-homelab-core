@@ -99,7 +99,7 @@ See [push.md](push.md).
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| PUT | `/devices/me/push` | device (`pcd_` only) | `{token, environment, topic, public_key, enabled?, sound?}`: APNs token in hex (64–200), `development` or `production`, a topic from `PUSH_TOPICS`, the install's X25519 public key (standard base64, 32 bytes); `enabled`/`sound` default true → `{registered: true, enabled, sound, relay: "ready" \| "no_relay" \| "no_apple_key"}`. Replaces the device's earlier registration; the same APNs token on another device row is dropped |
+| PUT | `/devices/me/push` | device (`pcd_` only) | `{token, environment, topic, public_key, enabled?, sound?}`: APNs token in hex (64–200) with `development` or `production`, or (Android) the Firebase registration token with `fcm`; a topic from `PUSH_TOPICS`, the install's X25519 public key (standard base64, 32 bytes); `enabled`/`sound` default true → `{registered: true, enabled, sound, relay: "ready" \| "no_relay" \| "no_apple_key" \| "no_google_key"}`. Replaces the device's earlier registration; the same APNs token on another device row is dropped |
 | GET | `/devices/me/push` | device | `{registered, enabled, sound, relay, last_sent_at, last_error}` (+ `environment`, `topic`, `updated_at` when registered) |
 | DELETE | `/devices/me/push` | device | `{registered: false}` |
 | POST | `/devices/me/push/test` | device | seals "Notifications work" for this device → `{status: "sent" \| "failed" \| "gone", reason}`; `404` when not registered |

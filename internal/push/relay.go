@@ -22,10 +22,15 @@ const DefaultRelayURL = "https://push.pockethomelab.com"
 
 // Relay status values (GET /devices/me/push "relay").
 const (
-	StatusReady      = "ready"        // the relay answers and holds Apple's key
-	StatusNoRelay    = "no_relay"     // no sender token, or the relay can't be reached / refuses it
-	StatusNoAppleKey = "no_apple_key" // the relay answers but has no Apple push key yet
+	StatusReady       = "ready"         // the relay answers and holds Apple's key
+	StatusNoRelay     = "no_relay"      // no sender token, or the relay can't be reached / refuses it
+	StatusNoAppleKey  = "no_apple_key"  // the relay answers but has no Apple push key yet
+	StatusNoGoogleKey = "no_google_key" // the relay answers but can't deliver to Android (no Firebase key, or too old)
 )
+
+// EnvironmentFCM is the environment Android phones (Pocket Hub for Android) register with: the
+// token is a Firebase Cloud Messaging registration token.
+const EnvironmentFCM = "fcm"
 
 // Per-message results from the relay.
 const (
@@ -86,7 +91,8 @@ type Relay struct {
 	token      string
 	enrolled   bool // token came from /v1/enroll (kept in DataDir)
 	lastEnroll time.Time
-	status     string
+	status     string // Apple: ready | no_relay | no_apple_key
+	google     string // Android: ready | no_relay | no_google_key
 	statusAt   time.Time
 }
 
@@ -202,57 +208,67 @@ func (r *Relay) headers(req *http.Request) {
 }
 
 // Status is ready | no_relay | no_apple_key, from the relay's GET /v1/status (cached a minute).
-func (r *Relay) Status(ctx context.Context) string {
+func (r *Relay) Status(ctx context.Context) string { return r.StatusFor(ctx, "") }
+
+// StatusFor is the relay's state for devices of one environment: Apple's for development and
+// production, ready | no_relay | no_google_key for Android ("fcm").
+func (r *Relay) StatusFor(ctx context.Context, environment string) string {
 	r.mu.Lock()
-	if r.status != "" && time.Since(r.statusAt) < statusTTL {
-		st := r.status
+	if r.status == "" || time.Since(r.statusAt) >= statusTTL {
 		r.mu.Unlock()
-		return st
+		apple, google := r.fetchStatus(ctx)
+		r.mu.Lock()
+		r.status, r.google, r.statusAt = apple, google, time.Now()
 	}
-	r.mu.Unlock()
-	st := r.fetchStatus(ctx)
-	r.mu.Lock()
-	r.status, r.statusAt = st, time.Now()
+	st := r.status
+	if environment == EnvironmentFCM {
+		st = r.google
+	}
 	r.mu.Unlock()
 	return st
 }
 
-func (r *Relay) fetchStatus(ctx context.Context) string {
+func (r *Relay) fetchStatus(ctx context.Context) (apple, google string) {
 	tok := r.currentToken(ctx)
 	if tok == "" {
-		return StatusNoRelay
+		return StatusNoRelay, StatusNoRelay
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.cfg.URL+"/v1/status", nil)
 	if err != nil {
-		return StatusNoRelay
+		return StatusNoRelay, StatusNoRelay
 	}
 	r.headers(req)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	res, err := r.http.Do(req)
 	if err != nil {
 		r.cfg.Log.Debug("push relay status", "err", err)
-		return StatusNoRelay
+		return StatusNoRelay, StatusNoRelay
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized {
 		r.refused(tok)
-		return StatusNoRelay
+		return StatusNoRelay, StatusNoRelay
 	}
 	if res.StatusCode != http.StatusOK {
-		return StatusNoRelay
+		return StatusNoRelay, StatusNoRelay
 	}
 	var out struct {
-		Apple string `json:"apple"`
+		Apple  string `json:"apple"`
+		Google string `json:"google"` // relays from 0.2.0; older ones can't reach Android
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&out); err != nil {
-		return StatusNoRelay
+		return StatusNoRelay, StatusNoRelay
 	}
+	apple, google = StatusNoAppleKey, StatusNoGoogleKey
 	if out.Apple == "ready" {
-		return StatusReady
+		apple = StatusReady
 	}
-	return StatusNoAppleKey
+	if out.Google == "ready" {
+		google = StatusReady
+	}
+	return apple, google
 }
 
 // Send hands messages to the relay in batches of BatchSize and returns one Result per message,
@@ -288,13 +304,17 @@ func (r *Relay) Send(ctx context.Context, msgs []Out) ([]Result, error) {
 		}
 		out = append(out, res...)
 	}
-	r.noteSent(out)
+	r.noteSent(msgs, out)
 	return out, firstErr
 }
 
-// noteSent refreshes the cached status from what the relay just did.
-func (r *Relay) noteSent(res []Result) {
-	for _, x := range res {
+// noteSent refreshes the cached status from what the relay just did (Apple's messages only: the
+// Android state comes from /v1/status).
+func (r *Relay) noteSent(msgs []Out, res []Result) {
+	for i, x := range res {
+		if i < len(msgs) && msgs[i].Environment == EnvironmentFCM {
+			continue
+		}
 		st := ""
 		switch {
 		case x.Status == Sent:
@@ -304,7 +324,9 @@ func (r *Relay) noteSent(res []Result) {
 		}
 		if st != "" {
 			r.mu.Lock()
-			r.status, r.statusAt = st, time.Now()
+			if r.status != "" {
+				r.status = st // keep statusAt: the Android half is still as fetched
+			}
 			r.mu.Unlock()
 			return
 		}
@@ -336,7 +358,7 @@ func (r *Relay) sendBatch(ctx context.Context, tok string, batch []Out) ([]Resul
 	case res.StatusCode == http.StatusUnauthorized:
 		r.refused(tok)
 		r.mu.Lock()
-		r.status, r.statusAt = StatusNoRelay, time.Now()
+		r.status, r.google, r.statusAt = StatusNoRelay, StatusNoRelay, time.Now()
 		r.mu.Unlock()
 		return nil, errors.New("the push relay refused this box's sender token")
 	case res.StatusCode == http.StatusTooManyRequests:

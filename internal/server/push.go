@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,13 +53,22 @@ func (s *Server) handlePutDevicePush(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	tok := strings.ToLower(strings.TrimSpace(in.Token))
-	if _, err := hex.DecodeString(tok); err != nil || len(tok) < 64 || len(tok) > 200 {
-		writeErr(w, http.StatusBadRequest, "token must be the APNs device token in hex (64–200 characters)")
-		return
-	}
-	if in.Environment != "development" && in.Environment != "production" {
-		writeErr(w, http.StatusBadRequest, "environment must be development or production")
+	tok := strings.TrimSpace(in.Token)
+	switch in.Environment {
+	case "development", "production":
+		tok = strings.ToLower(tok)
+		if _, err := hex.DecodeString(tok); err != nil || len(tok) < 64 || len(tok) > 200 {
+			writeErr(w, http.StatusBadRequest, "token must be the APNs device token in hex (64–200 characters)")
+			return
+		}
+	case push.EnvironmentFCM:
+		// Android: a Firebase registration token, case-sensitive.
+		if !fcmToken.MatchString(tok) {
+			writeErr(w, http.StatusBadRequest, "token must be the phone's Firebase registration token")
+			return
+		}
+	default:
+		writeErr(w, http.StatusBadRequest, "environment must be development, production or fcm")
 		return
 	}
 	if !slices.Contains(s.cfg.PushTopics, in.Topic) {
@@ -77,7 +87,7 @@ func (s *Server) handlePutDevicePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("push registered", "device", p.Device.ID, "user", p.User.ID, "topic", in.Topic, "environment", in.Environment, "enabled", reg.Enabled, "token_tail", tail(tok))
-	writeJSON(w, http.StatusOK, map[string]any{"registered": true, "enabled": reg.Enabled, "sound": reg.Sound, "relay": s.pushRelay.Status(r.Context())})
+	writeJSON(w, http.StatusOK, map[string]any{"registered": true, "enabled": reg.Enabled, "sound": reg.Sound, "relay": s.pushRelay.StatusFor(r.Context(), reg.Environment)})
 }
 
 // GET /api/v1/devices/me/push
@@ -87,8 +97,8 @@ func (s *Server) handleGetDevicePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reg, err := s.store.GetPushRegistration(r.Context(), p.Device.ID)
-	relay := s.pushRelay.Status(r.Context())
 	if errors.Is(err, store.ErrNotFound) {
+		relay := s.pushRelay.StatusFor(r.Context(), pushEnvironmentGuess(p.Device.Platform))
 		writeJSON(w, http.StatusOK, map[string]any{"registered": false, "enabled": false, "sound": false, "relay": relay, "last_sent_at": nil, "last_error": ""})
 		return
 	}
@@ -96,6 +106,7 @@ func (s *Server) handleGetDevicePush(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "get push registration")
 		return
 	}
+	relay := s.pushRelay.StatusFor(r.Context(), reg.Environment)
 	var sent any
 	if reg.LastSentAt != "" {
 		sent = reg.LastSentAt
@@ -295,7 +306,11 @@ func (s *Server) pushSend(ctx context.Context, regs []store.PushRegistration, m 
 			_ = s.store.MarkPushSent(ctx, reg.ID)
 		case push.Gone:
 			t.Gone++
-			note("Apple says this device no longer takes notifications; it was removed")
+			if reg.Environment == push.EnvironmentFCM {
+				note("Google says this phone no longer takes notifications; it was removed")
+			} else {
+				note("Apple says this device no longer takes notifications; it was removed")
+			}
 			_ = s.store.DeletePushRegistrationByID(ctx, reg.ID)
 			s.log.Info("push registration gone", "device", reg.DeviceID, "token_tail", tail(reg.APNsToken), "reason", res.Reason)
 		default:
@@ -312,6 +327,17 @@ func (s *Server) pushSend(ctx context.Context, regs []store.PushRegistration, m 
 		}
 	}
 	return t, err
+}
+
+// fcmToken is the shape of a Firebase registration token (URL-safe characters and colons).
+var fcmToken = regexp.MustCompile(`^[A-Za-z0-9_:\-]{32,1000}$`)
+
+// pushEnvironmentGuess is the environment a not-yet-registered device will use, for its relay state.
+func pushEnvironmentGuess(platform string) string {
+	if platform == "android" {
+		return push.EnvironmentFCM
+	}
+	return ""
 }
 
 // tail is the last 6 characters of a device token, the most a log line shows.
