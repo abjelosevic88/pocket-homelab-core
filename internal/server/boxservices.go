@@ -22,7 +22,11 @@ type boxService struct {
 	PublicURL string            `json:"public_url"`
 	Fields    map[string]string `json:"fields"`
 	Audience  string            `json:"audience"`
-	Connector *struct {
+	// OwnerCredential: the service has no accounts of its own (Radarr,
+	// SABnzbd…), so the box's key is copied as the personal credential of
+	// every admin who has none yet; apps reaching it for them get that.
+	OwnerCredential bool `json:"owner_credential"`
+	Connector       *struct {
 		Enabled           bool `json:"enabled"`
 		ProvisionOnCreate bool `json:"provision_on_create"`
 	} `json:"connector"`
@@ -48,6 +52,7 @@ func (s *Server) applyServicesFile(ctx context.Context) error {
 		return fmt.Errorf("SERVICES_FILE: %w", err)
 	}
 	var fresh []int64
+	var owned []string
 	for _, b := range list {
 		typ := strings.ToLower(strings.TrimSpace(b.Type))
 		if typ == "" {
@@ -82,6 +87,9 @@ func (s *Server) applyServicesFile(ctx context.Context) error {
 		if err := s.store.SaveService(ctx, sv, e.IsSecret); err != nil {
 			return fmt.Errorf("SERVICES_FILE: %s: %w", typ, err)
 		}
+		if b.OwnerCredential {
+			owned = append(owned, typ)
+		}
 		if b.Connector == nil {
 			continue
 		}
@@ -106,11 +114,41 @@ func (s *Server) applyServicesFile(ctx context.Context) error {
 			fresh = append(fresh, sv.ID)
 		}
 	}
-	s.log.Info("services from SERVICES_FILE applied", "count", len(list), "new_connectors", len(fresh))
+	s.ownerMu.Lock()
+	s.ownerCred = owned
+	s.ownerMu.Unlock()
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("SERVICES_FILE: %w", err)
+	}
+	for i := range users {
+		s.shareOwnerCredentials(ctx, &users[i])
+	}
+	s.log.Info("services from SERVICES_FILE applied", "count", len(list), "new_connectors", len(fresh), "owner_credential", len(owned))
 	if len(fresh) > 0 {
 		go s.provisionEveryone(fresh)
 	}
 	return nil
+}
+
+// shareOwnerCredentials gives an admin the box's key of every
+// owner_credential service where they have no credential of their own yet,
+// and follows the box when it rotated a key copied this way. Members get
+// nothing. Called at start and whenever someone becomes an admin.
+func (s *Server) shareOwnerCredentials(ctx context.Context, u *store.User) {
+	s.ownerMu.Lock()
+	types := append([]string(nil), s.ownerCred...)
+	s.ownerMu.Unlock()
+	if len(types) == 0 || u == nil || !u.IsAdmin() || u.Disabled {
+		return
+	}
+	done, err := claimBox(ctx, s.store, u, types, false, store.OverrideByBox)
+	if err != nil {
+		s.log.Warn("box key for an admin not saved", "user", u.Email, "err", err)
+	}
+	if len(done) > 0 {
+		s.log.Info("box key saved as an admin's own credential", "user", u.Email, "services", strings.Join(done, ","))
+	}
 }
 
 // provisionEveryone makes accounts in the given services for every person

@@ -247,6 +247,7 @@ func (s *Server) firstOrSystemUser(ctx context.Context, email, name string) (*st
 		return nil, err
 	}
 	s.log.Info("auto-provisioned user", "email", email, "mode", s.cfg.AuthMode, "role", role)
+	s.shareOwnerCredentials(ctx, u)
 	return u, nil
 }
 
@@ -359,6 +360,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setSessionCookie(w, id, s.cfg.SessionTTL)
 	s.log.Info("initial setup completed", "email", u.Email)
+	s.shareOwnerCredentials(ctx, u)
 	s.provisionNewUser(u.ID) // services a box set up before anyone existed
 	writeJSON(w, http.StatusOK, u)
 }
@@ -602,6 +604,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "create user")
 		return
 	}
+	s.shareOwnerCredentials(r.Context(), u)
 	s.provisionNewUser(u.ID)
 	writeJSON(w, http.StatusCreated, u)
 }
@@ -656,6 +659,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "update user")
 		return
 	}
+	// Made an admin (or enabled again): the box's keys for services without accounts.
+	s.shareOwnerCredentials(r.Context(), u)
 	s.kickAllHooks() // disabled or role (audience) may have changed
 	writeJSON(w, http.StatusOK, u)
 }

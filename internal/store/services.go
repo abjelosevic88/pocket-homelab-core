@@ -185,7 +185,7 @@ type Override struct {
 	UserID    int64             `json:"user_id"`
 	URL       string            `json:"url"`
 	Fields    map[string]string `json:"fields"`
-	Source    string            `json:"source"` // user (set by hand) | connector (written by a connector)
+	Source    string            `json:"source"` // user (set by hand) | connector (written by a connector) | box (the box's key, copied for an admin)
 	UpdatedAt string            `json:"updated_at"`
 }
 
@@ -193,6 +193,9 @@ type Override struct {
 const (
 	OverrideByUser      = "user"
 	OverrideByConnector = "connector"
+	// OverrideByBox: the box-wide key of a SERVICES_FILE entry with
+	// owner_credential, copied for an admin. Refreshed when the box rotates it.
+	OverrideByBox = "box"
 )
 
 // ListOverrides returns a user's overrides keyed by service id.
@@ -227,7 +230,7 @@ func (s *Store) ListOverrides(ctx context.Context, userID int64) (map[int64]Over
 // SaveOverride upserts; an override with no URL and no fields is deleted.
 // Source defaults to OverrideByUser.
 func (s *Store) SaveOverride(ctx context.Context, o *Override, secret func(string) bool) error {
-	if o.Source != OverrideByConnector {
+	if o.Source != OverrideByConnector && o.Source != OverrideByBox {
 		o.Source = OverrideByUser
 	}
 	clean := map[string]string{}

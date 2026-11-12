@@ -76,6 +76,9 @@ type Server struct {
 
 	remote *remoteHub // remote access through the relay (remote.go)
 
+	ownerMu   sync.Mutex
+	ownerCred []string // SERVICES_FILE types with owner_credential: admins get the box's key as their own
+
 	pushRelay *push.Relay // Pocket Hub notifications through the Pocket Push relay (push.go)
 }
 

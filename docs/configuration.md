@@ -147,6 +147,7 @@ A Pocket Box makes the third-party services it ships with ready before anyone si
 | `url`, `public_url`, `fields` | at every start. The box owns these and may have replaced a key |
 | `name`, `audience` | only when Core creates the service; an admin's later edits stand |
 | `connector` | only when Core creates the connector; an admin's later switches stand. A new connector set to make accounts provisions everyone already in Core |
+| `owner_credential` | at every start. `true` for services without accounts of their own (Radarr, Sonarr, Lidarr, Prowlarr, SABnzbd, Bazarr): the entry's `fields` become the personal credential of every admin who has none for it yet, so Pocket apps reaching the service through Core get it for them (otherwise they see `no_account`). Members get nothing. Also when an admin is created (setup screen, Users, auto-provisioning) or someone is made admin. A credential copied this way (`source: box`) follows the box when it replaces the key; one a person entered themselves is never touched |
 
 A type a registered Pocket app owns is skipped. An entry without a type stops Core from starting. The first account made on Core's setup screen gets its accounts in every connector set to make them, like people added later under Users.
 

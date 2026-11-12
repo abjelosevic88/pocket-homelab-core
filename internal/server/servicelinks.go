@@ -156,6 +156,14 @@ func ownCredential(e catalog.Entry, sv *store.Service, ov store.Override) bool {
 // app reaches through Core (its service links). Returns what it copied (or
 // would, with dry).
 func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, only []string, dry bool) ([]string, error) {
+	return claimBox(ctx, st, u, only, dry, "")
+}
+
+// claimBox is ClaimBoxCredentials. With source OverrideByBox (the automatic
+// copy for owner_credential services) a new entry is marked as the box's, and
+// one marked so follows the box when it rotates the key; the person's own
+// entries are still never touched.
+func claimBox(ctx context.Context, st *store.Store, u *store.User, only []string, dry bool, source string) ([]string, error) {
 	want := map[string]bool{}
 	for _, t := range only {
 		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
@@ -190,6 +198,31 @@ func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, on
 		}
 		fields := boxFields(e, sv)
 		ov, has := ovs[sv.ID]
+		if has && source == store.OverrideByBox && ov.Source == store.OverrideByBox {
+			// Copied from the box earlier: take the box's current key (it may
+			// have rotated it), nothing to do when it is the same.
+			same := true
+			for k, v := range fields {
+				same = same && ov.Fields[k] == v
+			}
+			if same {
+				continue
+			}
+			merged := map[string]string{}
+			for k, v := range ov.Fields {
+				merged[k] = v
+			}
+			for k, v := range fields {
+				merged[k] = v
+			}
+			done = append(done, sv.Type)
+			if !dry {
+				if err := st.SaveOverride(ctx, &store.Override{ServiceID: sv.ID, UserID: u.ID, Fields: merged, URL: ov.URL, Source: store.OverrideByBox}, e.IsSecret); err != nil {
+					return done, err
+				}
+			}
+			continue
+		}
 		if has && ownCredential(e, sv, ov) {
 			continue
 		}
@@ -205,6 +238,9 @@ func ClaimBoxCredentials(ctx context.Context, st *store.Store, u *store.User, on
 			}
 		}
 		o := &store.Override{ServiceID: sv.ID, UserID: u.ID, Fields: merged, URL: ov.URL, Source: ov.Source}
+		if !has && source != "" {
+			o.Source = source
+		}
 		if len(fields) == 0 && o.URL == "" {
 			o.URL = sv.EffectivePublicURL() // keyless: the address is the way in
 		}

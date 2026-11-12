@@ -717,7 +717,7 @@ func (s *Server) handleConnectorAccounts(w http.ResponseWriter, r *http.Request)
 		if ovs, err := s.store.ListOverrides(ctx, u.ID); err == nil {
 			if ov, ok := ovs[sv.ID]; ok {
 				row.Credential = ov.Source
-				if row.Credential == store.OverrideByUser {
+				if row.Credential == store.OverrideByUser || ov.Source == store.OverrideByBox {
 					row.Credential = "own"
 				}
 			}
@@ -766,7 +766,7 @@ func (s *Server) handleUserConnectors(w http.ResponseWriter, r *http.Request) {
 		}
 		if ov, ok := ovs[sv.ID]; ok {
 			it.Credential = ov.Source
-			if it.Credential == store.OverrideByUser {
+			if it.Credential == store.OverrideByUser || ov.Source == store.OverrideByBox {
 				it.Credential = "own"
 			}
 		}
