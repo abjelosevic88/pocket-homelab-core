@@ -23,8 +23,8 @@ import (
 // looks at, and text as text. Anything else is described, not sent.
 const (
 	mcpFileReadLimit  = 25 << 20  // what Core reads from the app
-	mcpImageSendLimit = 3_500_000 // bytes per picture sent on (models refuse ~5 MB base64)
-	mcpImageMaxSide   = 2000      // longest side sent on, in pixels
+	mcpImageSendLimit = 1_200_000 // bytes per picture sent on: base64 must fit Pocket AI's 2 MB answer limit
+	mcpImageMaxSide   = 1568      // longest side sent on, in pixels (what Claude reads at full detail)
 	mcpFileTextLimit  = 512 << 10
 )
 
@@ -115,7 +115,7 @@ func mcpImageForModel(raw []byte, ct string) (out []byte, outMime string, w, h i
 	if err != nil {
 		return nil, "", w, h, "", fmt.Errorf("the picture is damaged")
 	}
-	for _, side := range []int{mcpImageMaxSide, 1400, 1000} {
+	for _, side := range []int{mcpImageMaxSide, 1200, 900} {
 		small := mcpShrink(src, side)
 		sb := small.Bounds()
 		var buf bytes.Buffer

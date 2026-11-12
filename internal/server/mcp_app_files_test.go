@@ -73,7 +73,7 @@ func TestMCPAppAttachmentFiles(t *testing.T) {
 		t.Fatalf("big picture: %+v", r)
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(im.Data))
-	if err != nil || cfg.Width != 2000 || cfg.Height != 666 || len(im.Data) > mcpImageSendLimit {
+	if err != nil || cfg.Width != 1568 || cfg.Height != 522 || len(im.Data) > mcpImageSendLimit {
 		t.Fatalf("not scaled: %v %d×%d %d bytes", err, cfg.Width, cfg.Height, len(im.Data))
 	}
 
