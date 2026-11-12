@@ -816,3 +816,54 @@ func TestRemotePairForSomeoneElse(t *testing.T) {
 		t.Fatalf("member pairing for self %d", c)
 	}
 }
+
+func TestRemotePairOpensChosenApps(t *testing.T) {
+	rig := newRemoteRig(t)
+	rig.e.do("PUT", "/api/v1/remote/apps/money", "", map[string]any{"exposed": false}, nil)
+	money := func() (exposed, def bool) {
+		var adm struct {
+			Apps []remoteAppRow `json:"apps"`
+		}
+		rig.e.do("GET", "/api/v1/remote", "", nil, &adm)
+		for _, a := range adm.Apps {
+			if a.Slug == "money" {
+				return a.Exposed, a.DeviceDefault
+			}
+		}
+		t.Fatal("money missing")
+		return
+	}
+	// A member picking an app that is off does not open it.
+	ctx := context.Background()
+	member := &store.User{Email: "m@example.test", Name: "M", Role: "member"}
+	if err := rig.e.st.CreateUser(ctx, member); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := rig.e.st.CreateSession(ctx, member.ID, time.Hour)
+	saved := rig.e.cj
+	rig.e.cj = []*http.Cookie{{Name: sessionCookie, Value: sess}}
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"apps": map[string]bool{"money": true}}, nil); c != 200 {
+		t.Fatalf("member pair %d", c)
+	}
+	rig.e.cj = saved
+	if on, _ := money(); on {
+		t.Fatal("a member's pick opened money remotely")
+	}
+	// An admin picking it opens it, for this device only.
+	var out map[string]any
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"apps": map[string]bool{"money": true}}, &out); c != 200 {
+		t.Fatalf("pair %d %v", c, out)
+	}
+	if on, def := money(); !on || def {
+		t.Fatalf("money exposed=%v default=%v, want on and off by default", on, def)
+	}
+	if o, _ := out["opened"].([]any); len(o) != 1 || o[0] != "money" {
+		t.Fatalf("opened %v", out["opened"])
+	}
+}
+
+type remoteAppRow struct {
+	Slug          string `json:"slug"`
+	Exposed       bool   `json:"exposed"`
+	DeviceDefault bool   `json:"device_default"`
+}

@@ -410,6 +410,33 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "box key")
 		return
 	}
+	// An admin may pick apps that are not reachable remotely yet: they are
+	// switched on, but not for every device (device default off), so only
+	// this device and the ones it is later given to get them.
+	opened := []string{}
+	if me.IsAdmin() {
+		all, err := s.remoteApps(ctx)
+		if err != nil {
+			s.fail(w, err, "list remote apps")
+			return
+		}
+		for _, a := range all {
+			if !in.Apps[a.Slug] || a.Exposed {
+				continue
+			}
+			if err := s.store.PutRemoteApp(ctx, store.RemoteApp{App: a.Slug, Exposed: true, DeviceDefault: false, Passkey: a.Passkey}); err != nil {
+				s.fail(w, err, "save remote app")
+				return
+			}
+			opened = append(opened, a.Slug)
+		}
+		if len(opened) > 0 {
+			s.remote.recheck(ctx)
+			if rs.Provider == "cloudflare" && rs.CFDeployed != "" {
+				s.remote.syncAddresses()
+			}
+		}
+	}
 	// One open pairing link per person: a new one replaces the last.
 	if err := s.store.DropRemotePairCodes(ctx, u.ID); err != nil {
 		s.fail(w, err, "pairing code")
@@ -427,7 +454,7 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	img := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(qrSVG(q)))
-	writeJSON(w, http.StatusOK, map[string]any{"url": link, "qr_svg": img, "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL))})
+	writeJSON(w, http.StatusOK, map[string]any{"url": link, "qr_svg": img, "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL)), "opened": opened})
 }
 
 // remotePairUser is the person a new device is paired for: the caller, or for
