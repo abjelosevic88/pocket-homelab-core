@@ -26,6 +26,9 @@ type mcpAppTool struct {
 	Schema                               map[string]any
 	resolved                             *jsonschema.Resolved
 	TextResponse                         bool
+	// FileResponse: the app answers with a file (Projects' attachments): pictures
+	// come back as images the assistant can look at, text as text (mcp_app_files.go).
+	FileResponse bool
 	// Merge is used only for an application endpoint whose API replaces the
 	// complete personal document (Hub preferences). Other updates are patches.
 	Merge bool
@@ -248,6 +251,9 @@ func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, toke
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
+	if op.FileResponse {
+		req.Header.Set("Accept", "*/*")
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Pocket-Source", "mcp")
 	if workspace != "" {
@@ -275,6 +281,9 @@ func (s *Server) requestMCPApp(ctx context.Context, op *mcpAppTool, target, toke
 			}
 		}
 		return mcpAppResult(failure, true)
+	}
+	if op.FileResponse && res.StatusCode != 204 {
+		return mcpAppFileResult(op, requestID, res)
 	}
 	limit := int64(512 << 10)
 	if len(op.Omit) > 0 && !op.TextResponse {

@@ -1065,5 +1065,11 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 			envelope["source_url"] = itemURL
 		}
 	}
-	return mcpAppResult(envelope, false)
+	out := mcpAppResult(envelope, false)
+	for _, c := range result.Content {
+		if _, text := c.(*mcp.TextContent); !text {
+			out.Content = append(out.Content, c) // an attachment's picture stays with its links
+		}
+	}
+	return out
 }
