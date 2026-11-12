@@ -29,6 +29,7 @@ function describe(a: BoxAddress): React.ReactNode {
   if (a.mode === 'own-ca') return <>The box uses its own certificate. Devices need it installed once (from <a href="http://pocket.local" target="_blank" rel="noopener noreferrer">pocket.local</a>).</>
   const want = a.mode === 'cloudflare' && a.cloudflare ? a.cloudflare.domain : ''
   if (a.domain && (!want || a.domain === want)) return <>The apps are at <a href={`https://core.${a.domain}`}><b>{a.domain}</b></a> with a certificate every browser trusts{a.mode === 'cloudflare' ? ', on your own Cloudflare domain' : ', Pocket\'s free address'}.</>
+  if (st === 'limited') return <><b>Can't get {want ? want : 'its secure address'} yet.</b> {a.status?.message} Until then the box works with its own certificate (install it from <a href="http://pocket.local" target="_blank" rel="noopener noreferrer">pocket.local</a>).</>
   if (WAITING.includes(st)) return <>Getting {want ? <b>{want}</b> : 'the address'} ready… This takes a minute or two.</>
   return <>Getting {want ? <b>{want}</b> : 'the address'} ready{a.status?.message ? `: ${a.status.message}` : '.'}</>
 }
@@ -130,8 +131,8 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
   const elsewhere = now && !window.location.hostname.endsWith(a.domain) && !following
   return (
     <div className="stack tight">
-      <div className={`callout ${st === 'signin' || st === 'failed' ? 'danger' : ''}`}>
-        <Icon name={following ? 'refresh' : now ? 'lock' : 'info'} size={15} />
+      <div className={`callout ${st === 'signin' || st === 'failed' ? 'danger' : st === 'limited' && !now ? 'warn' : ''}`}>
+        <Icon name={following ? 'refresh' : now ? 'lock' : st === 'limited' ? 'alert' : 'info'} size={15} />
         <span>{describe(a)}</span>
       </div>
       {a.problem && a.problem.state === 'signin' && <Problem text={a.problem.message} />}
