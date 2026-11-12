@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -373,19 +374,25 @@ func (s *Server) handleMyRemote(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/v1/me/remote/pair: a one-time QR code that pairs a new device.
 // An optional {"apps": {slug: on}} sets which apps the device starts with;
-// apps it does not name follow their default.
+// apps it does not name follow their default. An admin may add "user_id"
+// to pair the device for someone else: it then belongs to that person.
 func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	u := userFrom(ctx)
-	if u == nil {
+	me := userFrom(ctx)
+	if me == nil {
 		writeErr(w, http.StatusForbidden, "people only")
 		return
 	}
 	var in struct {
-		Apps map[string]bool `json:"apps"`
+		Apps   map[string]bool `json:"apps"`
+		UserID int64           `json:"user_id"`
 	}
 	if err := decode(r, &in); err != nil && !errors.Is(err, io.EOF) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	u, ok := s.remotePairUser(w, r, me, in.UserID)
+	if !ok {
 		return
 	}
 	for app := range in.Apps {
@@ -423,11 +430,38 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"url": link, "qr_svg": img, "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL))})
 }
 
-// DELETE /api/v1/me/remote/pair: the dialog closed; an unused link stops working.
+// remotePairUser is the person a new device is paired for: the caller, or for
+// an admin, the account named by id (it must exist and be active).
+func (s *Server) remotePairUser(w http.ResponseWriter, r *http.Request, me *store.User, id int64) (*store.User, bool) {
+	if id <= 0 || id == me.ID {
+		return me, true
+	}
+	if !me.IsAdmin() {
+		writeErr(w, http.StatusForbidden, "only an admin can pair a device for someone else")
+		return nil, false
+	}
+	u, err := s.store.GetUser(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "no such person")
+		return nil, false
+	}
+	if u.Disabled {
+		writeErr(w, http.StatusConflict, "that account is switched off")
+		return nil, false
+	}
+	return u, true
+}
+
+// DELETE /api/v1/me/remote/pair[?user_id=]: the dialog closed; an unused link stops working.
 func (s *Server) handleCancelRemotePair(w http.ResponseWriter, r *http.Request) {
-	u := userFrom(r.Context())
-	if u == nil {
+	me := userFrom(r.Context())
+	if me == nil {
 		writeErr(w, http.StatusForbidden, "people only")
+		return
+	}
+	id, _ := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64)
+	u, ok := s.remotePairUser(w, r, me, id)
+	if !ok {
 		return
 	}
 	if err := s.store.DropRemotePairCodes(r.Context(), u.ID); err != nil {

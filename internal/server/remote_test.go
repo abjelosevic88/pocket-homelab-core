@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -739,5 +740,79 @@ func TestRemoteHeaderFilter(t *testing.T) {
 		if validPattern(bad) == nil {
 			t.Errorf("pattern %q accepted", bad)
 		}
+	}
+}
+
+func TestRemotePairForSomeoneElse(t *testing.T) {
+	rig := newRemoteRig(t)
+	ctx := context.Background()
+	member := &store.User{Email: "kid@example.test", Name: "Kid", Role: "member"}
+	if err := rig.e.st.CreateUser(ctx, member); err != nil {
+		t.Fatal(err)
+	}
+	off := &store.User{Email: "off@example.test", Name: "Off", Role: "member"}
+	if err := rig.e.st.CreateUser(ctx, off); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rig.e.st.DB.Exec(`UPDATE users SET disabled = 1 WHERE id = ?`, off.ID); err != nil {
+		t.Fatal(err)
+	}
+	// An admin pairs a device that then belongs to the member.
+	var out map[string]any
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"user_id": member.ID}, &out); c != 200 {
+		t.Fatalf("pair for member %d %v", c, out)
+	}
+	code, box := fragment(t, out["url"].(string))
+	rig.box = box
+	if _, m := rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": code, "name": "Kid's phone"}); m["t"] != "ready" {
+		t.Fatalf("pair: %v", m)
+	}
+	var adm struct {
+		Devices []struct {
+			UserID int64  `json:"user_id"`
+			Name   string `json:"name"`
+		} `json:"devices"`
+	}
+	rig.e.do("GET", "/api/v1/remote", "", nil, &adm)
+	found := false
+	for _, d := range adm.Devices {
+		if d.Name == "Kid's phone" {
+			found = d.UserID == member.ID
+		}
+	}
+	if !found {
+		t.Fatalf("device not paired for the member: %+v", adm.Devices)
+	}
+	// Cancelling for the member drops their open link only.
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"user_id": member.ID}, &out); c != 200 {
+		t.Fatalf("pair again %d", c)
+	}
+	if c := rig.e.do("DELETE", fmt.Sprintf("/api/v1/me/remote/pair?user_id=%d", member.ID), "", nil, nil); c != 204 {
+		t.Fatalf("cancel for member %d", c)
+	}
+	code, _ = fragment(t, out["url"].(string))
+	if _, m := rig.dial(t, "pocket.remote.test", newKey(t), map[string]any{"t": "pair", "code": code}); m["code"] != "bad_code" {
+		t.Fatalf("cancelled code paired: %v", m)
+	}
+	// A switched-off account or a missing one gets no code.
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"user_id": off.ID}, nil); c != 409 {
+		t.Fatalf("disabled account %d, want 409", c)
+	}
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"user_id": 9999}, nil); c != 404 {
+		t.Fatalf("missing account %d, want 404", c)
+	}
+	// A member cannot pair for anyone else.
+	sess, err := rig.e.st.CreateSession(ctx, member.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := rig.e.cj
+	rig.e.cj = []*http.Cookie{{Name: sessionCookie, Value: sess}}
+	defer func() { rig.e.cj = saved }()
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"user_id": off.ID}, nil); c != 403 {
+		t.Fatalf("member pairing for someone else %d, want 403", c)
+	}
+	if c := rig.e.do("POST", "/api/v1/me/remote/pair", "", map[string]any{"user_id": member.ID}, nil); c != 200 {
+		t.Fatalf("member pairing for self %d", c)
 	}
 }

@@ -4,6 +4,7 @@ import { ago, when } from '../lib/format'
 import { useApp } from '../lib/app-context'
 import { Card, Confirm, CopyField, Empty, Field, Loading, Modal, PageHeader, Segmented, SettingRow, Switch, errMsg, useAsync, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
+import type { User } from '../lib/types'
 
 interface RemoteApp { slug: string; name: string; kind: 'app' | 'service'; direct: string; address: string; exposed: boolean; device_default: boolean; passkey: boolean; sensitive: boolean }
 interface RemoteKey { id: number; app: string; created_at: string; last_seen_at: string; has_passkey: boolean }
@@ -42,7 +43,7 @@ export default function Remote() {
       {admin && adm && <AppsCard d={adm} onChange={reloadAdmin} />}
       {!admin && !enabled && <Card><Empty icon="globe" title="Remote access is off">An admin can switch it on here in Core.</Empty></Card>}
       {enabled && <DevicesCard devices={devices} apps={apps.filter(a => a.exposed)} admin={admin} portal={admin ? adm!.portal : mine!.portal} onChange={reload} onPair={() => setPair(true)} />}
-      {pair && <RemotePairModal apps={apps.filter(a => a.exposed)} onClose={() => { setPair(false); reload() }} />}
+      {pair && <RemotePairModal apps={apps.filter(a => a.exposed)} admin={admin} me={user?.id || 0} onClose={() => { setPair(false); reload() }} />}
     </>
   )
 }
@@ -243,20 +244,26 @@ function DevicesCard({ devices, apps, admin, portal, onChange, onPair }: { devic
   )
 }
 
-function RemotePairModal({ apps, onClose }: { apps: RemoteApp[]; onClose: () => void }) {
+function RemotePairModal({ apps, admin, me, onClose }: { apps: RemoteApp[]; admin: boolean; me: number; onClose: () => void }) {
+  // Admins can pair a device for anyone with an active account; it then belongs to that person.
+  const { data: users } = useAsync(() => admin ? api.get<User[]>(`${V1}/users`).catch(() => [] as User[]) : Promise.resolve([] as User[]), [admin])
+  const people = (users || []).filter(u => !u.disabled)
+  const [forUser, setForUser] = useState(me)
+  const forName = (id: number) => { const u = people.find(x => x.id === id); return u ? (u.name || u.email) : '' }
+  const other = forUser !== me
   const [p, setP] = useState<{ url: string; qr_svg: string; expires_at: string } | null>(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [left, setLeft] = useState(600)
-  // The apps the new device starts with; each can be changed later under Devices.
-  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(apps.map(a => [a.slug, a.device_default])))
-  // Only what differs from the defaults is kept for the device.
-  const changed = Object.fromEntries(apps.filter(a => !!on[a.slug] !== a.device_default).map(a => [a.slug, !!on[a.slug]]))
+  // The apps the new device starts with: all off until picked here. The rest are
+  // kept as off on the device, so they can be switched on later under Devices.
+  const [on, setOn] = useState<Record<string, boolean>>({})
+  const changed = Object.fromEntries(apps.map(a => [a.slug, !!on[a.slug]]))
   const make = async () => {
     setBusy(true); setErr('')
-    try { setP(await api.post<{ url: string; qr_svg: string; expires_at: string }>(`${V1}/me/remote/pair`, { apps: changed })) } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
+    try { setP(await api.post<{ url: string; qr_svg: string; expires_at: string }>(`${V1}/me/remote/pair`, { apps: changed, ...(other ? { user_id: forUser } : {}) })) } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
-  useEffect(() => { if (!apps.length) make() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!apps.length && !admin) make() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!p) return
     const t = setInterval(() => setLeft(Math.max(0, Math.round((new Date(p.expires_at).getTime() - Date.now()) / 1000))), 1000)
@@ -264,17 +271,22 @@ function RemotePairModal({ apps, onClose }: { apps: RemoteApp[]; onClose: () => 
   }, [p])
   const count = apps.filter(a => on[a.slug]).length
   // An unused link should not outlive the dialog.
-  const close = () => { if (p) api.del(`${V1}/me/remote/pair`).catch(() => {}); onClose() }
+  const close = () => { if (p) api.del(`${V1}/me/remote/pair${other ? `?user_id=${forUser}` : ''}`).catch(() => {}); onClose() }
   return (
     <Modal title="Pair a device for remote access" onClose={close}
-      footer={!p && apps.length > 0 ? <>
+      footer={!p && (apps.length > 0 || admin) ? <>
         <button type="button" className="btn" onClick={close}>Cancel</button>
-        <button type="button" className="btn primary" disabled={busy} onClick={make}><Icon name="qr" size={15} />{busy ? 'Making a code…' : 'Make pairing code'}</button>
+        <button type="button" className="btn primary" disabled={busy || (apps.length > 0 && !apps.some(a => on[a.slug]))} title={apps.length > 0 && !apps.some(a => on[a.slug]) ? 'Switch on at least one app' : undefined} onClick={make}><Icon name="qr" size={15} />{busy ? 'Making a code…' : 'Make pairing code'}</button>
       </> : undefined}>
       {err && <div className="callout danger">{err}</div>}
+      {!p && admin && people.length > 1 && <Field label="For" help={other ? <>The device belongs to {forName(forUser)}: it shows under their devices and opens apps as them.</> : 'Pick someone else to set up their phone for them.'}>
+        <select value={forUser} onChange={e => setForUser(Number(e.target.value))}>
+          {people.map(u => <option key={u.id} value={u.id}>{(u.name || u.email) + (u.id === me ? ' (you)' : '')}</option>)}
+        </select>
+      </Field>}
       {!p && apps.length > 0 && <div className="grid" style={{ gap: 6 }}>
         <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <p className="muted small">Which apps this device can open ({count} of {apps.length}). Change them any time under Devices.</p>
+          <p className="muted small">Switch on the apps this link opens ({count} of {apps.length}). The others stay off on the device; switch them on any time under Devices.</p>
           <div className="row" style={{ gap: 4 }}>
             <button type="button" className="btn sm ghost" onClick={() => setOn(Object.fromEntries(apps.map(a => [a.slug, true])))}>All</button>
             <button type="button" className="btn sm ghost" onClick={() => setOn(Object.fromEntries(apps.map(a => [a.slug, false])))}>None</button>
@@ -284,12 +296,13 @@ function RemotePairModal({ apps, onClose }: { apps: RemoteApp[]; onClose: () => 
           <Switch size="sm" on={!!on[a.slug]} label={a.name} onChange={v => setOn(prev => ({ ...prev, [a.slug]: v }))} />
         </SettingRow>)}
       </div>}
-      {!p && !apps.length && !err && <p className="muted">Making a code…</p>}
+      {!p && !apps.length && !err && !admin && <p className="muted">Making a code…</p>}
       {p && <div className="grid" style={{ gap: 14, justifyItems: 'center' }}>
+        {other && <p style={{ textAlign: 'center' }}>Pairing a device for <b>{forName(forUser)}</b></p>}
         <div className="qr"><img src={p.qr_svg} alt="Pairing QR code" /></div>
         <p className="muted small" style={{ textAlign: 'center', maxWidth: 400 }}>Scan with the phone's camera, or open the link on the device you want to pair. The page creates a key that never leaves that device. {left > 0 ? <>The code works once and expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}.</> : <b>The code expired; close and make a new one.</b>}</p>
         <div style={{ width: '100%' }}><CopyField value={p.url} label="Pairing link" /></div>
-        {apps.length > 0 && <p className="muted small" style={{ textAlign: 'center' }}>Starts with {count === apps.length ? 'every app' : count === 0 ? 'no apps' : apps.filter(a => on[a.slug]).map(a => a.name).join(', ')}. <button type="button" className="btn sm ghost" onClick={() => setP(null)}>Change</button></p>}
+        {(apps.length > 0 || admin) && <p className="muted small" style={{ textAlign: 'center' }}>{apps.length > 0 && <>Starts with {count === apps.length ? 'every app' : count === 0 ? 'no apps' : apps.filter(a => on[a.slug]).map(a => a.name).join(', ')}. </>}<button type="button" className="btn sm ghost" onClick={() => { api.del(`${V1}/me/remote/pair${other ? `?user_id=${forUser}` : ''}`).catch(() => {}); setP(null) }}>Change</button></p>}
         <p className="muted small" style={{ textAlign: 'center', maxWidth: 400 }}>Tip: on iPhone, add the launcher and each app to the Home Screen from Safari's Share menu.</p>
       </div>}
     </Modal>
