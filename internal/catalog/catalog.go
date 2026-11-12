@@ -146,6 +146,7 @@ var entries = []Entry{
 	{Type: "vault", Name: "Pocket Vault", Prefix: "VAULT", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "wallet", Name: "Pocket Wallet", Prefix: "WALLET", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "weather", Name: "Pocket Weather", Prefix: "WEATHER", Group: "Pocket", Pocket: true, Fields: apiKey("")},
+	{Type: "sky", Name: "Pocket Sky", Prefix: "SKY", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "fitness", Name: "Pocket Fitness", Prefix: "FITNESS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "nutrition", Name: "Pocket Nutrition", Prefix: "NUTRITION", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "parcels", Name: "Pocket Parcels", Prefix: "PARCELS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
