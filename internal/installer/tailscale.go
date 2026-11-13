@@ -58,7 +58,7 @@ func hostTailscale() []string {
 
 func (ad *Address) tsStatus(ctx context.Context) tsStatus {
 	if !ad.tsRunning(ctx) {
-		if ips := hostTailscale(); len(ips) > 0 {
+		if ips := hostTailscale(); len(ips) > 0 && !ad.tailnet() { // in tailnet mode Pocket is its own device
 			return tsStatus{State: "host", IPs: ips}
 		}
 		return tsStatus{State: "off"}
@@ -104,8 +104,14 @@ func (ad *Address) tsUp(ctx context.Context, authkey string) (tsStatus, error) {
 	if err := ad.envSet(map[string]string{"COMPOSE_PROFILES": profiles(ad.envGet("COMPOSE_PROFILES"), "tailscale", "")}); err != nil {
 		return tsStatus{}, err
 	}
-	if _, err := ad.compose(ctx, "--profile", "tailscale", "up", "-d", "tailscale"); err != nil {
-		return tsStatus{}, problemf("Tailscale didn't start: %v", err)
+	if !ad.tsRunning(ctx) { // a running one is left as it is: Caddy shares its network in tailnet mode
+		args := []string{"--profile", "tailscale", "up", "-d", "tailscale"}
+		if ad.tailnet() {
+			args = []string{"--profile", "tailscale", "--profile", "proxy", "up", "-d", "tailscale", "caddy"}
+		}
+		if _, err := ad.compose(ctx, args...); err != nil {
+			return tsStatus{}, problemf("Tailscale didn't start: %v", err)
+		}
 	}
 	host, _ := os.Hostname()
 	args := []string{"exec"}
@@ -138,6 +144,9 @@ func (ad *Address) tsUp(ctx context.Context, authkey string) (tsStatus, error) {
 }
 
 func (ad *Address) tsDown(ctx context.Context) (tsStatus, error) {
+	if ad.tailnet() {
+		return ad.tsStatus(ctx), problemf("Pocket is reached over Tailscale only here; disconnecting it would leave no way in. Remove the device in the Tailscale admin console instead if you mean to.")
+	}
 	if ad.tsRunning(ctx) {
 		_, _ = ad.ag.dk.run(ctx, "", "exec", ad.tsContainer(), "tailscale", "logout")
 	}

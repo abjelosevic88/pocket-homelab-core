@@ -306,26 +306,38 @@ func (ad *Address) plainCoreURL() string {
 	return fmt.Sprintf("http://%s:%d", ad.plainHost(), ad.corePort())
 }
 
-// noTarget: what to do when the name has nothing to point at.
-const noTarget = "This machine has no home-network address (10.x, 172.16–31.x or 192.168.x), as on a VPS. Connect Tailscale (Away from home), and the name points at this machine's Tailscale address instead: a padlock on every device on your tailnet, and nothing open to the internet."
+// tailnet: Pocket is a device of its own on the tailnet (POCKET_TAILNET=1 in .env: install.sh on a
+// VPS, or --tailnet). Its Caddy runs inside Pocket's Tailscale container and listens on Pocket's
+// tailnet address only, so it needs none of this machine's ports and nothing reaches it from outside.
+func (ad *Address) tailnet() bool { return ad.envGet("POCKET_TAILNET") == "1" }
 
-// nameTarget is the address the name points at: this machine's home-network one, so phones at home
-// reach it without anything installed; or its Tailscale one when it has none (a VPS) or the owner
-// chose the tailnet (POCKET_NAME_ON=tailscale in .env, install.sh --name-on tailscale).
-func (ad *Address) nameTarget() string {
+// noTarget: what to do when the name has nothing to point at.
+func (ad *Address) noTarget() string {
+	if ad.tailnet() {
+		return "Waiting for Tailscale: approve Pocket on your tailnet with the sign-in link (Settings → System → Away from home shows it), and the name follows right after."
+	}
+	return "This machine has no home-network address (10.x, 172.16–31.x or 192.168.x), as on a VPS. Connect Tailscale (Away from home), and the name points at this machine's Tailscale address instead: a padlock on every device on your tailnet, and nothing open to the internet."
+}
+
+// nameTarget is the address the name points at: Pocket's own tailnet address in tailnet mode; else
+// this machine's home-network one, so phones at home reach it without anything installed; or its
+// Tailscale one when it has none or the owner chose the tailnet (POCKET_NAME_ON=tailscale).
+func (ad *Address) nameTarget(ctx context.Context) string {
+	if ad.tailnet() {
+		return tailnetIPv4(ad.tsStatus(ctx).IPs)
+	}
 	if ad.envGet("POCKET_NAME_ON") != "tailscale" {
 		if ip := homeAddress(); ip != "" {
 			return ip
 		}
 	}
-	return tailscaleIPv4()
+	return tailnetIPv4(hostTailscale())
 }
 
-// tailscaleIPv4: this machine's address on the tailnet (Pocket's Tailscale container or one of
-// its own: either way the tailscale0 interface, the agent runs on the host network).
-func tailscaleIPv4() string {
+// tailnetIPv4 picks the tailnet IPv4 address (100.64.0.0/10) out of a list.
+func tailnetIPv4(list []string) string {
 	cgnat := netip.MustParsePrefix("100.64.0.0/10")
-	for _, s := range hostTailscale() {
+	for _, s := range list {
 		if ip, err := netip.ParseAddr(s); err == nil && ip.Is4() && cgnat.Contains(ip) {
 			return ip.String()
 		}
@@ -460,10 +472,18 @@ func (ad *Address) Run(ctx context.Context) {
 		case <-ad.kick:
 		case <-t.C:
 		}
+		if ad.tailnet() && ad.caddyRunning(ctx) && ad.caddyStale(ctx) {
+			if err := ad.caddyUp(ctx); err != nil {
+				ad.log.Warn("address: Caddy", "err", err)
+			}
+		}
 		ad.once(ctx)
 		wait := 30 * time.Minute
 		if m := ad.choice(); (m == modePocket || m == modeCloudflare) && ad.domain() != ad.wanted() {
 			wait = 3 * time.Minute
+		}
+		if ad.tailnet() && wait > 5*time.Minute {
+			wait = 5 * time.Minute // a Caddy that lost Tailscale's network (above) is back within minutes
 		}
 		if !t.Stop() {
 			select {
@@ -641,12 +661,12 @@ type sentAddress struct {
 // sendAddress points the Pocket name at this machine's home address, when it changed and twice a
 // day as a sign of life (names that go quiet for months are given back).
 func (ad *Address) sendAddress(ctx context.Context, a *pocketAccount) error {
-	ip := ad.nameTarget()
+	ip := ad.nameTarget(ctx)
 	if ip == "" {
 		if ad.domain() == a.Domain {
 			return nil // keeps the last one
 		}
-		return problemf("%s", noTarget)
+		return problemf("%s", ad.noTarget())
 	}
 	var last sentAddress
 	if readJSON(ad.private("sent.json"), &last) && last.IP == ip && last.Domain == a.Domain && time.Since(time.Unix(last.At, 0)) < 12*time.Hour {
@@ -978,12 +998,12 @@ func (ad *Address) runCloudflare(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if ip := ad.nameTarget(); ip != "" {
+	if ip := ad.nameTarget(ctx); ip != "" {
 		if err := ad.cfPoint(ctx, &c, token, ip); err != nil {
 			return err
 		}
 	} else if ad.domain() != domain {
-		return problemf("%s", noTarget)
+		return problemf("%s", ad.noTarget())
 	}
 	if !ad.certOK(domain, 30) {
 		ad.status("certificate", "")

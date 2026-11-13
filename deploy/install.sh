@@ -33,12 +33,13 @@
 #   --apps LIST            single apps to install as well, as slugs (notes,tasks; pockethomelab.com/apps)
 #   --admin-email E        the email you will create your Core account with; the apps make it
 #                          their admin (asked for when bundles or apps are given)
-#   --tailscale-key KEY    connect Tailscale with this auth key (tskey-auth-…). On a VPS (no
-#                          home-network address) this is the whole setup: Pocket's address points
-#                          at the machine's Tailscale address, and a firewall rule keeps Pocket's
-#                          containers off the internet: https://core.<name> works on your tailnet only
-#   --name-on tailscale    point the name at the Tailscale address on a home box too (tailnet only)
-#   --private              the firewall rule above without a VPS (only the tailnet reaches Pocket)
+#   --tailscale-key KEY    join Tailscale with this auth key (tskey-auth-…) instead of a sign-in link
+#   --tailnet              Pocket as its own device on your tailnet, on a home box too (a VPS always is)
+#   --private              keep Pocket's ports off the internet with a firewall rule (a VPS always does)
+# On a VPS (no home-network address) the plain command is the whole setup: Pocket joins your tailnet
+# as a device of its own (open the sign-in link it prints, or pass --tailscale-key), gets Pocket's
+# free address with a padlock pointing there, and nothing of it is reachable from the internet.
+# It needs none of the machine's ports, so it sits next to a web server that already runs there.
 # Your own domain without Cloudflare, with ports 80/443 open to this machine:
 #   --domain DOMAIN --email EMAIL   Caddy gets a certificate for core.DOMAIN and each <app>.DOMAIN
 set -eu
@@ -47,10 +48,12 @@ REPO=abjelosevic88/pocket-homelab-core
 BUNDLES_URL=https://raw.githubusercontent.com/abjelosevic88/pocket-homelab-box/main/bundles.json
 DIR=${POCKET_DIR:-$HOME/pocket}
 HOST="" DOMAIN="" EMAIL="" VERSION="" PORT="" NOTIFY="" YES=0 APPS="" BUNDLES="" ADMIN_EMAIL=""
-ADDRESS="" CF_TOKEN="" CF_DOMAIN="" CF_NAME=pocket TS_KEY="" NAME_ON="" PRIVATE=0
+ADDRESS="" CF_TOKEN="" CF_DOMAIN="" CF_NAME=pocket TS_KEY="" NAME_ON="" PRIVATE=0 TAILNET=""
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+LOG=/dev/null # docker's own output goes here once the folder exists ($DIR/install.log)
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 ask() { # ask "question" → 0 for yes
 	[ "$YES" = 1 ] && return 0
@@ -79,8 +82,9 @@ while [ $# -gt 0 ]; do
 	--tailscale-key) TS_KEY=$2; shift 2 ;;
 	--name-on) NAME_ON=$2; shift 2 ;;
 	--private) PRIVATE=1; shift ;;
+	--tailnet) TAILNET=1; shift ;;
 	-y | --yes) YES=1; shift ;;
-	-h | --help) sed -n '2,44p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
+	-h | --help) sed -n '2,46p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 done
@@ -92,7 +96,7 @@ case "$ADDRESS" in "" | pocket | plain) ;; cloudflare)
 [ -z "$ADDRESS" ] || [ -z "$DOMAIN" ] || die "--domain already sets the address; leave out --address"
 case "$TS_KEY" in "" | tskey-*) ;; *) die "--tailscale-key takes a Tailscale auth key (tskey-auth-…)" ;; esac
 case "$TS_KEY" in *[!A-Za-z0-9_-]*) die "--tailscale-key: that doesn't look like an auth key" ;; esac
-case "$NAME_ON" in "" | home | tailscale) ;; *) die "--name-on is home or tailscale" ;; esac
+case "$NAME_ON" in "" | home) ;; tailscale) TAILNET=1 NAME_ON="" ;; *) die "--name-on is home or tailscale" ;; esac
 
 [ "$(uname -s)" = Linux ] || die "this installs on Linux (a Pocket Box, a mini PC, a VM or a Raspberry Pi 4/5)."
 case "$(uname -m)" in x86_64 | amd64 | aarch64 | arm64) ;; *) die "Pocket Core runs on 64-bit x86 or ARM, not $(uname -m)." ;; esac
@@ -101,19 +105,29 @@ command -v curl >/dev/null || die "curl is needed."
 # ---- Docker ----
 SUDO=""
 [ "$(id -u)" = 0 ] || SUDO=sudo
-if ! command -v docker >/dev/null 2>&1; then
-	ask "Docker is not installed. Install it now (get.docker.com)?" || die "install Docker first: https://docs.docker.com/engine/install/"
-	curl -fsSL https://get.docker.com | $SUDO sh
+engine() { # Docker's engine (not just a docker command) is on this machine
+	command -v dockerd >/dev/null 2>&1 || [ -x /usr/bin/dockerd ] || [ -x /usr/sbin/dockerd ] ||
+		systemctl cat docker.service >/dev/null 2>&1 || docker info >/dev/null 2>&1
+}
+if ! command -v docker >/dev/null 2>&1 || ! engine; then
+	ask "Docker is not installed here. Install it now (get.docker.com)?" || die "install Docker first: https://docs.docker.com/engine/install/"
+	say "Installing Docker…"
+	curl -fsSL https://get.docker.com | $SUDO sh >/tmp/pocket-docker-install.log 2>&1 || die "installing Docker failed; see /tmp/pocket-docker-install.log"
 	[ "$(id -u)" = 0 ] || $SUDO usermod -aG docker "$(id -un)" || true
+	$SUDO systemctl enable --now docker >/dev/null 2>&1 || true
 fi
 DOCKER=docker
 if ! docker info >/dev/null 2>&1; then
 	if [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
 		DOCKER="$SUDO docker" # not in the docker group yet (log out and in once to drop sudo)
+	elif $SUDO systemctl start docker >/dev/null 2>&1 && $SUDO docker info >/dev/null 2>&1; then
+		DOCKER="$SUDO docker"
+		docker info >/dev/null 2>&1 && DOCKER=docker
 	else
 		die "Docker is installed but not running (try: sudo systemctl start docker)."
 	fi
 fi
+ok Docker
 $DOCKER compose version >/dev/null 2>&1 || die "the Docker Compose plugin is missing (package docker-compose-plugin)."
 SOCK=/var/run/docker.sock
 [ -S "$SOCK" ] || die "no Docker socket at $SOCK (rootless Docker is not supported yet)."
@@ -147,16 +161,19 @@ SRC=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($
 PUBLIC=1
 case "$SRC" in 10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[01].* | "") PUBLIC=0 ;; esac
 [ -n "$NAME_ON" ] || NAME_ON=$(get POCKET_NAME_ON)
+[ "$NAME_ON" = tailscale ] && TAILNET=1 NAME_ON="" # 0.39's way of saying it
 [ "$(get POCKET_PRIVATE)" = 1 ] && PRIVATE=1
+[ -n "$TAILNET" ] || TAILNET=$(get POCKET_TAILNET)
+# A VPS (or --tailnet): Pocket is a device of its own on your tailnet. Its Caddy runs inside Pocket's
+# Tailscale container, so it takes none of this machine's ports, and a firewall rule keeps the
+# ports Pocket's containers publish off the internet.
 if [ "$PUBLIC" = 1 ] && [ -z "$DOMAIN" ]; then
-	if [ -n "$TS_KEY" ]; then
-		PRIVATE=1
-		[ -n "$ADDRESS" ] || ADDRESS=pocket
-	elif [ "$PRIVATE" != 1 ] && [ -z "$(get POCKET_ADDRESS)" ]; then
-		say "This machine has a public address ($SRC), like a VPS: Pocket's apps would be open to the whole"
-		say "internet over plain http. Better: run this with --tailscale-key tskey-auth-… (tailnet only, with a padlock)."
-		ask "Install it open to the internet anyway?" || die "stopped; nothing was installed."
-	fi
+	TAILNET=1 PRIVATE=1
+fi
+[ -z "$DOMAIN" ] || TAILNET=""
+if [ "$TAILNET" = 1 ]; then
+	PRIVATE=1
+	[ -n "$ADDRESS" ] || [ -n "$(get POCKET_ADDRESS)" ] || ADDRESS=pocket
 fi
 
 if [ -z "$VERSION" ]; then
@@ -179,6 +196,7 @@ else
 	for p in $(get COMPOSE_PROFILES | tr ',' ' '); do
 		case "$p" in proxy | tailscale) PROFILES="${PROFILES:+$PROFILES,}$p" ;; esac
 	done
+	[ "$TAILNET" != 1 ] || case ",$PROFILES," in *,proxy,*) ;; *) PROFILES="${PROFILES:+$PROFILES,}proxy" ;; esac
 	if [ -n "$NAME" ]; then
 		CORE_URL="https://core.$NAME" APP_URL="https://{slug}.$NAME" SECURE=true
 	else
@@ -230,14 +248,15 @@ if [ -n "$APPS" ]; then
 	esac
 	[ -z "$APPS" ] || REGKEY="pcreg_$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
 fi
-if [ "$ADDRESS" = pocket ] || [ "$ADDRESS" = cloudflare ]; then
+if [ "$TAILNET" != 1 ] && { [ "$ADDRESS" = pocket ] || [ "$ADDRESS" = cloudflare ]; }; then
 	busy=$(ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E '[:.](80|443)$' || true)
 	[ -z "$busy" ] || [ "$NAME" != "" ] || die "ports 80/443 are taken on this machine ($(printf '%s' "$busy" | tr '\n' ' ')); a name with a padlock needs them for Caddy"
 fi
 
-step "Installing Pocket Core $VERSION into $DIR"
 mkdir -p "$DIR/core/data" "$DIR/installer" "$DIR/apps" "$DIR/caddy"
 chmod 700 "$DIR/installer"
+LOG="$DIR/install.log"
+: >"$LOG"
 
 umask 077
 cat >"$ENV" <<EOF
@@ -252,6 +271,7 @@ POCKET_EMAIL=$EMAIL
 POCKET_ADDRESS=$NAME
 POCKET_NAME_ON=$NAME_ON
 POCKET_PRIVATE=$PRIVATE
+POCKET_TAILNET=$TAILNET
 COMPOSE_PROFILES=$PROFILES
 CORE_PORT=$PORT
 BASE_URL=$CORE_URL
@@ -325,6 +345,49 @@ services:
       - ${POCKET_DIR}:${POCKET_DIR} # same path inside and out: compose files name host folders
       - ./installer:/run/pocket-installer
 
+EOF
+if [ "$TAILNET" = 1 ]; then
+	TUN="    devices:
+      - /dev/net/tun:/dev/net/tun"
+	TUNARG=""
+	[ -c /dev/net/tun ] || { TUN="" TUNARG=', "--tun=userspace-networking"'; } # no tun device (some container VPSes)
+	cat >>"$DIR/docker-compose.yml" <<EOF
+
+  # Pocket's own device on your tailnet. Caddy shares its network, so https://core.<name> and the
+  # apps listen on Pocket's tailnet address only, and on none of this machine's ports.
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: pocket-tailscale
+    restart: unless-stopped
+    # tailscaled itself, not the image's containerboot: that one gives up and restarts the container
+    # while the sign-in link waits, and Caddy would lose its network with it. The installer agent
+    # runs \`tailscale up\` in here.
+    command: ["tailscaled", "--statedir=/var/lib/tailscale"$TUNARG]
+    cap_add: [NET_ADMIN, NET_RAW]
+$TUN
+    volumes:
+      - ./tailscale:/var/lib/tailscale
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # HTTPS for core.<name> and every app (the installer agent writes ./caddy/Caddyfile and ./caddy/tls),
+  # and each of them on its own port over plain http on the tailnet address until there is a name.
+  caddy:
+    image: caddy:2
+    container_name: pocket-caddy
+    restart: unless-stopped
+    profiles: [proxy]
+    network_mode: service:tailscale
+    depends_on: [tailscale]
+    volumes:
+      - ./caddy:/etc/caddy
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+EOF
+	[ -f "$DIR/caddy/Caddyfile" ] || printf '# Pocket Core on its port of Pocket'"'"'s tailnet address; the installer agent writes this file again.\nhttp://:%s {\n\treverse_proxy host.docker.internal:%s\n}\n' "$PORT" "$PORT" >"$DIR/caddy/Caddyfile"
+else
+	cat >>"$DIR/docker-compose.yml" <<'EOF'
+
   # HTTPS for core.<name> and every app: with --domain (profile domain), or once Core has a name
   # (profile proxy; the installer agent writes ./caddy/Caddyfile and ./caddy/tls then).
   caddy:
@@ -358,6 +421,7 @@ services:
     volumes:
       - ./tailscale:/var/lib/tailscale
 EOF
+fi
 
 if [ -n "$DOMAIN" ] && [ ! -f "$CADDYFILE" ]; then
 	{
@@ -374,7 +438,6 @@ if [ "$PRIVATE" = 1 ]; then
 	IFACE=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
 	[ -n "$IFACE" ] || die "could not tell this machine's internet interface for --private."
 	command -v iptables >/dev/null 2>&1 || $SUDO sh -c 'command -v iptables' >/dev/null 2>&1 || die "--private needs iptables."
-	step "Keeping Pocket to the tailnet (nothing reaches it on $IFACE)"
 	rule="DOCKER-USER -i $IFACE -m conntrack --ctstate NEW -j DROP"
 	printf '%s\n' "[Unit]" \
 		"Description=Pocket: only the tailnet reaches Pocket's containers, not $IFACE (install.sh --private)" \
@@ -386,25 +449,23 @@ if [ "$PRIVATE" = 1 ]; then
 	$SUDO systemctl enable pocket-private.service >/dev/null 2>&1
 	$SUDO systemctl restart pocket-private.service
 	$SUDO systemctl is-active --quiet pocket-private.service || die "the firewall rule didn't go in; see: systemctl status pocket-private"
+	ok "Closed to the internet (only your tailnet reaches Pocket)"
 fi
 
-step "Starting"
 cd "$DIR"
-[ -n "${POCKET_NO_PULL:-}" ] || $DOCKER compose pull --quiet # POCKET_NO_PULL=1: images built here (tests)
-$DOCKER compose up -d --remove-orphans
+[ -n "${POCKET_NO_PULL:-}" ] || $DOCKER compose pull --quiet >>"$LOG" 2>&1 || die "downloading Pocket failed; see $LOG" # POCKET_NO_PULL=1: images built here (tests)
+$DOCKER compose up -d --remove-orphans >>"$LOG" 2>&1 || die "starting Pocket failed; see $LOG"
 
 wait_core() {
-	printf 'Waiting for Pocket Core'
 	i=0
 	until curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; do
 		i=$((i + 1))
-		[ $i -lt 60 ] || { say; die "Pocket Core did not start; see: cd $DIR && $DOCKER compose logs core"; }
-		printf '.'
+		[ $i -lt 60 ] || die "Pocket Core did not start; see: cd $DIR && $DOCKER compose logs core"
 		sleep 2
 	done
-	say
 }
 wait_core
+ok "Pocket Core $VERSION"
 
 # The installer agent's two sockets: installs (bearer token) and the address/Tailscale service.
 agent() { # agent PATH [JSON]
@@ -430,7 +491,7 @@ wait_agent() {
 # ---- the first apps, through the installer agent (the same Install as Core's Apps page) ----
 INSTALLED="" FAILED=""
 if [ -n "$APPS" ]; then
-	step "Installing apps"
+	say "  Installing apps"
 	wait_agent
 	for a in $(printf '%s' "$APPS" | tr ',' ' '); do
 		printf '  %s ' "$a"
@@ -459,24 +520,46 @@ if [ -n "$APPS" ]; then
 	done
 	# Drop the pin: Core keeps the key it was given, and rotating it in Settings now sticks.
 	sed -i 's/^REGISTRATION_KEY=.*/REGISTRATION_KEY=/' "$ENV"
-	$DOCKER compose up -d core
+	$DOCKER compose up -d core >>"$LOG" 2>&1
 	wait_core
 fi
 
 # ---- Tailscale, then the address, when given here (otherwise: in the browser) ----
-# Tailscale first: on a VPS the name points at the machine's Tailscale address.
+# Tailscale first: in tailnet mode the name points at Pocket's own tailnet address.
 TS_IP=""
-if [ -n "$TS_KEY" ]; then
-	step "Tailscale"
+ts_ip() { sed -n 's/.*"ips":\["\(100\.[0-9.]*\)".*/\1/p'; }
+if [ "$TAILNET" = 1 ] || [ -n "$TS_KEY" ]; then
 	wait_agent
-	out=$(address POST /v1/tailscale/up "{\"authkey\":\"$TS_KEY\"}")
+	out=$(address GET /v1/tailscale)
+	if [ "$(printf '%s' "$out" | field state)" != running ]; then
+		out=$(address POST /v1/tailscale/up "{\"authkey\":\"$TS_KEY\"}")
+	fi
 	err=$(printf '%s' "$out" | field error)
-	TS_IP=$(printf '%s' "$out" | sed -n 's/.*"ips":\["\(100\.[0-9.]*\)".*/\1/p')
+	url=$(printf '%s' "$out" | field auth_url)
+	if [ -z "$err" ] && [ -n "$url" ] && [ "$(printf '%s' "$out" | field state)" != running ]; then
+		say
+		say "  Add Pocket to your Tailscale: open this link and approve it"
+		say
+		printf '      \033[1m%s\033[0m\n' "$url"
+		say
+		say "  (no Tailscale account yet? the link makes one, free)"
+		printf '  Waiting'
+		n=0
+		while [ $n -lt 300 ]; do # 15 minutes
+			sleep 3
+			n=$((n + 1))
+			[ $((n % 5)) = 0 ] && printf '.'
+			out=$(address GET /v1/tailscale 2>/dev/null || true)
+			[ "$(printf '%s' "$out" | field state)" != running ] || break
+		done
+		say
+	fi
+	TS_IP=$(printf '%s' "$out" | ts_ip)
 	if [ -n "$err" ] || [ -z "$TS_IP" ]; then
-		say "Tailscale didn't connect: ${err:-no address on the tailnet yet}"
-		[ "$PRIVATE" != 1 ] || say "Pocket is closed to the internet here; until Tailscale works, reach it through SSH: ssh -L $PORT:localhost:$PORT <you>@<this machine>, then http://localhost:$PORT"
+		say "  Tailscale isn't connected yet${err:+: $err}"
+		[ "$TAILNET" != 1 ] || say "  Run this command again to get a new sign-in link."
 	else
-		say "On your tailnet as $(printf '%s' "$out" | field name) ($TS_IP)."
+		ok "On your tailnet as $(printf '%s' "$out" | field name | cut -d. -f1) ($TS_IP)"
 		if [ "$PRIVATE" = 1 ]; then
 			# Without a name, Pocket's own addresses are the tailnet's now.
 			HOST=$TS_IP
@@ -484,15 +567,14 @@ if [ -n "$TS_KEY" ]; then
 			if [ -z "$(get POCKET_ADDRESS)" ]; then
 				CORE_URL="http://$TS_IP:$PORT"
 				sed -i "s#^BASE_URL=.*#BASE_URL=$CORE_URL#; s#^INSTALLER_PUBLIC_URL=.*#INSTALLER_PUBLIC_URL=http://$TS_IP:{port}#" "$ENV"
-				$DOCKER compose up -d core installer >/dev/null 2>&1
+				$DOCKER compose up -d core installer >>"$LOG" 2>&1
 				wait_core
 				wait_agent
 			fi
 		fi
 	fi
 fi
-if [ -n "$ADDRESS" ]; then
-	step "Secure address"
+if [ -n "$ADDRESS" ] && { [ "$TAILNET" != 1 ] || [ -n "$TS_IP" ]; }; then
 	wait_agent
 	case "$ADDRESS" in
 	cloudflare)
@@ -505,9 +587,9 @@ if [ -n "$ADDRESS" ]; then
 	err=$(printf '%s' "$out" | field error)
 	[ -z "$err" ] || die "the address: $err"
 	if [ "$ADDRESS" = plain ]; then
-		say "This network's addresses: Pocket Core at http://$HOST:$PORT."
+		ok "This network's addresses"
 	else
-		printf 'Getting the name and its certificate (a minute or two)'
+		printf '  Getting your address and its certificate (a minute or two)'
 		n=0
 		while [ $n -lt 100 ]; do
 			sleep 5
@@ -517,24 +599,27 @@ if [ -n "$ADDRESS" ]; then
 			NAME=$(printf '%s' "$out" | field domain)
 			[ -z "$NAME" ] || break
 			case "$(printf '%s' "$out" | sed -n 's/.*"status":{"state":"\([a-z-]*\)".*/\1/p')" in
-			failed | limited | signin | offline) say; say "Not yet: $(printf '%s' "$out" | sed -n 's/.*"status":{[^}]*"message":"\([^"]*\)".*/\1/p') It keeps trying; Settings → System in Core shows how far it got."; break ;;
+			failed | limited | signin | offline) say; say "  Not yet: $(printf '%s' "$out" | sed -n 's/.*"status":{[^}]*"message":"\([^"]*\)".*/\1/p') It keeps trying by itself."; break ;;
 			esac
 		done
-		[ -z "$NAME" ] || { say; CORE_URL="https://core.$NAME"; say "Pocket is at $CORE_URL"; }
+		[ -z "$NAME" ] || { printf '\r\033[K'; ok "Address with a padlock: $NAME"; CORE_URL="https://core.$NAME"; }
 	fi
 fi
 
-step "Pocket Core $VERSION is running"
-if [ -n "$INSTALLED" ]; then
-	say "Open $CORE_URL and create your account with $ADMIN_EMAIL: it becomes the admin of Core and of"
-	say "the apps installed with it ($(printf '%s' "$INSTALLED" | sed 's/^ //; s/ /, /g')). Apps → Install app adds more."
-elif [ "$NEW" = 1 ]; then
-	say "Open $CORE_URL to create your account; the setup there picks the address and your apps."
-else
-	say "Open $CORE_URL"
+say
+case "$CORE_URL" in https://*) say "  Pocket is ready: $(printf '\033[1m%s\033[0m' "$CORE_URL")" ;; *) say "  Pocket is running: $(printf '\033[1m%s\033[0m' "$CORE_URL")" ;; esac
+say
+if [ "$TAILNET" = 1 ]; then
+	say "  Open it on a phone or laptop with Tailscale (same account)."
+	[ -n "$TS_IP" ] || say "  First approve Pocket on Tailscale: run this command again for the link."
 fi
-[ -z "$FAILED" ] || say "Not installed:$FAILED (try again from Core: Apps → Install app)."
-[ -n "$DOMAIN" ] && say "(core.$DOMAIN must point here with ports 80/443 open before you can sign in: Core expects HTTPS.)"
-[ "$PRIVATE" != 1 ] || say "Only devices on your tailnet reach it (Tailscale on your phone and laptop); nothing is open to the internet."
-[ "$DOCKER" = docker ] || say "Tip: log out and back in once, so Docker works without sudo."
-say "Files: $DIR · update: run this script again · logs: cd $DIR && docker compose logs -f"
+if [ -n "$INSTALLED" ]; then
+	say "  Create your account with $ADMIN_EMAIL; the apps are ready ($(printf '%s' "$INSTALLED" | sed 's/^ //; s/ /, /g'))."
+elif [ "$NEW" = 1 ]; then
+	say "  Create your account there, then pick your apps."
+fi
+[ -z "$FAILED" ] || say "  Not installed:$FAILED (try again from Core: Apps → Install app)."
+[ -n "$DOMAIN" ] && say "  (core.$DOMAIN must point here with ports 80/443 open before you can sign in.)"
+say
+[ "$DOCKER" = docker ] || say "  Tip: log out and back in once, so Docker works without sudo."
+say "  Update: run this command again · Files: $DIR · Log: $LOG"
