@@ -295,7 +295,7 @@ func TestMCPRequestLimits(t *testing.T) {
 		t.Fatalf("oversize status=%d", res.StatusCode)
 	}
 	limited := false
-	for i := 0; i < 25; i++ {
+	for i := 0; i < mcpRequestBurst+20; i++ {
 		if e.do("POST", "/mcp", "invalid", nil, nil) == 429 {
 			limited = true
 			break
