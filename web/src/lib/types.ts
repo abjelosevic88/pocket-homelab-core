@@ -1,6 +1,6 @@
 export interface User { id: number; email: string; name: string; role: 'admin' | 'member'; disabled: boolean; created_at: string; updated_at: string }
 export interface Principal { kind: 'user' | 'app' | 'device'; user?: User | null; app?: App | null; device?: Device | null; scope?: string }
-export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; family_name?: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string; box_system?: boolean; box_address?: boolean; box_downloads?: boolean; box_wizard?: boolean; setup_wizard?: boolean; installer?: boolean; installer_agent?: boolean; installer_locked?: boolean }
+export interface AuthStatus { needs_setup: boolean; auth_mode: string; authenticated: boolean; user: User | null; version: string; title: string; box_name: string; family_name?: string; sso?: boolean; sso_name?: string; password_login?: boolean; cookie_warning?: string; box_system?: boolean; box_address?: boolean; box_downloads?: boolean; box_wizard?: boolean; setup_wizard?: boolean; box_remote?: boolean; installer?: boolean; installer_agent?: boolean; installer_locked?: boolean }
 export interface Settings { title: string; box_name: string; family_name: string; registration_key: string; setup_complete: boolean; installs_off?: boolean; auto_update?: boolean; auto_update_hour?: number; notify_updates?: boolean; notify_url?: string }
 export interface App {
   id: number; slug: string; name: string; app_name: string; custom_name: string; description: string; icon: string; version: string; url: string; public_url: string
@@ -111,7 +111,7 @@ export interface BoxUpdates {
 export interface WifiNetwork { ssid: string; signal: number; secure: boolean; active: boolean }
 
 /** How the Pocket Box gets its padlock (the box address service, BOX_ADDRESS). */
-export type BoxAddressMode = 'pocket' | 'cloudflare' | 'own-ca' | 'off'
+export type BoxAddressMode = 'pocket' | 'cloudflare' | 'own-ca' | 'plain' | 'off'
 export interface BoxAddress {
   mode: BoxAddressMode | null
   chosen: boolean
@@ -121,7 +121,12 @@ export interface BoxAddress {
   problem?: { state: string; message: string; at: number } | null
   cloudflare: { zone: string; sub: string; domain: string; kind: 'oauth' | 'token' } | null
   options: { oauth: boolean; token_link: string }
+  /** Off a Pocket Box (install.sh): the choices there are, and Core's address without a name. */
+  modes?: BoxAddressMode[]
+  plain_url?: string
 }
+/** Tailscale through the installer agent (install.sh). */
+export interface RemoteStatus { state: 'off' | 'host' | 'starting' | 'needs-login' | 'running'; name?: string; ips?: string[]; auth_url?: string; managed: boolean }
 export interface CloudflareZone { id: string; name: string }
 
 /** Downloads on the Pocket Box (the box downloads service, BOX_DOWNLOADS): the Usenet provider,

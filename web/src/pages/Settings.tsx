@@ -12,6 +12,7 @@ import { Select } from '../components/Select'
 import { MyLinks } from './Links'
 import { SignInMethods } from './SignInMethods'
 import { AddressPanel } from '../components/BoxAddress'
+import { RemotePanel } from '../components/RemoteAccess'
 import { DownloadsPanel, useBoxDownloads } from '../components/BoxDownloads'
 import { BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, UpdatesPanel, useBoxStatus } from '../components/BoxSystem'
 
@@ -34,7 +35,7 @@ export default function Settings() {
   const navigate = useNavigate()
   const mobile = useIsMobile()
   const admin = user?.role === 'admin'
-  const tabs = TABS.filter(t => (!t.admin || admin) && (!t.member || !admin) && (!t.box || status?.box_system))
+  const tabs = TABS.filter(t => (!t.admin || admin) && (!t.member || !admin) && (!t.box || status?.box_system || status?.box_address))
   const tab: TabId = tabs.find(t => t.id === raw)?.id || tabs[0].id
   const current = tabs.find(t => t.id === tab)!
   const go = (id: TabId) => navigate(`/settings/${id}`, { replace: true })
@@ -70,10 +71,10 @@ export default function Settings() {
           <div className="set-inner" key={tab}>
             <div className="set-title">
               <h2>{current.label}</h2>
-              <p>{current.sub}</p>
+              <p>{current.id === 'system' && !status?.box_system ? 'How phones and computers reach Pocket with a padlock, and from away from home.' : current.sub}</p>
             </div>
             {tab === 'box' && <Box />}
-            {tab === 'system' && <BoxSystemSettings />}
+            {tab === 'system' && (status?.box_system ? <BoxSystemSettings /> : <InstallSystemSettings />)}
             {tab === 'sso' && <OIDCClients />}
             {tab === 'profile' && <Profile />}
             {tab === 'links' && <MyLinks />}
@@ -134,6 +135,17 @@ function Box() {
         <p className="muted small mt-s">A Pocket app needs <code>CORE_URL={window.location.origin}</code> and <code>CORE_REGISTRATION_KEY</code> with this value.</p>
       </Section>
       {rot && <Confirm title="Rotate registration key" message="Apps that have not registered yet will need the new key. Registered apps keep working." onConfirm={async () => { await api.post(`${V1}/settings/registration-key`); setRot(false); reload(); toast('Rotated') }} onCancel={() => setRot(false)} danger={false} confirmLabel="Rotate" />}
+    </div>
+  )
+}
+
+/** System off a Pocket Box (install.sh): the address and Tailscale, through the installer agent. */
+function InstallSystemSettings() {
+  const { status } = useApp()
+  return (
+    <div className="stack loose">
+      <Section title="Secure address" icon="lock" sub="How phones and computers reach Pocket with a padlock: Pocket's free address or your own domain on Cloudflare. Or keep this network's addresses, without one."><AddressPanel /></Section>
+      {status?.box_remote && <Section title="Away from home" icon="globe" sub="Reach Pocket from anywhere through Tailscale."><RemotePanel /></Section>}
     </div>
   )
 }

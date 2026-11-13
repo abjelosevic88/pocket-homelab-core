@@ -278,6 +278,8 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		// On a Pocket Box: the box settings exist, and whether the owner still has to set it up.
 		"box_system":  s.box != nil,
 		"box_address": s.boxAddr != nil,
+		// Tailscale through the installer agent (install.sh; a Pocket Box has it in box_system).
+		"box_remote": s.boxAddr != nil && s.box == nil,
 		// The downloads service exists; whether Watch/Requests/Subtitles are installed is in its GET.
 		"box_downloads": s.boxDL != nil,
 		// One-click install/removal of Pocket apps (admins).

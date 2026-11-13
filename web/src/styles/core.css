@@ -544,6 +544,7 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .address-ico.pocket { background: linear-gradient(135deg, #4f46e5, #0ea5e9); }
 .address-ico.cloudflare { background: linear-gradient(135deg, #f6821f, #fbad41); }
 .address-ico.own-ca { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
+.address-ico.plain { background: linear-gradient(135deg, #059669, #34d399); }
 .address-text { display: block; color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 2px; }
 .address-facts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .address-facts span { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--border); font-size: 11.5px; font-weight: 600; color: var(--text-2); }
