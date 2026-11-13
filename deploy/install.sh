@@ -87,7 +87,7 @@ while [ $# -gt 0 ]; do
 	--private) PRIVATE=1; shift ;;
 	--tailnet) TAILNET=1; shift ;;
 	-y | --yes) YES=1; shift ;;
-	-h | --help) sed -n '2,46p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
+	-h | --help) sed -n '2,47p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 done
