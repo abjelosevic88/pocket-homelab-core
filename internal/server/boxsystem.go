@@ -129,6 +129,7 @@ var boxAddressRoutes = map[string]string{
 	"POST /cloudflare/zones":  "POST /v1/address/cloudflare/zones",
 	"POST /cloudflare/start":  "POST /v1/address/cloudflare/start",
 	"POST /cloudflare/finish": "POST /v1/address/cloudflare/finish",
+	"POST /retry":             "POST /v1/address/retry", // install.sh's agent only
 }
 
 func (s *Server) handleBoxAddress(w http.ResponseWriter, r *http.Request) {

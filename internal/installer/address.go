@@ -25,6 +25,7 @@ package installer
 //	POST /v1/address/cloudflare/zones  {token}           the zones a pasted API token can edit
 //	POST /v1/address/cloudflare/start  {return_url?}     "Sign in with Cloudflare": the URL to open
 //	POST /v1/address/cloudflare/finish {code, state}     back from Cloudflare: the zones, a pending id
+//	POST /v1/address/retry                               try again now, not within 3 minutes
 //
 // and Tailscale (tailscale.go). State lives in <install dir>/address; secrets in its private/ (0700).
 

@@ -393,6 +393,15 @@ func (ad *Address) Handler() http.Handler {
 		v, err := ad.setChoice(r.Context(), b)
 		ad.reply(w, v, err)
 	})
+	// Try again now (after a limit was lifted, or the network is back), instead of within 3 minutes.
+	mux.HandleFunc("POST /v1/address/retry", func(w http.ResponseWriter, r *http.Request) {
+		if ad.choice() == "" {
+			writeErr(w, http.StatusBadRequest, "no address chosen yet")
+			return
+		}
+		ad.Kick()
+		writeJSON(w, http.StatusOK, ad.view(r.Context()))
+	})
 	mux.HandleFunc("POST /v1/address/cloudflare/zones", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Token string `json:"token"`
