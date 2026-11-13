@@ -172,7 +172,7 @@ On a Pocket Box, Core also sets up the machine it runs on. Core runs unprivilege
 
 How phones and computers get a padlock for the box, chosen first on the box's landing page (`http://pocket.local`, before anyone has an account) and changeable here by an admin at any time:
 
-- **Pocket's free address** (recommended): `<random>.box.pockethomelab.com` from Pocket Names, with a Let's Encrypt certificate.
+- **Pocket's free address** (recommended): `<random>.box.pockethomelab.net` from Pocket Names, with a Let's Encrypt certificate.
 - **The owner's own domain on Cloudflare**: `<name>.<their zone>`. *Sign in with Cloudflare* (OAuth with PKCE as a public client, scopes `zone.read dns.write offline_access`; Cloudflare sends the browser back through `names.pockethomelab.com/cloudflare/back` to the page that started it) or a pasted API token (a prefilled *Create token* link: Zone · Read, DNS · Edit). The box keeps two A records pointed at its home address and gets its certificate over DNS-01 itself.
 - **The box's own certificate**: no public name; each device installs the box's CA.
 
