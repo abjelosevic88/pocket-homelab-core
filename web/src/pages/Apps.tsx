@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { ago, formatVersion, when } from '../lib/format'
@@ -17,6 +17,14 @@ export default function Apps() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [installing, setInstalling] = useState(false)
   const [arriving, setArriving] = useState<Arriving | null>(null)
+  // The sidebar's app list loads on its own; tell it whenever this list reloads with something new (an install, a removal, Refresh).
+  const shown = useRef('')
+  useEffect(() => {
+    if (!data) return
+    const sig = data.map(a => `${a.slug}:${a.status}`).join(',')
+    if (shown.current && sig !== shown.current) window.dispatchEvent(new CustomEvent('pc:apps-changed'))
+    shown.current = sig
+  }, [data])
   useEffect(() => { if (user?.role === 'admin') api.get<Settings>(`${V1}/settings`).then(setSettings).catch(() => {}) }, [user])
   // A Pocket Box still fetching apps (a Lite box's first boot): show how far, and list each app as it comes up.
   useEffect(() => {
