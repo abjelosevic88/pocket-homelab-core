@@ -45,6 +45,10 @@
 # It needs none of the machine's ports, so it sits next to a web server that already runs there.
 # Your own domain without Cloudflare, with ports 80/443 open to this machine:
 #   --domain DOMAIN --email EMAIL   Caddy gets a certificate for core.DOMAIN and each <app>.DOMAIN
+# Removing it again:
+#   --uninstall            give the free name back, leave the tailnet, remove Pocket's containers,
+#                          images and firewall rules, and the folder with all apps and their data
+#   --uninstall --keep-data   the same, but the folder (settings, apps' data) stays
 set -eu
 
 REPO=abjelosevic88/pocket-homelab-core
@@ -52,15 +56,17 @@ BUNDLES_URL=https://raw.githubusercontent.com/abjelosevic88/pocket-homelab-box/m
 DIR=${POCKET_DIR:-$HOME/pocket}
 HOST="" DOMAIN="" EMAIL="" VERSION="" PORT="" NOTIFY="" YES=0 APPS="" BUNDLES="" ADMIN_EMAIL=""
 ADDRESS="" CF_TOKEN="" CF_DOMAIN="" CF_NAME=pocket TS_KEY="" NAME_ON="" PRIVATE=0 TAILNET=""
+UNINSTALL=0 KEEP_DATA=0
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 LOG=/dev/null # docker's own output goes here once the folder exists ($DIR/install.log)
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
+tty_ok() { (: </dev/tty) 2>/dev/null; } # a terminal to ask on (not there under cron, CI, ssh without -t)
 ask() { # ask "question" → 0 for yes
 	[ "$YES" = 1 ] && return 0
-	[ -r /dev/tty ] || die "$1 Re-run with --yes to answer yes."
+	tty_ok || die "$1 Re-run with --yes to answer yes."
 	printf '%s [Y/n] ' "$1" >/dev/tty
 	read -r a </dev/tty || a=n
 	case "$a" in "" | y | Y | yes) return 0 ;; *) return 1 ;; esac
@@ -86,8 +92,10 @@ while [ $# -gt 0 ]; do
 	--name-on) NAME_ON=$2; shift 2 ;;
 	--private) PRIVATE=1; shift ;;
 	--tailnet) TAILNET=1; shift ;;
+	--uninstall) UNINSTALL=1; shift ;;
+	--keep-data) KEEP_DATA=1; shift ;;
 	-y | --yes) YES=1; shift ;;
-	-h | --help) sed -n '2,47p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
+	-h | --help) sed -n '2,51p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 done
@@ -104,6 +112,96 @@ case "$NAME_ON" in "" | home) ;; tailscale) TAILNET=1 NAME_ON="" ;; *) die "--na
 [ "$(uname -s)" = Linux ] || die "this installs on Linux (a Pocket Box, a mini PC, a VM or a Raspberry Pi 4/5)."
 case "$(uname -m)" in x86_64 | amd64 | aarch64 | arm64) ;; *) die "Pocket Core runs on 64-bit x86 or ARM, not $(uname -m)." ;; esac
 command -v curl >/dev/null || die "curl is needed."
+
+# ---- --uninstall: everything this script (and Pocket in it) set up, gone again ----
+if [ "$UNINSTALL" = 1 ]; then
+	SUDO=""
+	[ "$(id -u)" = 0 ] || SUDO=sudo
+	[ -d "$DIR" ] && DIR=$(cd "$DIR" && pwd)
+	if [ ! -f "$DIR/docker-compose.yml" ] && [ ! -f /etc/systemd/system/pocket-private.service ] && [ ! -f /etc/systemd/system/pocket-firewall.service ]; then
+		die "there is no Pocket install in $DIR (another folder? --dir DIR)"
+	fi
+	if [ "$KEEP_DATA" = 1 ]; then
+		say "This removes Pocket from this machine: its containers, images and firewall rules, Pocket's"
+		say "free address and its device on your tailnet. $DIR stays, with your settings and the apps' data."
+	else
+		say "This removes Pocket from this machine: every app, all their data and your Pocket account"
+		say "($DIR), Pocket's free address and its device on your tailnet. It can't be undone."
+	fi
+	if [ "$YES" != 1 ]; then
+		tty_ok || die "re-run with --yes to remove it."
+		printf 'Type "remove" to go ahead: ' >/dev/tty
+		read -r a </dev/tty || a=""
+		[ "$a" = remove ] || die "stopped; nothing was removed."
+	fi
+	DOCKER=""
+	if docker info >/dev/null 2>&1; then DOCKER=docker; elif $SUDO docker info >/dev/null 2>&1; then DOCKER="$SUDO docker"; fi
+	get() { [ -f "$DIR/.env" ] && sed -n "s/^$1=//p" "$DIR/.env" | tail -n1 || true; }
+	running() { [ -n "$DOCKER" ] && [ "$($DOCKER inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]; }
+	# The name first: going back to this network's addresses gives a Pocket name back (and takes your
+	# Cloudflare records away). The installer agent does that, so it has to be running.
+	SOCK_A="$DIR/installer/address.sock"
+	if [ -n "$(get POCKET_ADDRESS)" ] && running pocket-core-installer && $SUDO test -S "$SOCK_A"; then
+		printf '  Giving the address back'
+		$SUDO curl -fsS --unix-socket "$SOCK_A" -X PUT -H 'Content-Type: application/json' --data '{"mode":"plain"}' http://agent/v1/address >/dev/null 2>&1 || true
+		n=0
+		until $DOCKER logs --since 10m pocket-core-installer 2>&1 | grep -q 'gave the Pocket name back\|removed from Cloudflare'; do
+			n=$((n + 1)); [ $n -lt 40 ] || break
+			printf '.'; sleep 3
+		done
+		say
+		if [ $n -lt 40 ]; then ok "Address given back"; else say "  The address wasn't given back in time; an unused Pocket name lapses by itself."; fi
+	fi
+	TS_WAS=""
+	if running pocket-tailscale; then
+		$DOCKER exec pocket-tailscale tailscale logout >/dev/null 2>&1 && ok "Logged out of Tailscale" && TS_WAS=1
+	fi
+	if [ -n "$DOCKER" ]; then
+		rmi="--rmi all" vols="-v"
+		[ "$KEEP_DATA" != 1 ] || vols=""
+		for d in "$DIR"/apps/*/; do
+			[ -f "$d/docker-compose.yml" ] || continue
+			(cd "$d" && $DOCKER compose down $vols $rmi >/dev/null 2>&1) || true
+		done
+		[ ! -f "$DIR/docker-compose.yml" ] || (cd "$DIR" && $DOCKER compose --profile proxy --profile tailscale --profile domain down $vols $rmi >/dev/null 2>&1) || true
+		for c in $($DOCKER ps -aq --filter name='^pocket-' 2>/dev/null); do $DOCKER rm -f "$c" >/dev/null 2>&1 || true; done
+		ok "Containers and images removed"
+	fi
+	FW_WAS=""
+	if [ -f /etc/systemd/system/pocket-private.service ]; then
+		$SUDO systemctl disable --now pocket-private.service >/dev/null 2>&1 || true # its stop takes the rule out
+		$SUDO rm -f /etc/systemd/system/pocket-private.service
+		FW_WAS=1
+	fi
+	if [ -f /etc/systemd/system/pocket-firewall.service ] || [ -f /usr/local/sbin/pocket-firewall ]; then
+		FW_WAS=1
+		$SUDO systemctl disable --now pocket-firewall.service >/dev/null 2>&1 || true
+		$SUDO rm -f /etc/systemd/system/pocket-firewall.service /usr/local/sbin/pocket-firewall
+		# Its rules carry the comment "pocket-firewall"; take them out one by one (reloading the
+		# firewall's file would also wipe Docker's and Tailscale's own rules).
+		$SUDO nft -a list ruleset 2>/dev/null | awk '
+			/^table / { fam = $2; tab = $3 }
+			/^[ \t]*chain / { ch = $2 }
+			/comment "pocket-firewall"/ && /# handle / { h = $NF; print fam, tab, ch, h }' |
+			while read -r fam tab ch h; do $SUDO nft delete rule "$fam" "$tab" "$ch" handle "$h" || true; done
+	fi
+	if [ -n "$FW_WAS" ]; then
+		$SUDO systemctl daemon-reload >/dev/null 2>&1 || true
+		ok "Firewall rules removed"
+	fi
+	if [ "$KEEP_DATA" != 1 ] && [ -d "$DIR" ]; then
+		# Only a folder install.sh made (its .env names it), never a home folder by mistake.
+		if [ "$DIR" != "$HOME" ] && [ "$DIR" != / ] && [ "$(get POCKET_DIR)" = "$DIR" ]; then
+			$SUDO rm -rf "$DIR" && ok "Removed $DIR"
+		else
+			say "  $DIR doesn't look like a folder install.sh made; left it, remove it yourself if you mean to."
+		fi
+	fi
+	say
+	say "  Pocket is gone from this machine. Docker stays (remove it with your package manager if you like)."
+	[ -z "$TS_WAS" ] || say "  On your tailnet its device shows as offline: remove it in Tailscale's admin console (Machines)."
+	exit 0
+fi
 
 # ---- Docker ----
 SUDO=""
@@ -267,7 +365,7 @@ if [ -n "$APPS" ] && [ "$NEW" = 0 ]; then
 fi
 REGKEY=""
 if [ -n "$APPS" ]; then
-	if [ -z "$ADMIN_EMAIL" ] && [ "$YES" != 1 ] && [ -r /dev/tty ]; then
+	if [ -z "$ADMIN_EMAIL" ] && [ "$YES" != 1 ] && tty_ok; then
 		printf 'Installing Pocket Core with %s.\nThe email you will create your Core account with (the apps make it their admin)%s: ' \
 			"$(printf '%s' "$APPS" | sed 's/,/, /g')" "${EMAIL:+ [$EMAIL]}" >/dev/tty
 		read -r ADMIN_EMAIL </dev/tty || ADMIN_EMAIL=""
@@ -531,7 +629,7 @@ chains | while read -r fam tab ch hook; do
 	for r in 'ct state established,related accept' 'iifname "docker0" accept' 'iifname "br-*" accept'; do
 		[ "$hook" = forward ] || [ "$r" != 'ct state established,related accept' ] || continue
 		need "$r" || continue
-		if [ "${1:-}" = check ]; then echo "$fam $tab $ch"; else nft add rule $fam $tab $ch $r; fi
+		if [ "${1:-}" = check ]; then echo "$fam $tab $ch"; else nft add rule $fam $tab $ch $r comment '"pocket-firewall"'; fi
 	done
 done | sort -u
 FWEOF
