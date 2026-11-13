@@ -1,5 +1,5 @@
 // How the Pocket Box gets its padlock, through the box address service (BOX_ADDRESS): Pocket's free
-// address (<random>.box.pockethomelab.com), the owner's own domain on Cloudflare ("Sign in with
+// address (<random>.box.pockethomelab.net), the owner's own domain on Cloudflare ("Sign in with
 // Cloudflare" or an API token), or the box's own certificate. The landing page at http://pocket.local
 // asks the same thing before anyone has signed in; here an admin can change it at any time.
 import { useEffect, useState } from 'react'
@@ -11,7 +11,7 @@ import { Icon } from './icons'
 export const ADDRESS = `${V1}/box/address`
 
 const MODES: { id: Exclude<BoxAddressMode, 'off'>; title: string; text: string; tag?: string; icon: string; facts: string[] }[] = [
-  { id: 'pocket', icon: 'zap', title: "Pocket's free address", tag: 'Recommended', text: 'A name like x7k2m9.box.pockethomelab.com that points at the box\'s home address. Every browser trusts it.', facts: ['Ready in a minute', 'Nothing to install', 'Free'] },
+  { id: 'pocket', icon: 'zap', title: "Pocket's free address", tag: 'Recommended', text: 'A name like x7k2m9.box.pockethomelab.net that points at the box\'s home address. Every browser trusts it.', facts: ['Ready in a minute', 'Nothing to install', 'Free'] },
   { id: 'cloudflare', icon: 'globe', title: 'My own domain on Cloudflare', text: 'Like pocket.yourname.com. Sign in with Cloudflare and the box looks after the DNS records and the certificate itself.', facts: ['Your own name', 'Nothing through Pocket'] },
   { id: 'own-ca', icon: 'shield', title: "The box's own certificate", text: 'No name on the internet. Install the box\'s certificate once on each phone and computer.', facts: ['Works offline', 'Fully private'] },
 ]
