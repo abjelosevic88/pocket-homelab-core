@@ -35,8 +35,8 @@ func mcpClient(ctx context.Context) config.MCPClient {
 
 func (s *Server) mcpAccess(next http.Handler) http.Handler {
 	// Bound aggregate work even when multiple credentials are used. No IP/header trust.
-	requests := rate.NewLimiter(rate.Every(time.Second/2), 20)
-	slots := make(chan struct{}, 4)
+	requests := rate.NewLimiter(rate.Every(time.Second/mcpRequestsPerSecond), mcpRequestBurst)
+	slots := newMCPSlots(mcpTotalSlots, mcpClientSlots)
 	base, _ := url.Parse(s.cfg.BaseURL)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -99,14 +99,15 @@ func (s *Server) mcpAccess(next http.Handler) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "MCP bearer token rejected or expired")
 			return
 		}
-		select {
-		case slots <- struct{}{}:
-			defer func() { <-slots }()
-		default:
+		// Wait briefly for a free slot: clients such as Claude Code send several
+		// requests at once on connect and do not retry a 429.
+		release, ok := slots.acquire(r.Context(), client.ID, mcpSlotWait)
+		if !ok {
 			w.Header().Set("Retry-After", "1")
 			writeErr(w, http.StatusTooManyRequests, "MCP concurrent request limit reached")
 			return
 		}
+		defer release()
 		// Bound slow request-body uploads, including from older clients.
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(15 * time.Second))
 		defer http.NewResponseController(w).SetReadDeadline(time.Time{})
