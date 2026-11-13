@@ -286,6 +286,8 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"installer_agent":  u.IsAdmin() && s.inst != nil,
 		"installer_locked": u.IsAdmin() && s.inst != nil && !s.cfg.InstallerEnabled,
 		"box_wizard":       s.box != nil && n > 0 && s.box.wizardPending(r.Context()),
+		// Off a Pocket Box: the admin hasn't picked the apps to start with yet (setup.go).
+		"setup_wizard": n > 0 && u.IsAdmin() && s.setupPending(r.Context()),
 	})
 }
 

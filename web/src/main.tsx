@@ -22,6 +22,7 @@ import Links from './pages/Links'
 import AIConnections from './pages/AIConnections'
 import AIPairing from './pages/AIPairing'
 import BoxWizard from './pages/BoxWizard'
+import SetupWizard from './pages/SetupWizard'
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { status, user } = useApp()
@@ -31,7 +32,15 @@ function Gate({ children }: { children: React.ReactNode }) {
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />
   // A new Pocket Box: the admin sets up the box itself once, right after the first account.
   if (status.box_wizard && user.role === 'admin' && loc.pathname !== '/welcome') return <Navigate to="/welcome" replace />
+  // Any other new Core with one-click installs (install.sh): pick the apps to start with.
+  if (status.setup_wizard && user.role === 'admin' && loc.pathname !== '/welcome') return <Navigate to="/welcome" replace />
   return <>{children}</>
+}
+
+/** The first-run setup: the Pocket Box's own, or picking apps on any other Core. */
+function Welcome() {
+  const { status } = useApp()
+  return status?.box_system ? <BoxWizard /> : <SetupWizard />
 }
 
 function App() {
@@ -40,7 +49,7 @@ function App() {
       <Route path="/login" element={<Login mode="login" />} />
       <Route path="/setup" element={<Login mode="setup" />} />
       <Route path="/connect" element={<Navigate to="/ai-connections" replace />} />
-      <Route path="/welcome" element={<Gate><ErrorBoundary where="welcome"><BoxWizard /></ErrorBoundary></Gate>} />
+      <Route path="/welcome" element={<Gate><ErrorBoundary where="welcome"><Welcome /></ErrorBoundary></Gate>} />
       <Route path="/settings/:tab?" element={<Gate><ErrorBoundary where="settings"><Settings /></ErrorBoundary></Gate>} />
       <Route element={<Gate><ErrorBoundary where="core"><Layout /></ErrorBoundary></Gate>}>
         <Route path="/" element={<Home />} />
