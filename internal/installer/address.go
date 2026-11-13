@@ -306,8 +306,35 @@ func (ad *Address) plainCoreURL() string {
 	return fmt.Sprintf("http://%s:%d", ad.plainHost(), ad.corePort())
 }
 
+// noTarget: what to do when the name has nothing to point at.
+const noTarget = "This machine has no home-network address (10.x, 172.16–31.x or 192.168.x), as on a VPS. Connect Tailscale (Away from home), and the name points at this machine's Tailscale address instead: a padlock on every device on your tailnet, and nothing open to the internet."
+
+// nameTarget is the address the name points at: this machine's home-network one, so phones at home
+// reach it without anything installed; or its Tailscale one when it has none (a VPS) or the owner
+// chose the tailnet (POCKET_NAME_ON=tailscale in .env, install.sh --name-on tailscale).
+func (ad *Address) nameTarget() string {
+	if ad.envGet("POCKET_NAME_ON") != "tailscale" {
+		if ip := homeAddress(); ip != "" {
+			return ip
+		}
+	}
+	return tailscaleIPv4()
+}
+
+// tailscaleIPv4: this machine's address on the tailnet (Pocket's Tailscale container or one of
+// its own: either way the tailscale0 interface, the agent runs on the host network).
+func tailscaleIPv4() string {
+	cgnat := netip.MustParsePrefix("100.64.0.0/10")
+	for _, s := range hostTailscale() {
+		if ip, err := netip.ParseAddr(s); err == nil && ip.Is4() && cgnat.Contains(ip) {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
 // homeAddress is the IPv4 address this machine reaches the internet from, if it is a home-network
-// one (Pocket Names only points names at those).
+// one (Pocket Names points names at those, or at a tailnet's).
 func homeAddress() string {
 	c, err := net.Dial("udp4", "1.1.1.1:53")
 	if err != nil {
@@ -489,7 +516,11 @@ func (ad *Address) once(ctx context.Context) {
 	var wait *waiting
 	var sign *signIn
 	var urlErr *url.Error
+	var owner *Problem
 	switch {
+	case errors.As(err, &owner): // something the owner can do (connect Tailscale, …): say what
+		ad.status("failed", owner.msg)
+		ad.problem("failed", owner.msg)
 	case errors.As(err, &sign):
 		msg := "The Cloudflare sign-in stopped working. Sign in again in Pocket Core → Settings."
 		ad.status("signin", msg)
@@ -610,12 +641,12 @@ type sentAddress struct {
 // sendAddress points the Pocket name at this machine's home address, when it changed and twice a
 // day as a sign of life (names that go quiet for months are given back).
 func (ad *Address) sendAddress(ctx context.Context, a *pocketAccount) error {
-	ip := homeAddress()
+	ip := ad.nameTarget()
 	if ip == "" {
 		if ad.domain() == a.Domain {
 			return nil // keeps the last one
 		}
-		return problemf("This machine has no home-network IPv4 address (10.x, 172.16–31.x or 192.168.x) for Pocket's address to point at. Use your own domain on Cloudflare, or stay on this network's addresses.")
+		return problemf("%s", noTarget)
 	}
 	var last sentAddress
 	if readJSON(ad.private("sent.json"), &last) && last.IP == ip && last.Domain == a.Domain && time.Since(time.Unix(last.At, 0)) < 12*time.Hour {
@@ -947,12 +978,12 @@ func (ad *Address) runCloudflare(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if ip := homeAddress(); ip != "" {
+	if ip := ad.nameTarget(); ip != "" {
 		if err := ad.cfPoint(ctx, &c, token, ip); err != nil {
 			return err
 		}
 	} else if ad.domain() != domain {
-		return problemf("This machine has no home-network IPv4 address to point %s at.", domain)
+		return problemf("%s", noTarget)
 	}
 	if !ad.certOK(domain, 30) {
 		ad.status("certificate", "")

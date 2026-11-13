@@ -149,9 +149,18 @@ func (ad *Address) tsDown(ctx context.Context) (tsStatus, error) {
 	return ad.tsStatus(ctx), nil
 }
 
+// tsKick: once Tailscale is connected, a name still waiting for something to point at gets it now.
+func (ad *Address) tsKick(st tsStatus) {
+	if (st.State == "running" || st.State == "host") && ad.domain() == "" && (ad.choice() == modePocket || ad.choice() == modeCloudflare) {
+		ad.Kick()
+	}
+}
+
 func (ad *Address) tailscaleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/tailscale", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, ad.tsStatus(r.Context()))
+		st := ad.tsStatus(r.Context())
+		ad.tsKick(st)
+		writeJSON(w, http.StatusOK, st)
 	})
 	mux.HandleFunc("POST /v1/tailscale/up", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
@@ -159,6 +168,7 @@ func (ad *Address) tailscaleRoutes(mux *http.ServeMux) {
 		}
 		_ = decodeBody(r, &b)
 		st, err := ad.tsUp(r.Context(), strings.TrimSpace(b.AuthKey))
+		ad.tsKick(st)
 		ad.reply(w, st, err)
 	})
 	mux.HandleFunc("POST /v1/tailscale/down", func(w http.ResponseWriter, r *http.Request) {

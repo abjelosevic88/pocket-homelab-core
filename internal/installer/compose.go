@@ -330,11 +330,13 @@ func remapPorts(svc *yaml.Node, next func() (int, error)) ([]int, error) {
 				return nil, fmt.Errorf("port ranges are not supported (%s)", it.Value)
 			}
 			lc := it.LineComment
-			*it = *str(fmt.Sprintf("%d:%s%s", hp, target, proto))
+			// IPv4 only: Docker's IPv6 listener (its userland proxy) would sidestep a firewall that
+			// keeps a VPS's apps to the tailnet (install.sh --tailscale-key); the names are IPv4 too.
+			*it = *str(fmt.Sprintf("0.0.0.0:%d:%s%s", hp, target, proto))
 			it.LineComment = lc
 		case yaml.MappingNode:
 			mapSet(it, "published", str(strconv.Itoa(hp)))
-			mapDel(it, "host_ip")
+			mapSet(it, "host_ip", str("0.0.0.0"))
 		default:
 			return nil, fmt.Errorf("unreadable port entry")
 		}
