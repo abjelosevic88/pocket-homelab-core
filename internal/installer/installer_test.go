@@ -53,7 +53,7 @@ func TestPlanBridged(t *testing.T) {
 	if app["image"] != "ghcr.io/abjelosevic88/pocket-homelab-habit-tracker:1.2.3" {
 		t.Fatalf("image = %v", app["image"])
 	}
-	if got := app["ports"].([]any); len(got) != 1 || got[0] != "8300:8080" {
+	if got := app["ports"].([]any); len(got) != 1 || got[0] != "0.0.0.0:8300:8080" {
 		t.Fatalf("ports = %v", got)
 	}
 	env := app["environment"].(map[string]any)
@@ -138,7 +138,7 @@ func TestPlanComposeProfiles(t *testing.T) {
 func TestPlanTwoPorts(t *testing.T) {
 	p, doc := plan(t, "files.yml", "pocket-homelab-files", "files")
 	got := toStrings(svc(doc, "pocket-files")["ports"])
-	if len(got) != 2 || got[0] != "8300:8080" || got[1] != "8301:8081" || p.Port != 8300 {
+	if len(got) != 2 || got[0] != "0.0.0.0:8300:8080" || got[1] != "0.0.0.0:8301:8081" || p.Port != 8300 {
 		t.Fatalf("ports = %v, port %d", got, p.Port)
 	}
 	if !strings.Contains(string(p.Compose), "# share and upload pages only") {
