@@ -570,6 +570,10 @@ if [ "$TAILNET" = 1 ] || [ -n "$TS_KEY" ]; then
 	fi
 	err=$(printf '%s' "$out" | field error)
 	url=$(printf '%s' "$out" | field auth_url)
+	if [ -z "$err" ] && [ -z "$url" ] && [ "$(printf '%s' "$out" | field state)" != running ] &&
+		! $DOCKER exec pocket-tailscale wget -q -T 8 -O /dev/null https://controlplane.tailscale.com/key?v=1 >/dev/null 2>&1; then
+		err="Pocket's containers can't reach the internet. A firewall on this machine drops Docker's traffic (nftables or ufw with a forward policy of drop): let traffic from the docker0 and br-* interfaces through, then run this again"
+	fi
 	if [ -z "$err" ] && [ -n "$url" ] && [ "$(printf '%s' "$out" | field state)" != running ]; then
 		say
 		say "  Add Pocket to your Tailscale: open this link and approve it"
