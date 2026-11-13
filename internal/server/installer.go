@@ -179,7 +179,6 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	if s.installerOff(w, r) {
 		return
 	}
-	ctx := r.Context()
 	var in struct {
 		Slug        string `json:"slug"`
 		Name        string `json:"name"`         // the catalog's, for apps this Core does not know yet
@@ -189,19 +188,27 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "slug is required")
 		return
 	}
-	if _, err := s.store.GetAppBySlug(ctx, in.Slug); err == nil {
-		writeErr(w, http.StatusConflict, appName(in.Slug)+" is already registered here")
-		return
-	}
-	st, err := s.store.GetSettings(ctx)
-	if err != nil {
-		s.fail(w, err, "settings")
-		return
-	}
-	u := userFrom(ctx)
+	u := userFrom(r.Context())
 	if u == nil {
 		writeErr(w, http.StatusUnauthorized, "sign in first")
 		return
+	}
+	j, err := s.startInstall(r.Context(), u, in.Slug, in.Name, in.RestoreFrom)
+	if err != nil {
+		s.installerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, j.snapshot())
+}
+
+// startInstall asks the agent to install one app for u (who becomes its admin) and follows the job.
+func (s *Server) startInstall(ctx context.Context, u *store.User, slug, catalogName, restoreFrom string) (*installJob, error) {
+	if _, err := s.store.GetAppBySlug(ctx, slug); err == nil {
+		return nil, &installer.Error{Status: http.StatusConflict, Msg: appName(slug) + " is already registered here"}
+	}
+	st, err := s.store.GetSettings(ctx)
+	if err != nil {
+		return nil, err
 	}
 	var reserved []int
 	if apps, err := s.store.ListApps(ctx); err == nil {
@@ -211,18 +218,17 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	name := appName(in.Slug, in.Name)
-	aj, err := s.inst.Install(ctx, installer.InstallRequest{Slug: in.Slug, Name: name, RegistrationKey: st.RegistrationKey,
-		AdminEmail: u.Email, AdminName: u.Name, Reserved: reserved, RestoreFrom: in.RestoreFrom})
+	name := appName(slug, catalogName)
+	aj, err := s.inst.Install(ctx, installer.InstallRequest{Slug: slug, Name: name, RegistrationKey: st.RegistrationKey,
+		AdminEmail: u.Email, AdminName: u.Name, Reserved: reserved, RestoreFrom: restoreFrom})
 	if err != nil {
-		s.installerErr(w, err)
-		return
+		return nil, err
 	}
-	j := &installJob{ID: aj.ID, Kind: "install", Slug: in.Slug, Name: name, State: "running", Started: time.Now().UTC()}
+	j := &installJob{ID: aj.ID, Kind: "install", Slug: slug, Name: name, State: "running", Started: time.Now().UTC()}
 	s.installs.Store(j.ID, j)
-	s.log.Info("app install started", "slug", in.Slug, "by", u.Email)
+	s.log.Info("app install started", "slug", slug, "by", u.Email)
 	go s.followInstall(j)
-	writeJSON(w, http.StatusAccepted, j.snapshot())
+	return j, nil
 }
 
 // handleUpgradeApp moves an installed app to the catalog's newest release.

@@ -57,6 +57,8 @@ type Server struct {
 	boxAddr     *boxAgent         // the Pocket Box address service (BOX_ADDRESS); nil off a box
 	boxDL       *boxAgent         // the Pocket Box downloads service (BOX_DOWNLOADS); nil off a box
 	inst        *installer.Client // the installer agent (INSTALLER_SOCKET); nil = no one-click installs
+	setup       setupQueue        // first-run setup off a Pocket Box: the apps being installed (setup.go)
+	bundleCache bundleCache       // Pocket Box's app bundles, for that setup
 	installs    sync.Map          // job id → *installJob
 	removing    sync.Map          // slug → true: being removed, not health-checked
 	polling     sync.Map          // service id → struct{}: a poll is running
@@ -351,6 +353,9 @@ func (s *Server) Router() http.Handler {
 				r.Get("/installer", s.handleInstallerCatalog)
 				r.Get("/installer/status", s.handleInstallerStatus)
 				r.Post("/installer/install", s.handleInstallApp)
+				r.Get("/first-apps", s.handleFirstApps)
+				r.Post("/first-apps/install", s.handleFirstAppsInstall)
+				r.Post("/first-apps/done", s.handleFirstAppsDone)
 				r.Get("/installer/jobs/{id}", s.handleInstallJob)
 				r.Post("/installer/check-updates", s.handleCheckUpdates)
 				r.Post("/settings/notify-test", s.handleNotifyTest)

@@ -1,0 +1,48 @@
+{
+  "about": "App bundles for Pocket Box. `base` is what Pocket Box Lite carries (Pocket Core always runs too); `sudo pocket-install --bundle office,media` or `--apps notes,tasks` picks more, and so does pockethomelab.com/box/bundles, which reads this file. Every slug must be in apps.nix (the flake checks).",
+  "base": ["ai", "alerts", "backups"],
+  "bundles": [
+    {
+      "id": "essentials",
+      "name": "Essentials",
+      "description": "The everyday basics for a household: notes, tasks, a shared calendar and contacts, files and photos, private search and a home page.",
+      "apps": ["notes", "tasks", "calendar", "contacts", "files", "photos", "search", "hub", "day"]
+    },
+    {
+      "id": "office",
+      "name": "Office",
+      "description": "Documents, email and paperwork: edit Word, Excel and PowerPoint files, scan and file papers, sign, invoice, run tables and forms, track time.",
+      "apps": ["office", "documents", "mail", "calendar", "contacts", "tasks", "notes", "files", "sign", "invoicing", "tables", "forms", "time", "boards", "draw"]
+    },
+    {
+      "id": "developer",
+      "name": "Developer",
+      "description": "For people who build software and run servers: issues and roadmaps, code and pull-request review, error tracking, monitoring, databases, remote desktops and automations.",
+      "apps": ["projects", "review", "pr-review", "blueprint", "errors", "monitoring", "database", "network", "remote", "flows", "lookout", "notes", "draw", "time"]
+    },
+    {
+      "id": "media",
+      "name": "Media",
+      "description": "Films, shows, music, photos, books, audiobooks, podcasts, radio and games for the whole household.",
+      "apps": ["photos", "watch", "music", "audiobooks", "podcasts", "radio", "library", "bookshelf", "reader", "requests", "subtitles", "games"]
+    },
+    {
+      "id": "family",
+      "name": "Home & family",
+      "description": "Run the household: who picks up the children, the week's meals and shopping, chores, chat, shared costs, the house, the pets and gift lists.",
+      "apps": ["family", "calendar", "tasks", "kitchen", "chat", "split", "home", "pets", "wishlist", "parcels", "renewals", "photos"]
+    },
+    {
+      "id": "money",
+      "name": "Money",
+      "description": "Personal finance in one place: spending and budgets, net worth, invoices, shared costs, cards and papers that run out, the car and rentals.",
+      "apps": ["money", "wealth", "invoicing", "split", "wallet", "renewals", "garage", "rentals", "inventory", "parcels"]
+    },
+    {
+      "id": "health",
+      "name": "Health & outdoors",
+      "description": "Your health data, training, food, habits, breathing and meditation, hikes and trips, and the weather for your places.",
+      "apps": ["health", "fitness", "nutrition", "habits", "still", "trails", "weather", "places", "travel", "map", "movement"]
+    }
+  ]
+}
