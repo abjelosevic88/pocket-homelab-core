@@ -3,6 +3,9 @@
 #
 #   curl -fsSL https://pockethomelab.com/install.sh | sh
 #
+# This file (deploy/install.sh in pocket-homelab-core) is the source: pockethomelab.com/install.sh is
+# a copy of it (public/install.sh in pocket-homelab-web). Change it here, then copy it over.
+#
 # What it does (Linux with Docker; it offers to install Docker if missing):
 #   - writes ~/pocket/docker-compose.yml + .env: Pocket Core, the installer agent (Install / Update /
 #     Remove apps from Core's web page), and Caddy and Tailscale for when they are switched on
@@ -111,6 +114,37 @@ engine() { # Docker's engine (not just a docker command) is on this machine
 }
 if ! command -v docker >/dev/null 2>&1 || ! engine; then
 	ask "Docker is not installed here. Install it now (get.docker.com)?" || die "install Docker first: https://docs.docker.com/engine/install/"
+	# get.docker.com stops at the first apt error, with only apt's own words. Check apt first and say
+	# what's wrong; a broken Ubuntu country mirror (xx.archive.ubuntu.com) is swapped for the main one.
+	apt_ok() { # → 0 when "apt-get update" runs cleanly; its errors in APT_ERR
+		APT_ERR=$($SUDO apt-get update 2>&1 | grep -E '^(E|Err|Error):' || true)
+		[ -z "$APT_ERR" ]
+	}
+	if command -v apt-get >/dev/null 2>&1 && ! apt_ok; then
+		bad=$(printf '%s\n' "$APT_ERR" | sed -n 's#.*Failed to fetch https\{0,1\}://\([^/ ]*\)/.*#\1#p' | sort -u | tr '\n' ' ')
+		bad=${bad% } mirror=0 fix=""
+		for h in $bad; do
+			case "$h" in [a-z][a-z].archive.ubuntu.com) mirror=1 fix="$fix -e 's#//$h#//archive.ubuntu.com#'" ;; *) mirror=0; break ;; esac
+		done
+		if [ "$mirror" = 1 ] && ask "Ubuntu's download mirror $bad is refusing downloads. Switch to the main one, archive.ubuntu.com?"; then
+			for h in $bad; do
+				for f in $(grep -lF "//$h" /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true); do
+					$SUDO sed -i "s#//$(printf '%s' "$h" | sed 's/\./\\./g')#//archive.ubuntu.com#g" "$f" && say "  $f: $h → archive.ubuntu.com"
+				done
+			done
+			apt_ok || die "apt still can't update its package lists:
+$APT_ERR
+Fix that first (sudo apt update must finish without errors), then run this again."
+		elif [ "$mirror" = 1 ]; then
+			die "Ubuntu's mirror $bad is refusing downloads, so Docker can't be installed. Switch to the main one:
+  sudo sed -i$fix /etc/apt/sources.list.d/*.sources /etc/apt/sources.list
+then run this again."
+		else
+			die "apt can't update its package lists, so Docker can't be installed yet:
+$APT_ERR
+Fix that first (sudo apt update must finish without errors), then run this again."
+		fi
+	fi
 	say "Installing Docker…"
 	curl -fsSL https://get.docker.com | $SUDO sh >/tmp/pocket-docker-install.log 2>&1 || die "installing Docker failed; see /tmp/pocket-docker-install.log"
 	[ "$(id -u)" = 0 ] || $SUDO usermod -aG docker "$(id -un)" || true
