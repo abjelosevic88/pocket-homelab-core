@@ -18,6 +18,8 @@ const MODES: { id: Exclude<BoxAddressMode, 'off'>; title: string; text: string; 
 ]
 
 const WAITING = ['asking', 'certificate', 'waiting']
+// Held back for now (a limit, no internet, a sign-in to renew): it is tried again by itself.
+const STUCK = ['limited', 'failed', 'offline', 'signin']
 
 function Problem({ text }: { text: string }) {
   return text ? <div className="callout danger"><Icon name="alert" size={15} /><span>{text}</span></div> : null
@@ -32,7 +34,9 @@ function describe(a: BoxAddress): React.ReactNode {
   if (a.mode === 'own-ca') return <>The box uses its own certificate. Devices need it installed once (from <a href="http://pocket.local" target="_blank" rel="noopener noreferrer">pocket.local</a>).</>
   const want = a.mode === 'cloudflare' && a.cloudflare ? a.cloudflare.domain : ''
   if (a.domain && (!want || a.domain === want)) return <>The apps are at <a href={`https://core.${a.domain}`}><b>{a.domain}</b></a> with a certificate every browser trusts{a.mode === 'cloudflare' ? ', on your own Cloudflare domain' : ', Pocket\'s free address'}.</>
-  if (st === 'limited') return <><b>Can't get {want ? want : 'its secure address'} yet.</b> {a.status?.message} Until then the box works with its own certificate (install it from <a href="http://pocket.local" target="_blank" rel="noopener noreferrer">pocket.local</a>).</>
+  if (st === 'limited') return <><b>Can't get {want ? want : 'its secure address'} yet.</b> {a.status?.message} {a.plain_url
+    ? <>Until then Pocket stays at <b>{a.plain_url}</b> on this network.</>
+    : <>Until then the box works with its own certificate (install it from <a href="http://pocket.local" target="_blank" rel="noopener noreferrer">pocket.local</a>).</>}</>
   if (WAITING.includes(st)) return <>Getting {want ? <b>{want}</b> : 'the address'} ready… This takes a minute or two.</>
   return <>Getting {want ? <b>{want}</b> : 'the address'} ready{a.status?.message ? `: ${a.status.message}` : '.'}</>
 }
@@ -86,11 +90,19 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
   }, [])
   // While the box gets its new address, follow it.
   const following = !!a && a.mode !== 'own-ca' && a.mode !== null && (a.mode === 'plain' ? !!a.domain : WAITING.includes(a.status?.state || '') || (a.mode === 'cloudflare' && !!a.cloudflare && a.domain !== a.cloudflare.domain))
+  // Held back: look again now and then, so the page shows it once it worked (by itself, or after
+  // a limit was lifted) without a reload.
+  const stuck = !!a && (a.mode === 'pocket' || a.mode === 'cloudflare') && STUCK.includes(a.status?.state || '') && (!a.domain || (a.mode === 'cloudflare' && !!a.cloudflare && a.domain !== a.cloudflare.domain))
   useEffect(() => {
-    if (!following) return
-    const id = window.setInterval(load, 4000)
+    if (!following && !stuck) return
+    const id = window.setInterval(load, following ? 4000 : 10000)
     return () => window.clearInterval(id)
-  }, [following])
+  }, [following, stuck])
+  const [retrying, setRetrying] = useState(false)
+  const retry = async () => {
+    setRetrying(true); setErr('')
+    try { setA(await api.post<BoxAddress>(`${ADDRESS}/retry`)); window.setTimeout(load, 5000) } catch (e) { setErr(errMsg(e)) } finally { window.setTimeout(() => setRetrying(false), 5000) }
+  }
 
   if (!a) return err ? <Problem text={err} /> : <Loading />
 
@@ -140,7 +152,10 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
       </div>
       {a.problem && a.problem.state === 'signin' && <Problem text={a.problem.message} />}
       {elsewhere && <p className="muted small">You're on {window.location.hostname}. <a href={`https://core.${a.domain}${window.location.pathname}`}>Open Pocket Core at its address</a>.</p>}
-      {!open && a.can_choose && <div className="row"><button type="button" className="btn sm" onClick={() => { setOpen(true); setMode(a.mode && a.mode !== 'off' ? a.mode : 'pocket') }}>{a.mode ? 'Change' : 'Choose'}</button></div>}
+      {!open && a.can_choose && <div className="row">
+        {stuck && a.plain_url && <button type="button" className="btn sm primary" onClick={retry} disabled={retrying}>{retrying ? <Spinner /> : <Icon name="refresh" size={14} />}Try again now</button>}
+        <button type="button" className="btn sm" onClick={() => { setOpen(true); setMode(a.mode && a.mode !== 'off' ? a.mode : 'pocket') }}>{a.mode ? 'Change' : 'Choose'}</button>
+      </div>}
       {open && <div className="stack tight">
         <div className="stack tight" role="radiogroup" aria-label="How the box gets its padlock">
           {MODES.filter(m => a.modes ? a.modes.includes(m.id) : m.id !== 'plain').map(m => (
