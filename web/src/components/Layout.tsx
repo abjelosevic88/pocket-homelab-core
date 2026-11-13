@@ -27,12 +27,13 @@ function useShellData(admin: boolean) {
     ])
     setData(d => ({ overview: overview || d.overview, services }))
   }, [admin])
-  // fresh on every page change, after a pairing, and once a minute for the status dots
+  // fresh on every page change, after a pairing, when the Apps page's list changes (an install or removal), and once a minute for the status dots
   useEffect(() => { load() }, [load, loc.pathname])
   useEffect(() => {
     const t = setInterval(load, 60000)
     window.addEventListener('pc:paired', load)
-    return () => { clearInterval(t); window.removeEventListener('pc:paired', load) }
+    window.addEventListener('pc:apps-changed', load)
+    return () => { clearInterval(t); window.removeEventListener('pc:paired', load); window.removeEventListener('pc:apps-changed', load) }
   }, [load])
   return data
 }
