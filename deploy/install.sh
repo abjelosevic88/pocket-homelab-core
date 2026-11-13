@@ -501,6 +501,71 @@ wait_core() {
 wait_core
 ok "Pocket Core $VERSION"
 
+# ---- a firewall that keeps Docker's containers off the internet ----
+# A hand-made nftables firewall with a forward (or input) policy of drop stops every container here:
+# no Tailscale sign-in, no app downloads. pocket-firewall lets traffic that starts in Docker's
+# networks through (out, and to the ports Docker publishes on this machine); nothing new comes in
+# from outside. A small unit runs it again after every boot, after nftables has loaded its file.
+FW=/usr/local/sbin/pocket-firewall
+fw_script() {
+	cat <<'FWEOF'
+#!/bin/sh
+# Written by Pocket's install.sh: let Docker's containers through this machine's nftables firewall,
+# out to the internet and to the ports Docker publishes here. Nothing new comes in from outside.
+# "pocket-firewall check" only lists the chains that would change.
+set -f
+command -v nft >/dev/null 2>&1 || exit 0
+chains() { # family table chain hook, for each nftables chain that drops forwarded/incoming traffic
+	nft list chains 2>/dev/null | awk '
+		/^table / { fam = $2; tab = $3 }
+		/^[ \t]*chain / { ch = $2 }
+		/hook (forward|input)/ && /policy drop/ {
+			if ((fam == "ip" || fam == "ip6") && ch ~ /^[A-Z]+$/) next # iptables: Docker manages those
+			print fam, tab, ch, ($0 ~ /hook forward/ ? "forward" : "input")
+		}'
+}
+todo=""
+chains | while read -r fam tab ch hook; do
+	rules=$(nft list chain "$fam" "$tab" "$ch")
+	need() { ! printf '%s\n' "$rules" | grep -qF "$1"; }
+	for r in 'ct state established,related accept' 'iifname "docker0" accept' 'iifname "br-*" accept'; do
+		[ "$hook" = forward ] || [ "$r" != 'ct state established,related accept' ] || continue
+		need "$r" || continue
+		if [ "${1:-}" = check ]; then echo "$fam $tab $ch"; else nft add rule $fam $tab $ch $r; fi
+	done
+done | sort -u
+FWEOF
+}
+online() { $DOCKER exec pocket-core wget -q -T 8 -O /dev/null https://controlplane.tailscale.com/key?v=1 >/dev/null 2>&1; }
+check_firewall() {
+	online && return 0
+	tmp=$(mktemp)
+	fw_script >"$tmp"
+	in_way=$($SUDO sh "$tmp" check 2>/dev/null || true)
+	rm -f "$tmp"
+	if [ -z "$in_way" ]; then
+		say "  Pocket's containers can't reach the internet (no route out of Docker's network?); apps and Tailscale need it."
+		return 0
+	fi
+	say "  A firewall on this machine (nftables: $(printf '%s' "$in_way" | tr '\n' ',' | sed 's/,$//; s/,/, /g')) keeps"
+	say "  Pocket's containers off the internet, so Tailscale and the apps can't download anything."
+	if ask "  Let Docker's traffic out through it? Nothing new comes in from outside."; then
+		fw_script | $SUDO tee "$FW" >/dev/null
+		$SUDO chmod 755 "$FW"
+		printf '%s\n' "[Unit]" "Description=Pocket: let Docker's containers through this machine's nftables firewall (install.sh)" \
+			"After=nftables.service docker.service" "" "[Service]" "Type=oneshot" "RemainAfterExit=yes" "ExecStart=$FW" "" \
+			"[Install]" "WantedBy=multi-user.target" | $SUDO tee /etc/systemd/system/pocket-firewall.service >/dev/null
+		$SUDO systemctl daemon-reload
+		$SUDO systemctl enable pocket-firewall.service >/dev/null 2>&1
+		$SUDO systemctl restart pocket-firewall.service
+		if online; then ok "Firewall lets Pocket's containers out"; else say "  Still offline; see: sudo nft list ruleset"; fi
+	else
+		say "  Then allow it yourself: in nftables, iifname \"docker0\" and iifname \"br-*\" accept (forward and input chains)."
+	fi
+}
+
+check_firewall
+
 # The installer agent's two sockets: installs (bearer token) and the address/Tailscale service.
 agent() { # agent PATH [JSON]
 	if [ $# -gt 1 ]; then
@@ -572,7 +637,7 @@ if [ "$TAILNET" = 1 ] || [ -n "$TS_KEY" ]; then
 	url=$(printf '%s' "$out" | field auth_url)
 	if [ -z "$err" ] && [ -z "$url" ] && [ "$(printf '%s' "$out" | field state)" != running ] &&
 		! $DOCKER exec pocket-tailscale wget -q -T 8 -O /dev/null https://controlplane.tailscale.com/key?v=1 >/dev/null 2>&1; then
-		err="Pocket's containers can't reach the internet. A firewall on this machine drops Docker's traffic (nftables or ufw with a forward policy of drop): let traffic from the docker0 and br-* interfaces through, then run this again"
+		err="Pocket's containers can't reach the internet, so Tailscale can't sign in. Usually a firewall on this machine (nftables) drops Docker's traffic: run this again and let it fix that, or allow traffic from the docker0 and br-* interfaces yourself"
 	fi
 	if [ -z "$err" ] && [ -n "$url" ] && [ "$(printf '%s' "$out" | field state)" != running ]; then
 		say
