@@ -42,6 +42,15 @@ new address and starts it again (it registers with Core under it). Going back to
 addresses undoes it and gives a Pocket name back. Its state is in `~/pocket/address` (secrets in
 `private/`, 0700); it renews the certificate 30 days before it ends. Caddy needs ports 80 and 443.
 
+**On a VPS (tailnet mode).** When the machine has no home-network address (or with `--tailnet`),
+Pocket joins your tailnet as a device of its own: the script prints Tailscale's sign-in link (or
+uses `--tailscale-key`), waits for you to approve it, then gets Pocket's free address pointing at
+that device's tailnet address. Caddy runs inside Pocket's Tailscale container (`network_mode:
+service:tailscale`), so it takes none of the machine's ports and sits fine next to a web server that
+already runs there; until there is a name it also serves Core and each app on their own port over
+plain http on the tailnet address. A `pocket-private` firewall rule (Docker's `DOCKER-USER` chain)
+keeps the ports Pocket's containers publish off the internet. `.env` keeps it as `POCKET_TAILNET=1`.
+
 With your own domain elsewhere, and ports 80/443 open to this machine:
 `sh -s -- --domain example.com --email you@example.com` (Caddy gets a certificate per app over HTTP).
 

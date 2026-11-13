@@ -436,7 +436,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return a.rollback(ctx, j, dir, fmt.Errorf("%w\n%s", err, logs))
 	}
 	a.logf(j, "%s is up", plan.Container)
-	if a.addr != nil && a.addr.domain() != "" {
+	if a.addr != nil && (a.addr.domain() != "" || a.addr.tailnet()) {
 		if err := a.addr.refreshCaddy(ctx); err != nil {
 			res.Warnings = append(res.Warnings, "The app runs, but Caddy doesn't serve it yet: "+err.Error())
 		} else {
@@ -616,7 +616,7 @@ func (a *Agent) finishUninstall(ctx context.Context, j *Job, req UninstallReques
 		a.logf(j, "Archived %s to %s", wd, dest)
 	}
 
-	if a.addr != nil && a.addr.domain() != "" {
+	if a.addr != nil && (a.addr.domain() != "" || a.addr.tailnet()) {
 		if err := a.addr.refreshCaddy(ctx); err != nil {
 			res.Warnings = append(res.Warnings, "Caddy still has its site: "+err.Error())
 		}

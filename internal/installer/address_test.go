@@ -151,3 +151,44 @@ func TestSetChoiceValidates(t *testing.T) {
 		t.Fatalf("plain: %v %v", v, err)
 	}
 }
+
+func TestCaddyfileTailnet(t *testing.T) {
+	ad, dir := testAddress(t)
+	env, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	os.WriteFile(filepath.Join(dir, ".env"), append(env, "POCKET_TAILNET=1\n"...), 0o600)
+	if !ad.tailnet() {
+		t.Fatal("POCKET_TAILNET=1 is tailnet mode")
+	}
+	apps := []installedApp{{Slug: "notes", Port: 8300}}
+	// No name yet: Core and each app on their own port, plain http, nothing else.
+	c := ad.caddyfile("", apps)
+	for _, want := range []string{"http://:8179 {\n\treverse_proxy host.docker.internal:8179", "http://:8300 {\n\treverse_proxy host.docker.internal:8300"} {
+		if !strings.Contains(c, want) {
+			t.Fatalf("no %q in\n%s", want, c)
+		}
+	}
+	if strings.Contains(c, "https://") || strings.Contains(c, "tls ") {
+		t.Fatalf("no name, no https site:\n%s", c)
+	}
+	// With a name: the https site and the plain ports as well.
+	c = ad.caddyfile("x7k2m9.box.pockethomelab.net", apps)
+	for _, want := range []string{"https://x7k2m9.box.pockethomelab.net, https://*.x7k2m9.box.pockethomelab.net {", "@notes host notes.x7k2m9", "http://:8300 {"} {
+		if !strings.Contains(c, want) {
+			t.Fatalf("no %q in\n%s", want, c)
+		}
+	}
+	// Not tailnet mode: no plain ports.
+	os.WriteFile(filepath.Join(dir, ".env"), env, 0o600)
+	if c = ad.caddyfile("x7k2m9.box.pockethomelab.net", apps); strings.Contains(c, "http://:") {
+		t.Fatalf("plain ports outside tailnet mode:\n%s", c)
+	}
+}
+
+func TestTailnetIPv4(t *testing.T) {
+	if got := tailnetIPv4([]string{"fd7a:115c:a1e0::1", "100.101.102.103"}); got != "100.101.102.103" {
+		t.Fatalf("got %q", got)
+	}
+	if got := tailnetIPv4([]string{"192.168.1.5"}); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}

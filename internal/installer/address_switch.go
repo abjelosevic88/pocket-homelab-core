@@ -103,24 +103,43 @@ func (ad *Address) appURL(app installedApp, domain string) string {
 	return fmt.Sprintf("http://%s:%d", ad.plainHost(), app.Port)
 }
 
-// caddyfile serves Core and every app at <name>.<domain> with the certificate for *.<domain>.
+// caddyfile serves Core and every app at <name>.<domain> with the certificate for *.<domain>. In
+// tailnet mode it also serves each of them on its own port over plain http (Caddy holds Pocket's
+// tailnet address there, so http://<that address>:<port> works with no name, or before one).
 func (ad *Address) caddyfile(domain string, apps []installedApp) string {
 	up := ad.ag.cfg.CaddyUpstream
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Written by Pocket Core's installer for %s: every app at https://<app>.%s.\n", domain, domain)
-	b.WriteString("# It is written again whenever an app is installed or removed or the address changes; edits here are lost.\n\n")
-	fmt.Fprintf(&b, "https://%s, https://*.%s {\n\ttls /etc/caddy/tls/cert.pem /etc/caddy/tls/key.pem\n", domain, domain)
-	site := func(name string, port int) {
-		fmt.Fprintf(&b, "\t@%s host %s.%s\n\thandle @%s {\n\t\treverse_proxy %s:%d {\n\t\t\tflush_interval -1\n\t\t}\n\t}\n", name, name, domain, name, up, port)
+	if domain != "" {
+		fmt.Fprintf(&b, "# Written by Pocket Core's installer for %s: every app at https://<app>.%s.\n", domain, domain)
+	} else {
+		b.WriteString("# Written by Pocket Core's installer: every app on its own port of Pocket's tailnet address.\n")
 	}
-	site("core", ad.corePort())
-	for _, a := range apps {
-		if a.Slug != "core" {
-			site(a.Slug, a.Port)
+	b.WriteString("# It is written again whenever an app is installed or removed or the address changes; edits here are lost.\n\n")
+	if domain != "" {
+		fmt.Fprintf(&b, "https://%s, https://*.%s {\n\ttls /etc/caddy/tls/cert.pem /etc/caddy/tls/key.pem\n", domain, domain)
+		site := func(name string, port int) {
+			fmt.Fprintf(&b, "\t@%s host %s.%s\n\thandle @%s {\n\t\treverse_proxy %s:%d {\n\t\t\tflush_interval -1\n\t\t}\n\t}\n", name, name, domain, name, up, port)
+		}
+		site("core", ad.corePort())
+		for _, a := range apps {
+			if a.Slug != "core" {
+				site(a.Slug, a.Port)
+			}
+		}
+		fmt.Fprintf(&b, "\t@bare host %s\n\thandle @bare {\n\t\tredir https://core.%s{uri}\n\t}\n", domain, domain)
+		b.WriteString("\thandle {\n\t\trespond \"No such app here\" 404\n\t}\n}\n")
+	}
+	if ad.tailnet() {
+		plain := func(port int) {
+			fmt.Fprintf(&b, "\nhttp://:%d {\n\treverse_proxy %s:%d {\n\t\tflush_interval -1\n\t}\n}\n", port, up, port)
+		}
+		plain(ad.corePort())
+		for _, a := range apps {
+			if a.Slug != "core" && a.Port > 0 && a.Port != ad.corePort() {
+				plain(a.Port)
+			}
 		}
 	}
-	fmt.Fprintf(&b, "\t@bare host %s\n\thandle @bare {\n\t\tredir https://core.%s{uri}\n\t}\n", domain, domain)
-	b.WriteString("\thandle {\n\t\trespond \"No such app here\" 404\n\t}\n}\n")
 	return b.String()
 }
 
@@ -141,12 +160,14 @@ func (ad *Address) writeCaddy(domain string, apps []installedApp) (bool, error) 
 	if err := os.MkdirAll(ad.caddyDir("tls"), 0o700); err != nil {
 		return false, err
 	}
-	crt, key := ad.certPaths(domain)
-	if err := put(ad.caddyDir("tls", "cert.pem"), []byte(readFile(crt)), 0o600); err != nil {
-		return false, err
-	}
-	if err := put(ad.caddyDir("tls", "key.pem"), []byte(readFile(key)), 0o600); err != nil {
-		return false, err
+	if domain != "" {
+		crt, key := ad.certPaths(domain)
+		if err := put(ad.caddyDir("tls", "cert.pem"), []byte(readFile(crt)), 0o600); err != nil {
+			return false, err
+		}
+		if err := put(ad.caddyDir("tls", "key.pem"), []byte(readFile(key)), 0o600); err != nil {
+			return false, err
+		}
 	}
 	if err := put(ad.caddyDir("Caddyfile"), []byte(ad.caddyfile(domain, apps)), 0o644); err != nil {
 		return false, err
@@ -162,8 +183,20 @@ func (ad *Address) compose(ctx context.Context, args ...string) (string, error) 
 
 // caddyUp starts the proxy (or has it read its file again).
 func (ad *Address) caddyUp(ctx context.Context) error {
-	if _, err := ad.compose(ctx, "--profile", "proxy", "up", "-d", "caddy"); err != nil {
+	args := []string{"--profile", "proxy", "up", "-d", "caddy"}
+	if ad.tailnet() && ad.tsRunning(ctx) {
+		args = append(args, "--no-deps") // leave Pocket's Tailscale container (and the tailnet) as it is
+	}
+	if _, err := ad.compose(ctx, args...); err != nil {
 		return fmt.Errorf("starting Caddy: %w", err)
+	}
+	if ad.tailnet() && ad.caddyStale(ctx) {
+		// Caddy still sits in the network of a Tailscale container that was replaced: it is reachable
+		// from nowhere until it joins the new one.
+		ad.log.Info("address: Caddy joins Pocket's Tailscale container again")
+		if _, err := ad.compose(ctx, "--profile", "proxy", "up", "-d", "--force-recreate", "--no-deps", "caddy"); err != nil {
+			return fmt.Errorf("starting Caddy: %w", err)
+		}
 	}
 	c := ad.ag.cfg.CaddyContainer
 	var err error
@@ -179,7 +212,7 @@ func (ad *Address) caddyUp(ctx context.Context) error {
 // refreshCaddy is for installs and removals while there is a name: the Caddyfile lists every app.
 func (ad *Address) refreshCaddy(ctx context.Context) error {
 	domain := ad.domain()
-	if domain == "" {
+	if domain == "" && !ad.tailnet() {
 		return nil
 	}
 	apps, err := ad.installedApps(ctx)
@@ -265,13 +298,13 @@ func (ad *Address) switchTo(ctx context.Context, domain string) error {
 	if err != nil {
 		return err
 	}
-	if domain != "" {
+	if domain != "" || ad.tailnet() {
 		changed, err := ad.writeCaddy(domain, apps)
 		if err != nil {
 			return err
 		}
-		if domain == old {
-			if changed || !ad.caddyRunning(ctx) {
+		if domain == old && (domain != "" || ad.envGet("POCKET_ADDRESS") == "") {
+			if changed || !ad.caddyRunning(ctx) || (ad.tailnet() && ad.caddyStale(ctx)) {
 				return ad.caddyUp(ctx)
 			}
 			return nil
@@ -285,6 +318,9 @@ func (ad *Address) switchTo(ctx context.Context, domain string) error {
 	coreURL := ad.plainCoreURL()
 	tmpl := fmt.Sprintf("http://%s:{port}", ad.plainHost())
 	prof := profiles(ad.envGet("COMPOSE_PROFILES"), "", "proxy")
+	if ad.tailnet() { // Caddy is how the tailnet reaches Pocket at all
+		prof = profiles(ad.envGet("COMPOSE_PROFILES"), "proxy", "")
+	}
 	if domain != "" {
 		coreURL, tmpl = "https://core."+domain, "https://{slug}."+domain
 		prof = profiles(ad.envGet("COMPOSE_PROFILES"), "proxy", "")
@@ -305,7 +341,13 @@ func (ad *Address) switchTo(ctx context.Context, domain string) error {
 		}
 	} else {
 		_ = os.Remove(ad.state("domain"))
-		_, _ = ad.compose(ctx, "--profile", "proxy", "rm", "-sf", "caddy")
+		if ad.tailnet() {
+			if err := ad.caddyUp(ctx); err != nil {
+				return err
+			}
+		} else {
+			_, _ = ad.compose(ctx, "--profile", "proxy", "rm", "-sf", "caddy")
+		}
 	}
 	if _, err := ad.compose(ctx, "up", "-d", "core"); err != nil {
 		return fmt.Errorf("starting Pocket Core again: %w", err)
@@ -325,6 +367,19 @@ func (ad *Address) switchTo(ctx context.Context, domain string) error {
 		ad.log.Info("address: app moved", "slug", app.Slug, "url", next)
 	}
 	return nil
+}
+
+// caddyStale: in tailnet mode, Caddy's network is not the running Tailscale container's.
+func (ad *Address) caddyStale(ctx context.Context) bool {
+	mode, err := ad.ag.dk.run(ctx, "", "inspect", "-f", "{{.HostConfig.NetworkMode}}", ad.ag.cfg.CaddyContainer)
+	if err != nil {
+		return false
+	}
+	id, err := ad.ag.dk.run(ctx, "", "inspect", "-f", "{{.Id}}", ad.tsContainer())
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(mode) != "container:"+strings.TrimSpace(id)
 }
 
 func (ad *Address) caddyRunning(ctx context.Context) bool {
