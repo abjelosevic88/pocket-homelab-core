@@ -14,6 +14,7 @@ const MODES: { id: Exclude<BoxAddressMode, 'off'>; title: string; text: string; 
   { id: 'pocket', icon: 'zap', title: "Pocket's free address", tag: 'Recommended', text: 'A name like x7k2m9.box.pockethomelab.net that points at the box\'s home address. Every browser trusts it.', facts: ['Ready in a minute', 'Nothing to install', 'Free'] },
   { id: 'cloudflare', icon: 'globe', title: 'My own domain on Cloudflare', text: 'Like pocket.yourname.com. Sign in with Cloudflare and the box looks after the DNS records and the certificate itself.', facts: ['Your own name', 'Nothing through Pocket'] },
   { id: 'own-ca', icon: 'shield', title: "The box's own certificate", text: 'No name on the internet. Install the box\'s certificate once on each phone and computer.', facts: ['Works offline', 'Fully private'] },
+  { id: 'plain', icon: 'home', title: 'Only on this network', text: 'Each app at this machine\'s address and its own port, like 192.168.1.20:8300. No padlock, so phones may warn and some features (installing as an app, the camera) stay off.', facts: ['Works offline', 'Nothing to set up'] },
 ]
 
 const WAITING = ['asking', 'certificate', 'waiting']
@@ -25,7 +26,9 @@ function Problem({ text }: { text: string }) {
 function describe(a: BoxAddress): React.ReactNode {
   const st = a.status?.state || ''
   if (a.mode === 'off') return 'Public names are turned off on this box.'
+  if (a.mode === null && a.plain_url) return <>Not chosen yet: Pocket Core is at <b>{a.plain_url}</b> on this network, without a padlock, until you pick one below.</>
   if (a.mode === null) return 'Not chosen yet: the box is on its own certificate until you pick one below.'
+  if (a.mode === 'plain') return a.domain ? <>Moving back to this network's addresses…</> : <>The apps are at this machine's address with their own ports (Pocket Core: <b>{a.plain_url}</b>), without a padlock.</>
   if (a.mode === 'own-ca') return <>The box uses its own certificate. Devices need it installed once (from <a href="http://pocket.local" target="_blank" rel="noopener noreferrer">pocket.local</a>).</>
   const want = a.mode === 'cloudflare' && a.cloudflare ? a.cloudflare.domain : ''
   if (a.domain && (!want || a.domain === want)) return <>The apps are at <a href={`https://core.${a.domain}`}><b>{a.domain}</b></a> with a certificate every browser trusts{a.mode === 'cloudflare' ? ', on your own Cloudflare domain' : ', Pocket\'s free address'}.</>
@@ -82,7 +85,7 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
     load()
   }, [])
   // While the box gets its new address, follow it.
-  const following = !!a && a.mode !== 'own-ca' && a.mode !== null && (WAITING.includes(a.status?.state || '') || (a.mode === 'cloudflare' && !!a.cloudflare && a.domain !== a.cloudflare.domain))
+  const following = !!a && a.mode !== 'own-ca' && a.mode !== null && (a.mode === 'plain' ? !!a.domain : WAITING.includes(a.status?.state || '') || (a.mode === 'cloudflare' && !!a.cloudflare && a.domain !== a.cloudflare.domain))
   useEffect(() => {
     if (!following) return
     const id = window.setInterval(load, 4000)
@@ -127,7 +130,7 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
   }
 
   const st = a.status?.state || ''
-  const now = a.domain && a.mode !== 'own-ca'
+  const now = a.domain && a.mode !== 'own-ca' && a.mode !== 'plain'
   const elsewhere = now && !window.location.hostname.endsWith(a.domain) && !following
   return (
     <div className="stack tight">
@@ -140,7 +143,7 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
       {!open && a.can_choose && <div className="row"><button type="button" className="btn sm" onClick={() => { setOpen(true); setMode(a.mode && a.mode !== 'off' ? a.mode : 'pocket') }}>{a.mode ? 'Change' : 'Choose'}</button></div>}
       {open && <div className="stack tight">
         <div className="stack tight" role="radiogroup" aria-label="How the box gets its padlock">
-          {MODES.map(m => (
+          {MODES.filter(m => a.modes ? a.modes.includes(m.id) : m.id !== 'plain').map(m => (
             <label key={m.id} className={`address-choice ${mode === m.id ? 'on' : ''}`}>
               <input type="radio" name="box-address" checked={mode === m.id} onChange={() => { setMode(m.id); setErr('') }} />
               <span className={`address-ico ${m.id}`}><Icon name={m.icon} size={19} /></span>
@@ -186,13 +189,13 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
         </div>}
         <Problem text={err} />
         <div className="row wrap">
-          {mode !== 'cloudflare' && <button type="button" className="btn primary" onClick={choose} disabled={busy || mode === a.mode}>{busy ? <Spinner /> : null}{mode === 'own-ca' ? "Use the box's own certificate" : "Use Pocket's address"}</button>}
+          {mode !== 'cloudflare' && <button type="button" className="btn primary" onClick={choose} disabled={busy || mode === a.mode}>{busy ? <Spinner /> : null}{mode === 'own-ca' ? "Use the box's own certificate" : mode === 'plain' ? "Use this network's addresses" : "Use Pocket's address"}</button>}
           {!(startOpen && a.mode === null) && <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr(''); setZones(null) }}>Cancel</button>}
         </div>
       </div>}
       {!open && <Problem text={err} />}
       {confirm && <Confirm title="Move the box to another address" danger={false} confirmLabel="Move"
-        message={<>The apps restart on the new address, so this page goes away for a moment. Bookmarks to <b>{a.domain}</b> stop working; <b>pocket.local</b> always finds the box.</>}
+        message={<>The apps restart on the new address, so this page goes away for a moment. Bookmarks to <b>{a.domain}</b> stop working; {a.plain_url ? <><b>{a.plain_url}</b> always reaches Pocket Core on this network.</> : <><b>pocket.local</b> always finds the box.</>}</>}
         onConfirm={confirm} onCancel={() => setConfirm(null)} />}
     </div>
   )

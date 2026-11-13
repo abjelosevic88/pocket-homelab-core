@@ -5,12 +5,45 @@ installed one to its newest release (**Update** in the same list) and take any a
 again (**Apps → an app → Remove app**).
 
 The quickest way to get all of this on a fresh Linux machine is the one-command install, which sets
-up Core, the installer agent and (optionally) Caddy in containers:
+up Core, the installer agent, and Caddy and Tailscale for when they are switched on, in containers:
 
 ```sh
-curl -fsSL https://pockethomelab.com/install.sh | sh                 # apps on their own ports
-curl -fsSL https://pockethomelab.com/install.sh | sh -s -- --domain example.com --email you@example.com
+curl -fsSL https://pockethomelab.com/install.sh | sh
 ```
+
+Create your account on the page it prints, and the **setup** (`/welcome`) asks three things, as on a
+Pocket Box:
+
+1. **Secure address** — Pocket's free address (`<random>.box.pockethomelab.net` from
+   [Pocket Names](https://github.com/abjelosevic88/pocket-homelab-names), pointed at this machine's
+   home-network address, with a Let's Encrypt certificate), your own domain on Cloudflare ("Sign in with
+   Cloudflare" or an API token; `pocket.yourdomain` and `*.pocket.yourdomain` are kept pointed here), or
+   only this network's addresses (`http://<this machine>:<port>`, no padlock). Settings → System
+   changes it later.
+2. **Your apps** — Pocket Box's bundles (`bundles.json` in pocket-homelab-box: Essentials, Office,
+   Media…) and every other app one by one. Core installs them one after the other; the queue survives
+   a restart of Core (choosing an address restarts it).
+3. **Away from home** (optional) — Tailscale: Connect gives Tailscale's sign-in link; a machine that
+   already runs Tailscale is left alone.
+
+The same choices as flags, for scripts (a new install): `--address pocket|plain`,
+`--cloudflare-token T --cloudflare-domain example.com [--cloudflare-name pocket]`,
+`--bundle essentials,media`, `--apps notes,money`, `--admin-email you@example.com` (the apps make it
+their admin; to install before anyone has an account, the script pins Core's registration key for the
+first start and clears it afterwards) and `--tailscale-key tskey-auth-…`.
+
+How the address switch works: the installer agent serves the same address API as the Pocket Box's
+address service on a second socket (`INSTALLER_ADDRESS_SOCKET`, Core's `BOX_ADDRESS`), plus
+`/v1/tailscale`. Once the name's certificate is there it writes `caddy/Caddyfile` and `caddy/tls`
+(every app at `https://<app>.<name>`, one wildcard certificate) and starts Caddy (compose profile
+`proxy`), sets `BASE_URL`, `SECURE_COOKIES`, `INSTALLER_PUBLIC_URL`, `COMPOSE_PROFILES` and
+`POCKET_ADDRESS` in `.env` and starts Core again, then moves every installed app's compose file to its
+new address and starts it again (it registers with Core under it). Going back to this network's
+addresses undoes it and gives a Pocket name back. Its state is in `~/pocket/address` (secrets in
+`private/`, 0700); it renews the certificate 30 days before it ends. Caddy needs ports 80 and 443.
+
+With your own domain elsewhere, and ports 80/443 open to this machine:
+`sh -s -- --domain example.com --email you@example.com` (Caddy gets a certificate per app over HTTP).
 
 The script lives in [`deploy/install.sh`](../deploy/install.sh) (`--help` lists its options); the
 rest of this page explains the parts. Core stays unprivileged: the Docker work

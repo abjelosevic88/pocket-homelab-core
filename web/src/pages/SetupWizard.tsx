@@ -7,6 +7,9 @@ import { shortName } from '../lib/format'
 import type { Release } from '../components/Installer'
 import { Icon } from '../components/icons'
 import { Loading, Spinner, errMsg } from '../components/ui'
+import { ADDRESS, AddressPanel } from '../components/BoxAddress'
+import { RemotePanel } from '../components/RemoteAccess'
+import type { BoxAddress } from '../lib/types'
 
 // First-run setup of a Core that is not on a Pocket Box (install.sh on any Linux machine): pick the
 // apps to start with, as Pocket Box's bundles or one by one, and Core installs them one after the
@@ -16,9 +19,11 @@ interface Bundle { id: string; name: string; description: string; apps: string[]
 interface QueueItem { slug: string; name: string; state: 'waiting' | 'installing' | 'done' | 'failed'; error?: string }
 interface Setup { pending: boolean; bundles: { base: string[]; bundles: Bundle[] }; install: { running: boolean; items: QueueItem[] } }
 
-type StepId = 'apps' | 'install' | 'done'
-const STEPS: { id: StepId; icon: string; title: string; sub: string }[] = [
+type StepId = 'address' | 'apps' | 'remote' | 'install' | 'done'
+const STEPS: { id: StepId; icon: string; title: string; sub: string; optional?: boolean }[] = [
+  { id: 'address', icon: 'lock', title: 'Secure address', sub: 'How phones and computers reach Pocket with a padlock. Pocket\'s free address is ready in a minute or two and needs nothing from you; it carries on in the background while you pick your apps.' },
   { id: 'apps', icon: 'grid', title: 'Choose your apps', sub: 'Start with a bundle, then tick or untick single apps. Everything else stays one click away under Apps → Install app.' },
+  { id: 'remote', icon: 'globe', title: 'Away from home', sub: 'Reach Pocket from your phone and laptop anywhere, through Tailscale. Your apps keep installing meanwhile.', optional: true },
   { id: 'install', icon: 'download', title: 'Installing', sub: 'One app after the other. You can close this page: the installs carry on, and each app shows up under Apps when it is ready.' },
   { id: 'done', icon: 'check', title: 'All set', sub: 'Your apps are ready. Each one signs you in with your Pocket Core account.' },
 ]
@@ -69,7 +74,9 @@ export default function SetupWizard() {
   const [setup, setSetup] = useState<Setup | null>(null)
   const [apps, setApps] = useState<Release[] | null>(null)
   const [err, setErr] = useState('')
-  const [step, setStep] = useState<StepId>('apps')
+  const steps = STEPS.filter(s => (s.id !== 'address' || status?.box_address) && (s.id !== 'remote' || status?.box_remote))
+  const [step, setStep] = useState<StepId>(steps[0].id)
+  const [addr, setAddr] = useState<BoxAddress | null>(null)
   const [bundles, setBundles] = useState<Set<string>>(new Set())
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -87,6 +94,11 @@ export default function SetupWizard() {
       })
       .catch(e => setErr(errMsg(e)))
   }, [])
+
+  // At the end: the address Pocket ended up at (a new name means signing in there once more).
+  useEffect(() => {
+    if (step === 'done' && status?.box_address) api.get<BoxAddress>(ADDRESS).then(setAddr).catch(() => setAddr(null))
+  }, [step])
 
   // While installing: follow the queue.
   useEffect(() => {
@@ -142,23 +154,26 @@ export default function SetupWizard() {
     setBusy(true); setErr('')
     try {
       await api.post(`${V1}/first-apps/install`, { apps: chosen.map(s => ({ slug: s, name: known.get(s)!.name })) })
-      setStep('install')
+      setStep(steps.some(s => s.id === 'remote') ? 'remote' : 'install')
     } catch (e) { setErr(errMsg(e)) }
     setBusy(false)
   }
   const finish = async (to: string) => {
     setBusy(true)
     try { await api.post(`${V1}/first-apps/done`) } catch { /* it is offered again next time, no harm */ }
+    if (to.startsWith('https://')) { window.location.href = to; return }
     await refresh()
     navigate(to, { replace: true })
   }
+  const named = addr && addr.domain && addr.mode !== 'plain' ? `https://core.${addr.domain}` : ''
+  const naming = addr && (addr.mode === 'pocket' || addr.mode === 'cloudflare') && !named
 
   const items = setup?.install.items || []
   const doneN = items.filter(i => i.state === 'done').length
   const failed = items.filter(i => i.state === 'failed')
-  const at = STEPS.findIndex(s => s.id === step)
-  const cur = STEPS[at]
-  const pct = step === 'done' ? 100 : step === 'install' && items.length ? Math.round(33 + 67 * (doneN + failed.length) / items.length) : 15
+  const at = Math.max(0, steps.findIndex(s => s.id === step))
+  const cur = steps[at]
+  const pct = step === 'done' ? 100 : step === 'install' && items.length ? Math.round(60 + 40 * (doneN + failed.length) / items.length) : Math.round(100 * (at + 0.5) / steps.length)
 
   return (
     <div className="wz">
@@ -168,16 +183,16 @@ export default function SetupWizard() {
             <img src="/favicon.svg" alt="" width={34} height={34} />
             <div>
               <b>Set up {status?.box_name || 'Pocket'}</b>
-              <span>{step === 'done' ? 'Done' : step === 'install' ? `${doneN} of ${items.length} apps ready` : 'Pick your apps'}</span>
+              <span>{step === 'done' ? 'Done' : step === 'install' || step === 'remote' ? `${doneN} of ${items.length} apps ready` : `${steps.length - 1 - at} steps to go`}</span>
             </div>
           </div>
           <div className="wz-progress" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
           <ol className="wz-steps" aria-label="Steps">
-            {STEPS.map((s, n) => (
+            {steps.map((s, n) => (
               <li key={s.id} className={n === at ? 'on' : n < at ? 'done' : ''}>
                 <button type="button" disabled aria-current={n === at ? 'step' : undefined} title={s.title}>
                   <span className="wz-dot">{n < at ? <Icon name="check" size={13} /> : <Icon name={s.icon} size={14} />}</span>
-                  <span className="wz-label"><b>{s.title}</b></span>
+                  <span className="wz-label"><b>{s.title}</b>{s.optional && <em>Optional</em>}</span>
                 </button>
               </li>
             ))}
@@ -190,14 +205,16 @@ export default function SetupWizard() {
             <header className="wz-head">
               <span className={`wz-tile ${step === 'done' ? 'ok' : ''}`}><Icon name={cur.icon} size={22} /></span>
               <div>
-                <p className="wz-eyebrow">{step === 'done' ? 'Finished' : `Step ${at + 1} of ${STEPS.length - 1}`}</p>
+                <p className="wz-eyebrow">{step === 'done' ? 'Finished' : `Step ${at + 1} of ${steps.length - 1}`}{cur.optional ? ' · optional' : ''}</p>
                 <h1>{cur.title}</h1>
               </div>
             </header>
             <p className="wz-sub">{cur.sub}</p>
             <div className="wz-body">
               {err && <div className="callout danger">{err}</div>}
-              {!setup || !apps ? (!err && <Loading />) : <>
+              {step === 'address' && <AddressPanel startOpen />}
+              {step === 'remote' && <RemotePanel />}
+              {step === 'address' || step === 'remote' ? null : !setup || !apps ? (!err && <Loading />) : <>
                 {step === 'apps' && <>
                   <div className="setup-bundles">
                     {setup.bundles.bundles.map(b => (
@@ -232,7 +249,9 @@ export default function SetupWizard() {
                     </div>
                   ))}
                 </>}
-                {step !== 'apps' && <ul className="wz-summary setup-queue">
+                {step === 'done' && named && <div className="callout"><Icon name="lock" size={15} /><span>Pocket is at <b>{named}</b> now, with a padlock. Sign in there once more; the address here keeps working on this network.</span></div>}
+                {step === 'done' && naming && <div className="callout"><Icon name="refresh" size={15} /><span>The secure address is still being set up. It takes a minute or two more; Settings → System shows how far it got.</span></div>}
+                {(step === 'install' || step === 'done') && <ul className="wz-summary setup-queue">
                   {items.map(it => (
                     <li key={it.slug}><span className="setup-queue-row">
                       <span className={`wz-sum-ico ${it.state === 'done' ? 'ok' : ''}`}>
@@ -249,18 +268,21 @@ export default function SetupWizard() {
             </div>
           </section>
           <nav className="wz-nav">
+            {step === 'apps' && steps[at - 1]?.id === 'address' && <button type="button" className="btn ghost" onClick={() => setStep('address')}><Icon name="chevron-left" size={15} />Back</button>}
             <span className="grow" />
+            {step === 'address' && <button type="button" className="btn primary lg" onClick={() => setStep('apps')}>Continue<Icon name="chevron-right" size={15} /></button>}
+            {step === 'remote' && <button type="button" className="btn primary lg" onClick={() => setStep('install')}>Continue<Icon name="chevron-right" size={15} /></button>}
             {step === 'apps' && <button type="button" className="btn primary lg" onClick={install} disabled={busy || !chosen.length}>
               {busy ? <Spinner /> : null}{chosen.length ? `Install ${chosen.length} app${chosen.length === 1 ? '' : 's'}` : 'Pick at least one app'}{!busy && <Icon name="chevron-right" size={15} />}
             </button>}
             {step === 'install' && <button type="button" className="btn ghost" onClick={() => finish('/apps')} disabled={busy}>Continue while it installs</button>}
-            {step === 'done' && <button type="button" className="btn primary lg" onClick={() => finish('/')} disabled={busy}>
-              {busy ? <Spinner /> : null}Open Pocket Core{!busy && <Icon name="chevron-right" size={15} />}
+            {step === 'done' && <button type="button" className="btn primary lg" onClick={() => finish(named ? `${named}/` : '/')} disabled={busy}>
+              {busy ? <Spinner /> : null}{named ? `Open ${named.replace('https://', '')}` : 'Open Pocket Core'}{!busy && <Icon name="chevron-right" size={15} />}
             </button>}
           </nav>
         </main>
       </div>
-      {step === 'apps' && <button type="button" className="btn ghost sm wz-later" onClick={() => finish('/apps')} disabled={busy}>Pick apps later</button>}
+      {(step === 'apps' || step === 'address') && <button type="button" className="btn ghost sm wz-later" onClick={() => finish('/apps')} disabled={busy}>Pick apps later</button>}
     </div>
   )
 }

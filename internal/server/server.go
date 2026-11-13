@@ -183,6 +183,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	if s.inst != nil {
 		go s.autoUpdater(ctx)
 	}
+	s.resumeFirstApps(ctx)
 	return nil
 }
 
@@ -344,6 +345,8 @@ func (s *Server) Router() http.Handler {
 				r.HandleFunc("/box/system/*", s.handleBoxSystem)
 				r.HandleFunc("/box/address", s.handleBoxAddress)
 				r.HandleFunc("/box/address/*", s.handleBoxAddress)
+				r.HandleFunc("/box/remote", s.handleBoxRemote)
+				r.HandleFunc("/box/remote/*", s.handleBoxRemote)
 				r.HandleFunc("/box/downloads", s.handleBoxDownloads)
 				r.HandleFunc("/box/downloads/*", s.handleBoxDownloads)
 				r.Put("/apps/{slug}", s.handleUpdateApp)

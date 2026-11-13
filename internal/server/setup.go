@@ -32,6 +32,15 @@ const bundlesURL = "https://raw.githubusercontent.com/abjelosevic88/pocket-homel
 // setupDoneKey is set once the admin finished (or skipped) the setup.
 const setupDoneKey = "setup_wizard_done"
 
+// setupQueueKey keeps the install queue across restarts of Core: choosing an address restarts Core
+// (its address changes) while the apps may still be installing.
+const setupQueueKey = "setup_install_queue"
+
+type savedQueue struct {
+	UserID int64       `json:"user_id"`
+	Items  []setupItem `json:"items"`
+}
+
 type bundle struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -63,6 +72,8 @@ type setupQueue struct {
 	mu      sync.Mutex
 	running bool
 	items   []*setupItem
+	userID  int64
+	save    func(savedQueue) // set by the server: into the settings table
 }
 
 func (q *setupQueue) snapshot() map[string]any {
@@ -82,6 +93,53 @@ func (q *setupQueue) set(it *setupItem, state, errText, job string) {
 	if job != "" {
 		it.Job = job
 	}
+	q.persist()
+}
+
+// persist saves the queue (q.mu held).
+func (q *setupQueue) persist() {
+	if q.save == nil {
+		return
+	}
+	sq := savedQueue{UserID: q.userID}
+	for _, it := range q.items {
+		sq.Items = append(sq.Items, *it)
+	}
+	q.save(sq)
+}
+
+// resumeFirstApps carries on with a queue a restart of Core interrupted.
+func (s *Server) resumeFirstApps(ctx context.Context) {
+	q := &s.setup
+	q.save = func(sq savedQueue) {
+		b, _ := json.Marshal(sq)
+		_ = s.store.SetKV(context.WithoutCancel(ctx), setupQueueKey, string(b))
+	}
+	var sq savedQueue
+	if json.Unmarshal([]byte(s.store.GetKV(ctx, setupQueueKey)), &sq) != nil || len(sq.Items) == 0 {
+		return
+	}
+	items := make([]*setupItem, len(sq.Items))
+	open := false
+	for i := range sq.Items {
+		items[i] = &sq.Items[i]
+		open = open || items[i].State == "waiting" || items[i].State == "installing"
+	}
+	q.mu.Lock()
+	q.items, q.userID = items, sq.UserID
+	q.mu.Unlock()
+	if !open || s.inst == nil {
+		return
+	}
+	u, err := s.store.GetUser(ctx, sq.UserID)
+	if err != nil {
+		return
+	}
+	q.mu.Lock()
+	q.running = true
+	q.mu.Unlock()
+	s.log.Info("setup install: carrying on after a restart", "apps", len(items))
+	go s.runSetupInstall(u, items)
 }
 
 // setupPending says whether the admin still gets the setup: a Core with an installer agent but no
@@ -180,7 +238,8 @@ func (s *Server) handleFirstAppsInstall(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusConflict, "the apps chosen before are still being installed")
 		return
 	}
-	q.running, q.items = true, items
+	q.running, q.items, q.userID = true, items, u.ID
+	q.persist()
 	q.mu.Unlock()
 	user := *u
 	go s.runSetupInstall(&user, items)
@@ -197,17 +256,36 @@ func (s *Server) runSetupInstall(u *store.User, items []*setupItem) {
 	}()
 	for _, it := range items {
 		if s.ctx.Err() != nil {
-			q.set(it, "failed", "Pocket Core stopped", "")
+			return // Core is stopping: the saved queue carries on when it is back
+		}
+		if it.State == "done" || it.State == "failed" {
 			continue
 		}
-		if _, err := s.store.GetAppBySlug(s.ctx, it.Slug); err == nil {
+		if it.State == "installing" {
+			// Interrupted by a restart: the agent kept going, so give the app time to register.
+			for i := 0; i < 45 && !s.isRegistered(it.Slug); i++ {
+				select {
+				case <-s.ctx.Done():
+					return
+				case <-time.After(2 * time.Second):
+				}
+			}
+		}
+		if s.isRegistered(it.Slug) {
 			q.set(it, "done", "", "")
 			continue
 		}
 		q.set(it, "installing", "", "")
 		j, err := s.startSetupInstall(u, it)
 		if err != nil {
-			q.set(it, "failed", err.Error(), "")
+			if s.ctx.Err() != nil {
+				return
+			}
+			if s.isRegistered(it.Slug) {
+				q.set(it, "done", "", "")
+			} else {
+				q.set(it, "failed", err.Error(), "")
+			}
 			continue
 		}
 		q.set(it, "installing", "", j.ID)
@@ -225,15 +303,17 @@ func (s *Server) runSetupInstall(u *store.User, items []*setupItem) {
 			}
 			select {
 			case <-s.ctx.Done():
+				return
 			case <-time.After(2 * time.Second):
-			}
-			if s.ctx.Err() != nil {
-				q.set(it, "failed", "Pocket Core stopped", "")
-				break
 			}
 		}
 		s.log.Info("setup install", "slug", it.Slug, "state", it.State)
 	}
+}
+
+func (s *Server) isRegistered(slug string) bool {
+	_, err := s.store.GetAppBySlug(s.ctx, slug)
+	return err == nil
 }
 
 // startSetupInstall starts one install, waiting while another install (from the Apps page, or

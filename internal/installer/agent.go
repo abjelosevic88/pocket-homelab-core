@@ -116,6 +116,8 @@ type Agent struct {
 
 	healthWait time.Duration
 	httpc      *http.Client
+
+	addr *Address // the address choice (INSTALLER_ADDRESS_SOCKET); nil = none
 }
 
 func NewAgent(cfg *Config, log *slog.Logger) *Agent {
@@ -124,13 +126,27 @@ func NewAgent(cfg *Config, log *slog.Logger) *Agent {
 		keys, _ := appstore.ParseKeys(cfg.CatalogKeys) // checked by LoadConfig
 		src = newCatalogSource(cfg, keys)
 	}
-	return &Agent{cfg: cfg, src: src, dk: NewDocker(), log: log, jobs: map[string]*Job{},
+	a := &Agent{cfg: cfg, src: src, dk: NewDocker(), log: log, jobs: map[string]*Job{},
 		healthWait: 3 * time.Minute, httpc: &http.Client{Timeout: 5 * time.Second}}
+	if cfg.Address.Socket != "" {
+		a.addr = newAddress(a, cfg.Address, log)
+	}
+	return a
+}
+
+// setPublicURL changes the address template new installs get (the address switch holds the work
+// lock while it does; at start nothing runs yet).
+func (a *Agent) setPublicURL(t string) {
+	if a.work.TryLock() {
+		defer a.work.Unlock()
+	}
+	a.cfg.PublicURL = t
 }
 
 func (a *Agent) status() Status {
 	st := Status{Owner: a.cfg.Owner, AppsDir: a.cfg.AppsDir, ArchiveDir: a.cfg.ArchiveDir, PublicURL: a.cfg.PublicURL,
-		Proxy: a.cfg.Caddyfile != "" && !a.cfg.byPort(), Source: "github", SourceURL: "https://github.com/" + a.cfg.Owner,
+		Proxy:  a.cfg.Caddyfile != "" && !a.cfg.byPort() || a.addr != nil && a.addr.domain() != "",
+		Source: "github", SourceURL: "https://github.com/" + a.cfg.Owner,
 		Platform: runtime.GOOS + "/" + runtime.GOARCH}
 	if len(a.cfg.CatalogURLs) > 0 {
 		st.Source, st.SourceURL = "catalog", a.cfg.CatalogURLs[0]
@@ -160,6 +176,13 @@ func (a *Agent) Serve(ctx context.Context) error {
 	a.cfg.FilesOwner.chown(a.cfg.Socket) // Core runs as the person, not root
 	srv := &http.Server{Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { <-ctx.Done(); srv.Shutdown(context.Background()) }()
+	if a.addr != nil {
+		go func() {
+			if err := a.addr.Serve(ctx); err != nil {
+				a.log.Error("address service", "err", err)
+			}
+		}()
+	}
 	a.log.Info("installer listening", "socket", a.cfg.Socket, "apps", a.cfg.AppsDir, "owner", a.cfg.Owner)
 	if err := srv.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -389,6 +412,10 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 			a.logf(j, "Brought back %s from %s (the archive stays as it is)", strings.Join(got, ", "), archived)
 		}
 	}
+	// Which app this folder holds, for the address switch (address_switch.go).
+	if b, err := json.Marshal(appMark{rel.Slug, plan.Port}); err == nil && os.WriteFile(filepath.Join(dir, appMarker), b, 0o644) == nil {
+		a.cfg.FilesOwner.chown(filepath.Join(dir, appMarker))
+	}
 	res := &Result{Dir: dir, Container: plan.Container, AppURL: plan.AppURL, PublicURL: public, Port: plan.Port, Version: rel.Version}
 	for _, n := range plan.Notes {
 		res.Warnings = append(res.Warnings, "The app "+n+".")
@@ -409,6 +436,13 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return a.rollback(ctx, j, dir, fmt.Errorf("%w\n%s", err, logs))
 	}
 	a.logf(j, "%s is up", plan.Container)
+	if a.addr != nil && a.addr.domain() != "" {
+		if err := a.addr.refreshCaddy(ctx); err != nil {
+			res.Warnings = append(res.Warnings, "The app runs, but Caddy doesn't serve it yet: "+err.Error())
+		} else {
+			a.logf(j, "Caddy serves %s", public)
+		}
+	}
 
 	if a.cfg.Caddyfile != "" && !a.cfg.byPort() {
 		host := siteHost(public)
@@ -582,6 +616,11 @@ func (a *Agent) finishUninstall(ctx context.Context, j *Job, req UninstallReques
 		a.logf(j, "Archived %s to %s", wd, dest)
 	}
 
+	if a.addr != nil && a.addr.domain() != "" {
+		if err := a.addr.refreshCaddy(ctx); err != nil {
+			res.Warnings = append(res.Warnings, "Caddy still has its site: "+err.Error())
+		}
+	}
 	host := ""
 	if req.PublicURL != "" {
 		host = siteHost(req.PublicURL)

@@ -40,7 +40,13 @@ Runs on the Docker host, answers Core on INSTALLER_SOCKET. Settings (environment
   INSTALLER_CADDY_IMPORTS  snippets each new site imports, comma separated (tls_cf)
   INSTALLER_CADDY_CONTAINER, INSTALLER_CADDY_PATH, INSTALLER_CADDY_UPSTREAM
   INSTALLER_LEFTOVER_FILES files to search for a removed app's address
-  INSTALLER_PROTECTED      slugs never removed (core always)`)
+  INSTALLER_PROTECTED      slugs never removed (core always)
+  INSTALLER_ADDRESS_SOCKET the address choice (Pocket's free address, own domain on Cloudflare, or
+                           this network's addresses) and Tailscale, for Core's BOX_ADDRESS
+  INSTALLER_POCKET_DIR     install.sh's folder (.env, docker-compose.yml, caddy/), with the socket
+  INSTALLER_NAMES_URL      Pocket Names (https://names.pockethomelab.com)
+  INSTALLER_ACME_CA        Let's Encrypt's directory (production; the staging one for tests)
+  INSTALLER_TAILSCALE_CONTAINER  install.sh's Tailscale container (pocket-tailscale)`)
 		return
 	}
 	cfg, err := installer.LoadConfig()

@@ -145,6 +145,29 @@ func (s *Server) handleBoxAddress(w http.ResponseWriter, r *http.Request) {
 	s.passToBox(w, r, s.boxAddr, target, "address"+sub)
 }
 
+// boxRemoteRoutes: Tailscale for a Core installed with install.sh, which the installer agent
+// runs next to the address service (same socket, BOX_ADDRESS). A Pocket Box has its own, under
+// /box/system/tailscale.
+var boxRemoteRoutes = map[string]string{
+	"GET ":       "GET /v1/tailscale",
+	"POST /up":   "POST /v1/tailscale/up",
+	"POST /down": "POST /v1/tailscale/down",
+}
+
+func (s *Server) handleBoxRemote(w http.ResponseWriter, r *http.Request) {
+	if s.boxAddr == nil || s.box != nil {
+		writeErr(w, http.StatusNotFound, "no Tailscale here (a Pocket Box has it under Settings → System)")
+		return
+	}
+	sub := strings.TrimPrefix(r.URL.Path, "/api/v1/box/remote")
+	target, ok := boxRemoteRoutes[r.Method+" "+sub]
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	s.passToBox(w, r, s.boxAddr, target, "remote"+sub)
+}
+
 // boxDownloadsRoutes maps Core's admin routes onto the box downloads
 // service's: the Usenet provider (SABnzbd), the indexers (Prowlarr) and
 // subtitles (Bazarr) behind Pocket Watch, Requests and Subtitles, and

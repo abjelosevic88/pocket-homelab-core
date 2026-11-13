@@ -56,6 +56,9 @@ type Config struct {
 	CaddyUpstream  string   // how Caddy reaches a published port
 
 	Leftovers []string // files searched for the removed app's address afterwards
+
+	// The address choice of an install.sh install (address.go); off without Address.Socket.
+	Address   AddressConfig
 	Protected []string // slugs that are never removed
 }
 
@@ -100,6 +103,16 @@ func LoadConfig() (*Config, error) {
 		CaddyUpstream:  env("INSTALLER_CADDY_UPSTREAM", "host.docker.internal"),
 		Leftovers:      list(env("INSTALLER_LEFTOVER_FILES", "")),
 		Protected:      append([]string{"core"}, list(env("INSTALLER_PROTECTED", ""))...),
+		Address: AddressConfig{
+			Socket:    env("INSTALLER_ADDRESS_SOCKET", ""),
+			Dir:       env("INSTALLER_POCKET_DIR", ""),
+			NamesURL:  env("INSTALLER_NAMES_URL", "https://names.pockethomelab.com"),
+			ACME:      env("INSTALLER_ACME_CA", "https://acme-v02.api.letsencrypt.org/directory"),
+			Tailscale: env("INSTALLER_TAILSCALE_CONTAINER", "pocket-tailscale"),
+		},
+	}
+	if c.Address.Socket != "" && c.Address.Dir == "" {
+		return nil, fmt.Errorf("INSTALLER_ADDRESS_SOCKET needs INSTALLER_POCKET_DIR (install.sh's folder)")
 	}
 	var err error
 	if c.AppOwner, err = parseOwner(env("INSTALLER_APP_OWNER", "1000:1000")); err != nil {
