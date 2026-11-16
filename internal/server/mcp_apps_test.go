@@ -308,6 +308,9 @@ var mcpSharingAllowed = map[string]bool{
 	"pocket_projects_share_note /issues/{id}/notes/{note}/share":          true,
 	// files a memo into the person's own Notes/Tasks/Calendar/Money (a change: approved per call)
 	"pocket_voice_send_memo /memos/{id}/send": true,
+	// a booking link for one named person, returned to the person to pass on (made only with their OK), and the list of them
+	"pocket_booking_invite /invites":  true,
+	"pocket_booking_invites /invites": true,
 }
 
 func TestMCPApplicationCatalogBoundary(t *testing.T) {
@@ -1489,6 +1492,60 @@ func TestMCPGameBuilderTools(t *testing.T) {
 		}
 		if strings.Join(op.Omit, " ") != "doc" {
 			t.Fatalf("%s: the game itself is not left out: %v", name, op.Omit)
+		}
+	}
+}
+
+func TestMCPBookingTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "booking" {
+			tools[op.Name] = op
+		}
+	}
+	if len(tools) != 16 {
+		t.Fatalf("booking tools: %d", len(tools))
+	}
+	for _, name := range strings.Fields("summary list get types get_type slots day search lookup invites") {
+		if op := tools["pocket_booking_"+name]; op == nil || op.Method != "GET" || op.Kind != "read" {
+			t.Fatalf("%s should be a read", name)
+		}
+	}
+	for _, name := range strings.Fields("book confirm cancel move invite") {
+		if op := tools["pocket_booking_"+name]; op == nil || op.Kind != "change" {
+			t.Fatalf("%s should always be asked (change)", name)
+		}
+	}
+	if op := tools["pocket_booking_create_type"]; op == nil || op.Kind != "add" || op.Path != "/types" {
+		t.Fatal("create_type should add a draft page")
+	}
+	if tools["pocket_booking_slots"].Path != "/types/{id}/slots" || tools["pocket_booking_cancel"].Path != "/bookings/{id}/cancel" {
+		t.Fatal("booking routes moved")
+	}
+	book := tools["pocket_booking_book"].resolved
+	ok := map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"type_id": 3, "start": "2026-11-18T10:00:00+01:00", "minutes": 30, "name": "Ana Marić", "email": "ana@example.com", "tell_guest": true}}
+	if err := book.Validate(ok); err != nil {
+		t.Fatalf("book refused: %v", err)
+	}
+	if book.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"type_id": 3, "name": "Ana"}}) == nil {
+		t.Fatal("book took no start")
+	}
+	if book.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"type_id": 3, "start": "2026-11-18T10:00:00+01:00", "name": "Ana", "admin": true}}) == nil {
+		t.Fatal("book took an unknown field")
+	}
+	kind := tools["pocket_booking_create_type"].resolved
+	if kind.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "Intro call", "minutes": 30, "location_kind": "video"}}) != nil {
+		t.Fatal("create_type refused a plain draft")
+	}
+	if kind.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"title": "Intro call", "location_kind": "zoom"}}) == nil {
+		t.Fatal("create_type took an unknown place")
+	}
+	if tools["pocket_booking_invite"].resolved.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"name": "Ana", "email": "ana@example.com", "days": 14}}) != nil {
+		t.Fatal("invite refused")
+	}
+	for name := range tools {
+		if strings.Contains(name, "delete") || strings.Contains(name, "share") || strings.Contains(name, "decline") || strings.Contains(name, "update") {
+			t.Fatalf("a booking tool may never delete, share, decline or edit pages it did not make: %s", name)
 		}
 	}
 }

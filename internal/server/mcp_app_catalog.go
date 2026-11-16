@@ -12,6 +12,8 @@ import (
 // Projects issue for its team (approved per call; see mcpSharingAllowed).
 // pocket_voice_send_memo (/memos/{id}/send) is not delivery to anyone else: it
 // files a memo into the person's own Notes/Tasks/Calendar/Money, approved per call.
+// pocket_booking_invite makes a booking link for one named person (returned, not sent),
+// and pocket_booking_book/cancel/move/confirm may email that booking's guest: each approved per call.
 var mcpAppCatalog = buildMCPAppCatalog()
 
 type mcpFields map[string]any
@@ -70,6 +72,7 @@ var mcpChangePosts = map[string]bool{"printfarm_weigh_spool": true, "tasks_compl
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
+	"booking_book": true, "booking_confirm": true, "booking_cancel": true, "booking_move": true, "booking_invite": true, // these email a guest or make a link for one: always ask
 	"trails_outing_status": true, // "I'm back" may email the person's safety contact: always ask
 	"league_answer":        true, // the group sees it and may move someone off the waiting list: always ask
 	"ai_create_schedule":   true} // a new schedule runs an agent unattended: always ask, like a change
@@ -1486,5 +1489,45 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	newSchedule["mode"].(map[string]any)["description"] = "Permission mode: claude = default, acceptEdits, plan or auto; codex = untrusted, on-request or read-only. Full access is only set in Pocket AI itself."
 	write("ai", "create_schedule", "Create a Pocket AI scheduled run: a prompt an agent runs by itself on a timing (spec), on this server or another machine (host_id), in a folder (cwd). enabled defaults to true and notify to attention. Read pocket_ai_schedules first to reuse an existing schedule's machine, folder and agent.", "POST", "/schedules", newSchedule, "name prompt spec")
 	write("ai", "update_schedule", "Edit one of your Pocket AI scheduled runs (schedule = id from pocket_ai_schedules): name, prompt, timing, notify or enabled; omitted fields stay as they are. The agent, model, permission mode, machine and folder cannot be changed here.", "PUT", "/schedules/{schedule}", schedule, "")
+	// Pocket Booking: the person's booking pages (Calendly-style: people pick a free time and answer a few questions) and the
+	// bookings made on them. Times are RFC 3339 with an offset; date/time/end_time are in the person's own time zone. Money is in cents.
+	// book, cancel and move may email the guest (tell_guest), confirm emails them and an invite is a link for one named person: always ask.
+	read("booking", "summary", "Get Pocket Booking at a glance: bookings coming up, today and this week, how many wait for the person to confirm (pending), open booking pages, the next booking, today's list and the waiting ones, with a one-line summary.", "/summary", "")
+	read("booking", "list", "List bookings: view upcoming (default) | pending (waiting for the person to confirm) | past | cancelled | all; from/to = days YYYY-MM-DD in the person's time zone (to included); q searches names, emails, answers and titles; email = one guest's bookings (exact, any case); type_id = one booking page. Each booking: title, status pending|confirmed|declined|cancelled|done|no_show, start, end, date, time, minutes, the guest (name, email, phone), their answers, where (location_kind, location, meeting_url), price in cents, source (page, invite, owner or the app that booked) and url.", "/bookings", "view from to q email type_id limit offset")
+	read("booking", "get", "Read one booking in full: who, when (start, end, the guest's time zone), the answers to the page's questions, where or the video link, price and paid, the person's note, why it was cancelled, and what was made from it in the person's other apps (made: calendar event, contact, task…).", "/bookings/{id}", "")
+	read("booking", "types", "List the person's booking pages (types): title, status draft|open|paused, lengths in minutes (durations), where it happens (location_kind video|link|phone|phone_in|place|ask), price in cents, confirm (auto or by the person), capacity, invite_only, how many bookings are coming up, the public url people book at and link (the person's own page). Use an id here for slots, book and invite.", "/types", "")
+	read("booking", "get_type", "Read one booking page with its questions, its limits (notice, how far ahead, buffers, per day) and its weekly hours.", "/types/{id}", "")
+	read("booking", "slots", "The free times on one booking page (id = the page from pocket_booking_types), day by day: from = the first day YYYY-MM-DD (default today), days (default 7, at most 62), minutes = one of the page's lengths, tz = the time zone to show them in (default the person's). Each slot has start, end and seats left. Use it before pocket_booking_book or to tell someone when the person is free.", "/types/{id}/slots", "from days minutes tz")
+	read("booking", "day", "Read one day in Pocket Booking: the bookings that take place that day (time, who, which page, status, where) and the bookings people made that day — for the journal and the day's plan.", "/day/{date}", "")
+	read("booking", "search", "Search the person's bookings (guest names, emails, answers, notes) and booking pages.", "/search", "q limit")
+	read("booking", "lookup", "Everything with one guest (email): their bookings newest first, the ones coming up, how many, the last and the next — for a contact from another app.", "/lookup", "email")
+	read("booking", "invites", "List the personal booking links the person made (each books once, with the guest's name and email filled in): for whom, which page, the url, whether it was used (and the booking it made) and when it runs out.", "/invites", "")
+	bookIn := textFields("start name email phone note client_key").integers("type_id minutes").booleans("tell_guest force")
+	bookIn["type_id"].(map[string]any)["description"] = "The booking page (pocket_booking_types)."
+	bookIn["start"].(map[string]any)["description"] = "When it starts, RFC 3339 with the offset, e.g. 2026-11-18T10:00:00+01:00 — a start from pocket_booking_slots."
+	bookIn["minutes"].(map[string]any)["description"] = "How long, one of the page's lengths (default its first)."
+	bookIn["note"].(map[string]any)["description"] = "What it is about, in the guest's or the person's words."
+	bookIn["tell_guest"].(map[string]any)["description"] = "Email the guest the confirmation with the time and how to join (default true). Needs an email."
+	bookIn["force"].(map[string]any)["description"] = "Book it even when the time is not free. Only when the person said so."
+	bookIn["client_key"].(map[string]any)["description"] = "Optional: the same key answers the booking made the first time (e.g. crm:deal:12)."
+	write("booking", "book", "Book someone in on one of the person's booking pages at a free time (from pocket_booking_slots): it lands in Pocket Calendar like any booking, and the guest is emailed unless tell_guest is false. A time that is taken is refused unless force. Always ask first, naming who, which page and when.", "POST", "/bookings", bookIn, "type_id start name")
+	write("booking", "confirm", "Confirm a booking that waits for the person (status pending): it becomes confirmed and the guest is told. Always ask first, naming who and when.", "POST", "/bookings/{id}/confirm", nil, "")
+	cancelIn := textFields("message").booleans("tell_guest")
+	cancelIn["message"].(map[string]any)["description"] = "A few words to the guest about why (shown in the email)."
+	cancelIn["tell_guest"].(map[string]any)["description"] = "Email the guest that it is cancelled (default true)."
+	write("booking", "cancel", "Cancel one of the person's bookings; the time is free again and the guest is emailed unless tell_guest is false. Always ask first, naming who and when.", "POST", "/bookings/{id}/cancel", cancelIn, "")
+	moveIn := textFields("start").integers("minutes").booleans("tell_guest")
+	moveIn["start"].(map[string]any)["description"] = "The new start, RFC 3339 with the offset (a free time from pocket_booking_slots)."
+	moveIn["tell_guest"].(map[string]any)["description"] = "Email the guest the new time (default true)."
+	write("booking", "move", "Move one of the person's bookings to another time; the guest is emailed the new time unless tell_guest is false. Always ask first, naming who, the old and the new time.", "POST", "/bookings/{id}/move", moveIn, "start")
+	inviteIn := textFields("name email note").integers("type_id days")
+	inviteIn["type_id"].(map[string]any)["description"] = "The booking page (pocket_booking_types); 0 or left out = the person's first open page."
+	inviteIn["days"].(map[string]any)["description"] = "How many days the link works (default 14)."
+	inviteIn["note"].(map[string]any)["description"] = "A few words the guest sees on the page."
+	write("booking", "invite", "Make a personal booking link for one person (\"send Ana a link to book a call\"): it books once, with their name and email filled in. Returns the url to give them (for example in an email the person approves). Always ask first, naming who and which page.", "POST", "/invites", inviteIn, "name")
+	typeIn := textFields("title description").integers("minutes").enum("location_kind", "video", "link", "phone", "phone_in", "place", "ask")
+	typeIn["minutes"].(map[string]any)["description"] = "How long a booking is, in minutes (e.g. 30)."
+	typeIn["location_kind"].(map[string]any)["description"] = "video = a video room made for each booking (default), link = the person's own video link, phone = the person calls, phone_in = the guest calls, place = an address, ask = the guest says where."
+	write("booking", "create_type", "Make a booking page as a DRAFT for the person to check and open in Pocket Booking: nobody can book on it until they do. Plain, friendly words in the person's language. Returns the page with its link.", "POST", "/types", typeIn, "title")
 	return out
 }
