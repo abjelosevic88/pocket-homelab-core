@@ -59,6 +59,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"gamebuilder/summary": {"/", ""}, "gamebuilder/games": {"/", "/games/{id}"}, "gamebuilder/templates": {"/", ""}, "gamebuilder/stats": {"/stats", ""}, "gamebuilder/search": {"/", ""}, "gamebuilder/day": {"/stats", ""}, "gamebuilder/ai": {"/", ""},
 	"printfarm/summary": {"/", ""}, "printfarm/farm": {"/", ""}, "printfarm/printers": {"/printers", "/printers/{id}"}, "printfarm/printer": {"/printers", "/printers/{id}"}, "printfarm/queue": {"/queue", ""}, "printfarm/models": {"/models", "/models/{id}"}, "printfarm/model": {"/models", "/models/{id}"}, "printfarm/spools": {"/filament", ""}, "printfarm/prints": {"/prints", "/prints/{id}"}, "printfarm/print": {"/prints", "/prints/{id}"}, "printfarm/upkeep": {"/upkeep", ""}, "printfarm/stats": {"/stats", ""}, "printfarm/search": {"/models", ""}, "printfarm/day": {"/prints", ""},
 	"karaoke/summary": {"/", ""}, "karaoke/songs": {"/songs", "/songs/{id}"}, "karaoke/song": {"/songs", "/songs/{id}"}, "karaoke/nights": {"/nights", "/nights/{id}"}, "karaoke/night": {"/nights", "/nights/{id}"}, "karaoke/singers": {"/singers", "/singers/{id}"}, "karaoke/history": {"/history", ""}, "karaoke/stats": {"/history", ""}, "karaoke/search": {"/songs", ""}, "karaoke/day": {"/history", ""},
+	"booking/summary": {"/", ""}, "booking/bookings": {"/bookings", "/bookings/{id}"}, "booking/types": {"/types", "/types/{id}"}, "booking/day": {"/", ""}, "booking/search": {"/bookings", ""},
+	"booking/lookup": {"/bookings", ""}, "booking/invites": {"/types", ""},
 	"math/summary": {"/", ""}, "math/formulas": {"/formulas", ""}, "math/answers": {"/answers", ""}, "math/notebooks": {"/notebooks", "/n/{id}"}, "math/search": {"/notebooks", ""}, "math/day": {"/", ""}, "math/practice": {"/practice", ""},
 	"slides/summary": {"/", ""}, "slides/decks": {"/", "/d/{id}"}, "slides/shows": {"/talks", ""}, "slides/search": {"/", ""}, "slides/day": {"/talks", ""}, "slides/layouts": {"/library", ""},
 	"capsule/summary": {"/", ""}, "capsule/capsules": {"/", "/c/{id}"}, "capsule/predictions": {"/predictions", ""}, "capsule/search": {"/", ""}, "capsule/events": {"/", ""},
@@ -544,6 +546,38 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					itemLink(m, "id", "/c/{id}")
 				}
 			}
+		}
+	}
+	// Pocket Booking: bookings (lists, the summary's next/today/waiting, a day, a lookup, one booking) link to the booking's page;
+	// booking pages (types, search items of kind type, one page) to the page's own page. A booking's "made" lists other apps' items.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "booking" {
+		linkRows := func(key, route string) {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						if kind, _ := m["kind"].(string); kind == "type" {
+							itemLink(m, "id", "/types/{id}")
+						} else {
+							itemLink(m, "id", route)
+						}
+					}
+				}
+			}
+		}
+		for _, key := range []string{"bookings", "today_list", "pending_list", "upcoming", "items"} {
+			linkRows(key, "/bookings/{id}")
+		}
+		if op.Path == "/day/{date}" {
+			linkRows("made", "/bookings/{id}")
+		}
+		linkRows("types", "/types/{id}")
+		if next, ok := data["next"].(map[string]any); ok {
+			itemLink(next, "id", "/bookings/{id}")
+		}
+		if _, isType := data["handle"]; isType {
+			itemLink(data, "id", "/types/{id}")
+		} else if _, isBooking := data["type_id"]; isBooking && data["start"] != nil {
+			itemLink(data, "id", "/bookings/{id}")
 		}
 	}
 	// Pocket Forms: answers in a list, the summary's latest and a day link to the answer; forms (a list, the summary's list, one form) to the form's page.
