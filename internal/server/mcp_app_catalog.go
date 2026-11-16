@@ -71,7 +71,7 @@ var mcpChangePosts = map[string]bool{"printfarm_weigh_spool": true, "tasks_compl
 	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
-	"sign_remind": true, "sign_void": true, // these email people who had a link: always ask
+	"sign_remind": true, "sign_void": true, "cameras_review_events": true, // the first two email people who had a link; review_events marks many events at once: always ask
 	"booking_book": true, "booking_confirm": true, "booking_cancel": true, "booking_move": true, "booking_invite": true, // these email a guest or make a link for one: always ask
 	"trails_outing_status": true, // "I'm back" may email the person's safety contact: always ask
 	"league_answer":        true, // the group sees it and may move someone off the waiting list: always ask
@@ -1529,5 +1529,31 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	typeIn["minutes"].(map[string]any)["description"] = "How long a booking is, in minutes (e.g. 30)."
 	typeIn["location_kind"].(map[string]any)["description"] = "video = a video room made for each booking (default), link = the person's own video link, phone = the person calls, phone_in = the guest calls, place = an address, ask = the guest says where."
 	write("booking", "create_type", "Make a booking page as a DRAFT for the person to check and open in Pocket Booking: nobody can book on it until they do. Plain, friendly words in the person's language. Returns the page with its link.", "POST", "/types", typeIn, "title")
+	// Pocket Cameras: the person's security cameras (their own and ones shared with them), what they saw (events: person,
+	// vehicle, animal, parcel, a doorbell ring — with the AI's sentence and a picture) and the house's mode (home, away,
+	// night, off), which decides which cameras alert. Times are UTC RFC 3339; days YYYY-MM-DD in the person's time zone.
+	// Nothing here changes a camera's settings, rings the doorbell or deletes; set_mode is always asked.
+	read("cameras", "summary", "Get Pocket Cameras at a glance: the mode (home, away, night, off) and why, each camera (online, recording, its last event), what was seen today (people, vehicles, parcels, animals, doorbell rings, alerts), how many events are not looked at yet, the latest events and a one-line text.", "/summary", "")
+	read("cameras", "cameras", "List the person's cameras and the ones shared with them: name, room, kind, whether it is on, online and recording, what it alerts on (labels) and in which modes, mine (false = shared by owner) and its last event.", "/cameras", "")
+	read("cameras", "camera", "Read one camera: its state now, what it alerts on and when, its zones, recordings kept (recorded_from/to), storage used and who it is shared with.", "/cameras/{id}", "")
+	read("cameras", "events", "List what the cameras saw, newest first: camera = one camera's id; label = person|vehicle|animal|parcel|doorbell|motion; day = YYYY-MM-DD, or from/to (days, to included), or hours = the last N hours; unreviewed=1 only the ones not looked at; starred=1 the kept ones; q searches the AI's sentences, notes, pets and parcels. Each event: camera, title, summary (the AI's sentence), labels, worry (0 ordinary, 1 worth a look, 2 urgent), mode at the time, alerted, pet, parcel_text, weather and url.", "/events", "camera label day from to hours unreviewed starred q limit offset")
+	read("cameras", "event", "Read one event in full: when, which camera, what was seen (labels, the AI's sentence, worry), the parcel it probably was, your pet, the weather, the note, and whether video was recorded around it.", "/events/{id}", "")
+	read("cameras", "search", "Search the person's cameras (name, room) and events (the AI's sentences, notes, pets, parcels; or a word like person, parcels, delivery, vehicle, animal).", "/search", "q limit")
+	read("cameras", "day", "Read one day in Pocket Cameras: every event (time, camera, what was seen, alerted or not) and the changes of mode (Away when everyone left, Night) — for the journal.", "/day/{date}", "")
+	read("cameras", "stats", "The numbers over the last days (default 30): events a day by what they were (people, vehicles, animals, parcels, doorbell, false alarms, alerts), the busy hours of the week (Monday first × 24 hours), each camera's events and storage used.", "/stats", "days")
+	read("cameras", "timeline", "One day of recordings: per camera the stretches of video kept (spans), its events, and the mode changes. day = YYYY-MM-DD (default today), camera = one camera's id.", "/timeline", "day camera")
+	read("cameras", "mode", "Read the house's mode (home, away, night, off), who or what set it and why, whether it switches by itself (auto_mode) and what it would be now, the night hours and the latest changes.", "/mode", "")
+	modeIn := textFields("reason").enum("mode", "home", "away", "night", "off")
+	modeIn["mode"].(map[string]any)["description"] = "home = only cameras that alert at home do; away = the house is empty, most cameras alert; night = night watch; off = every alert paused except the doorbell (the cameras still record)."
+	modeIn["reason"].(map[string]any)["description"] = "A few words on why, shown in the mode's history (\"leaving for the weekend\")."
+	write("cameras", "set_mode", "Switch the house's mode (\"we are leaving\" → away, \"pause the cameras\" → off). Always ask first, naming the mode.", "PUT", "/mode", modeIn, "mode")
+	reviewIn := textFields("before").integers("camera_id")
+	reviewIn["camera_id"].(map[string]any)["description"] = "Only this camera's events (0 or left out = all of the person's own cameras)."
+	reviewIn["before"].(map[string]any)["description"] = "Only events up to this time, RFC 3339 (left out = all)."
+	write("cameras", "review_events", "Mark the person's events as looked at (they stop counting as new). Always ask first.", "POST", "/events/review", reviewIn, "")
+	markIn := textFields("note").booleans("reviewed starred")
+	markIn["starred"].(map[string]any)["description"] = "Keep this event (and its clip) forever, past the camera's keep time."
+	markIn["note"].(map[string]any)["description"] = "A note on the event (replaces the old one)."
+	write("cameras", "mark_event", "Mark one event of the person's own camera: looked at (reviewed), kept (starred) or a note. Always ask first.", "PUT", "/events/{id}", markIn, "")
 	return out
 }

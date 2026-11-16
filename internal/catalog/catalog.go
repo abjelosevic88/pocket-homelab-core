@@ -142,6 +142,7 @@ var entries = []Entry{
 	{Type: "math", Name: "Pocket Math", Prefix: "MATH", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "karaoke", Name: "Pocket Karaoke", Prefix: "KARAOKE", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "jam", Name: "Pocket Jam", Prefix: "JAM", Group: "Pocket", Pocket: true, Fields: apiKey("")},
+	{Type: "cameras", Name: "Pocket Cameras", Prefix: "CAMERAS", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "booking", Name: "Pocket Booking", Prefix: "BOOKING", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "printfarm", Name: "Pocket Print Farm", Prefix: "PRINTFARM", Group: "Pocket", Pocket: true, Fields: apiKey("")},
 	{Type: "gamebuilder", Name: "Pocket Game Builder", Prefix: "GAMEBUILDER", Group: "Pocket", Pocket: true, Fields: apiKey("")},

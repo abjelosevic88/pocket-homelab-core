@@ -1549,3 +1549,46 @@ func TestMCPBookingTools(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPCamerasTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "cameras" {
+			tools[op.Name] = op
+		}
+	}
+	if len(tools) != 13 {
+		t.Fatalf("cameras tools: %d", len(tools))
+	}
+	for _, name := range strings.Fields("summary cameras camera events event search day stats timeline mode") {
+		if op := tools["pocket_cameras_"+name]; op == nil || op.Method != "GET" || op.Kind != "read" {
+			t.Fatalf("%s should be a read", name)
+		}
+	}
+	for _, name := range strings.Fields("set_mode review_events mark_event") {
+		if op := tools["pocket_cameras_"+name]; op == nil || op.Kind != "change" {
+			t.Fatalf("%s should always be asked (change)", name)
+		}
+	}
+	if tools["pocket_cameras_set_mode"].Method != "PUT" || tools["pocket_cameras_set_mode"].Path != "/mode" || tools["pocket_cameras_mark_event"].Path != "/events/{id}" {
+		t.Fatal("cameras routes moved")
+	}
+	mode := tools["pocket_cameras_set_mode"].resolved
+	if err := mode.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"mode": "away", "reason": "weekend away"}}); err != nil {
+		t.Fatalf("set_mode refused: %v", err)
+	}
+	if mode.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"mode": "party"}}) == nil {
+		t.Fatal("set_mode took an unknown mode")
+	}
+	if mode.Validate(map[string]any{"request_id": "0123456789abcdef", "data": map[string]any{"reason": "x"}}) == nil {
+		t.Fatal("set_mode took no mode")
+	}
+	if tools["pocket_cameras_mark_event"].resolved.Validate(map[string]any{"id": 12, "request_id": "0123456789abcdef", "data": map[string]any{"starred": true, "note": "the gate"}}) != nil {
+		t.Fatal("mark_event refused")
+	}
+	for name, op := range tools {
+		if op.Method == "DELETE" || strings.Contains(name, "delete") || strings.Contains(name, "ring") || strings.Contains(name, "trigger") || strings.Contains(name, "camera_") && op.Method != "GET" {
+			t.Fatalf("a cameras tool may never delete, ring, raise an alarm or change a camera: %s", name)
+		}
+	}
+}
