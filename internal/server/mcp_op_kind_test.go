@@ -23,6 +23,7 @@ func TestMCPOpKind(t *testing.T) {
 		"pocket_map_features": "read", "pocket_map_day": "read", "pocket_map_add_spot": "add",
 		"pocket_trails_today": "read", "pocket_trails_get_route": "read", "pocket_trails_plan_outing": "add", "pocket_trails_outing_status": "change",
 		"pocket_tables_summary": "read", "pocket_tables_rows": "read", "pocket_tables_add_row": "add",
+		"pocket_cameras_summary": "read", "pocket_cameras_events": "read", "pocket_cameras_set_mode": "change", "pocket_cameras_review_events": "change", "pocket_cameras_mark_event": "change",
 		"pocket_booking_summary": "read", "pocket_booking_slots": "read", "pocket_booking_book": "change", "pocket_booking_cancel": "change", "pocket_booking_invite": "change", "pocket_booking_create_type": "add",
 		"pocket_forms_summary": "read", "pocket_forms_create_form": "add", "pocket_forms_open_form": "change", "pocket_forms_close_form": "change",
 		"pocket_blog_summary": "read", "pocket_blog_create_draft": "add", "pocket_blog_update_post": "change", "pocket_blog_publish": "change", "pocket_blog_reply_comment": "change",

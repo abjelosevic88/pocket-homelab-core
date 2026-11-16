@@ -59,6 +59,8 @@ var mcpBrowserRoutes = map[string]mcpBrowserRoute{
 	"gamebuilder/summary": {"/", ""}, "gamebuilder/games": {"/", "/games/{id}"}, "gamebuilder/templates": {"/", ""}, "gamebuilder/stats": {"/stats", ""}, "gamebuilder/search": {"/", ""}, "gamebuilder/day": {"/stats", ""}, "gamebuilder/ai": {"/", ""},
 	"printfarm/summary": {"/", ""}, "printfarm/farm": {"/", ""}, "printfarm/printers": {"/printers", "/printers/{id}"}, "printfarm/printer": {"/printers", "/printers/{id}"}, "printfarm/queue": {"/queue", ""}, "printfarm/models": {"/models", "/models/{id}"}, "printfarm/model": {"/models", "/models/{id}"}, "printfarm/spools": {"/filament", ""}, "printfarm/prints": {"/prints", "/prints/{id}"}, "printfarm/print": {"/prints", "/prints/{id}"}, "printfarm/upkeep": {"/upkeep", ""}, "printfarm/stats": {"/stats", ""}, "printfarm/search": {"/models", ""}, "printfarm/day": {"/prints", ""},
 	"karaoke/summary": {"/", ""}, "karaoke/songs": {"/songs", "/songs/{id}"}, "karaoke/song": {"/songs", "/songs/{id}"}, "karaoke/nights": {"/nights", "/nights/{id}"}, "karaoke/night": {"/nights", "/nights/{id}"}, "karaoke/singers": {"/singers", "/singers/{id}"}, "karaoke/history": {"/history", ""}, "karaoke/stats": {"/history", ""}, "karaoke/search": {"/songs", ""}, "karaoke/day": {"/history", ""},
+	"cameras/summary": {"/", ""}, "cameras/cameras": {"/cameras", "/cameras/{id}"}, "cameras/events": {"/events", "/events/{id}"}, "cameras/search": {"/events", ""},
+	"cameras/day": {"/events", ""}, "cameras/stats": {"/stats", ""}, "cameras/timeline": {"/timeline", ""}, "cameras/mode": {"/", ""},
 	"booking/summary": {"/", ""}, "booking/bookings": {"/bookings", "/bookings/{id}"}, "booking/types": {"/types", "/types/{id}"}, "booking/day": {"/", ""}, "booking/search": {"/bookings", ""},
 	"booking/lookup": {"/bookings", ""}, "booking/invites": {"/types", ""},
 	"math/summary": {"/", ""}, "math/formulas": {"/formulas", ""}, "math/answers": {"/answers", ""}, "math/notebooks": {"/notebooks", "/n/{id}"}, "math/search": {"/notebooks", ""}, "math/day": {"/", ""}, "math/practice": {"/practice", ""},
@@ -546,6 +548,42 @@ func addMCPAppLinks(result *mcp.CallToolResult, publicURL string, op *mcpAppTool
 					itemLink(m, "id", "/c/{id}")
 				}
 			}
+		}
+	}
+	// Pocket Cameras: events (a list, the summary's recent, a search's event hits) link to the event; cameras to the camera.
+	if data, ok := envelope["result"].(map[string]any); ok && op.App == "cameras" {
+		for _, key := range []string{"events", "recent"} {
+			if rows, ok := data[key].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok {
+						itemLink(m, "id", "/events/{id}")
+					}
+				}
+			}
+		}
+		if rows, ok := data["cameras"].([]any); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					itemLink(m, "id", "/cameras/{id}")
+				}
+			}
+		}
+		if rows, ok := data["hits"].([]any); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]any); ok {
+					if kind, _ := m["kind"].(string); kind == "camera" {
+						itemLink(m, "id", "/cameras/{id}")
+					} else {
+						itemLink(m, "id", "/events/{id}")
+					}
+				}
+			}
+		}
+		switch op.Path {
+		case "/events/{id}", "/events/{id}/": // one event
+			itemLink(data, "id", "/events/{id}")
+		case "/cameras/{id}":
+			itemLink(data, "id", "/cameras/{id}")
 		}
 	}
 	// Pocket Booking: bookings (lists, the summary's next/today/waiting, a day, a lookup, one booking) link to the booking's page;
