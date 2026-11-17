@@ -159,6 +159,30 @@ The list marks installed apps whose registered version is older than the catalog
    and starts the old version, so the old version never meets a database it doesn't know;
 7. Core waits for the app to register with its new version (health checks are paused meanwhile).
 
+## Apps that update themselves (Pocket AI)
+
+Some apps run as a program on the machine, not in a container: Pocket AI starts Claude Code and Codex
+as you, with your files and logins. Their repos have no `docker-compose.yml`; each release carries one
+archive per platform instead (`<program>_<tag>_<os>_<arch>.tar.gz`). The catalog lists them under
+`binaries` (a separate list, so older Cores never offer them for a docker install): version, program
+name and, per `os/arch`, the file's address, SHA-256 and size.
+
+Core reads that list itself (the official catalog, or `INSTALLER_CATALOG_URL` /
+`INSTALLER_CATALOG_KEYS` when set in Core's own environment) and shows these apps on the Apps page.
+Not installed: **Get it** opens the download page; set it up once by hand. Installed: the app asks
+Core about once a minute, with its own app token:
+
+- `GET /api/v1/apps/self/update?os=&arch=&version=&managed=` → `{latest, program, file, apply, target}`.
+  `managed` says why this copy cannot replace itself (a Pocket Box builds it into the system, a
+  development build, no write access, not run by systemd/launchd); Core shows that instead of Update.
+- `POST /api/v1/apps/self/update {state: downloading|installed|failed, message}` reports progress.
+
+**Update** (or the nightly pass) marks the update as asked for; on its next check the app downloads the
+file, checks the SHA-256, runs the new program once (`--version`), keeps the old one as
+`<program>.bak-<version>`, moves the new one in place and restarts once no agent is working. The job on
+the Apps page follows its reports and ends when the app registers again with the new version. An app
+too old to ask (Pocket AI before 0.104.0) shows "update it by hand once".
+
 ## Automatic updates and notifications
 
 Settings → Box → **Install and remove apps** (admins):

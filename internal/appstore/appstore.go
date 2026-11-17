@@ -46,6 +46,46 @@ type Catalog struct {
 	Generated time.Time `json:"generated"`
 	Source    string    `json:"source"` // github.com/<owner>
 	Apps      []App     `json:"apps"`
+	// Binaries are apps that run as a program on the machine rather than
+	// a container (Pocket AI). A separate list, so Cores that predate it
+	// never offer them for a docker install.
+	Binaries []Binary `json:"binaries,omitempty"`
+}
+
+// Binary is the newest release of an app that ships as release downloads:
+// one archive per platform, each holding the program named Program. The
+// app updates itself from these (Core only tells it which file to take).
+type Binary struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Category    string `json:"category,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	Page        string `json:"page,omitempty"`
+	Repo        string `json:"repo"`
+	RepoURL     string `json:"repo_url"`
+	Version     string `json:"version"`
+	Tag         string `json:"tag"`
+	Program     string `json:"program"` // the file inside each archive: pocket-ai
+	// Files by "os/arch" (linux/amd64).
+	Files map[string]BinaryFile `json:"files"`
+}
+
+// BinaryFile is one platform's .tar.gz release asset.
+type BinaryFile struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"` // hex
+	Size   int64  `json:"size"`
+}
+
+// FindBinary returns the binary app with the slug.
+func (c *Catalog) FindBinary(slug string) *Binary {
+	for i := range c.Binaries {
+		if c.Binaries[i].Slug == slug {
+			return &c.Binaries[i]
+		}
+	}
+	return nil
 }
 
 // App is one installable release.
@@ -241,8 +281,8 @@ func SameApps(a, b *Catalog) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	x, _ := json.Marshal(a.Apps)
-	y, _ := json.Marshal(b.Apps)
+	x, _ := json.Marshal([]any{a.Apps, a.Binaries})
+	y, _ := json.Marshal([]any{b.Apps, b.Binaries})
 	return bytes.Equal(x, y)
 }
 

@@ -23,7 +23,16 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/users/"):
-			json.NewEncoder(w).Encode([]repo{{Name: "pocket-homelab-habit-tracker", Description: "Habits"}, {Name: "pocket-homelab-lookout"}, {Name: "pocket-homelab-web"}})
+			json.NewEncoder(w).Encode([]repo{{Name: "pocket-homelab-habit-tracker", Description: "Habits"}, {Name: "pocket-homelab-lookout"}, {Name: "pocket-homelab-web"}, {Name: "pocket-homelab-ai", Description: "Agents"}})
+		case r.URL.Path == "/repos/abjelosevic88/pocket-homelab-ai/releases/tags/v0.4.10":
+			dl := "http://" + r.Host + "/dl/"
+			json.NewEncoder(w).Encode(map[string]any{"assets": []map[string]any{
+				{"name": "pocket-ai_v0.4.10_linux_amd64.tar.gz", "browser_download_url": dl + "amd64", "size": 5, "digest": "sha256:" + strings.Repeat("b", 64)},
+				{"name": "pocket-ai_v0.4.10_darwin_arm64.tar.gz", "browser_download_url": dl + "arm64", "size": 5},
+				{"name": "checksums.txt", "browser_download_url": dl + "sums", "size": 5},
+			}})
+		case r.URL.Path == "/dl/arm64":
+			w.Write([]byte("hello"))
 		case strings.HasSuffix(r.URL.Path, "/info/refs"):
 			w.Write([]byte("003faaaa refs/tags/v0.4.5\n003faaaa refs/tags/v0.4.10\n0000"))
 		case strings.HasSuffix(r.URL.Path, "/pocket-homelab-habit-tracker/v0.4.10/docker-compose.yml"):
@@ -71,6 +80,17 @@ func TestBuildCatalog(t *testing.T) {
 		h.Icon != "https://pockethomelab.com/apps/icons/habits.svg" || !strings.HasPrefix(h.Digest, "sha256:") ||
 		strings.Join(h.Platforms, ",") != "linux/amd64,linux/arm64" || h.Compose == "" {
 		t.Fatalf("habits entry: %+v", h)
+	}
+
+	if len(c.Binaries) != 1 {
+		t.Fatalf("binaries: %+v", c.Binaries)
+	}
+	b := c.Binaries[0]
+	// sha256("hello"), read from the download when GitHub gives no digest
+	if b.Slug != "ai" || b.Program != "pocket-ai" || b.Version != "0.4.10" || b.Description != "Agents" || len(b.Files) != 2 ||
+		b.Files["linux/amd64"].SHA256 != strings.Repeat("b", 64) ||
+		b.Files["darwin/arm64"].SHA256 != "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" {
+		t.Fatalf("ai entry: %+v", b)
 	}
 
 	prev := &appstore.Catalog{Apps: []appstore.App{{Slug: "lookout", Version: "0.4.5", Tag: "v0.4.5", Image: "ghcr.io/abjelosevic88/pocket-homelab-lookout"}}}

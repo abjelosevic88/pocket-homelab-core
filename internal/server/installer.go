@@ -133,6 +133,11 @@ func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) 
 		s.installerErr(w, err)
 		return
 	}
+	covered := map[string]bool{}
+	for _, rel := range rels {
+		covered[rel.Slug] = true
+	}
+	rels = append(rels, s.binaryReleases(ctx, r.URL.Query().Get("refresh") == "1", covered)...)
 	apps, _ := s.store.ListApps(ctx)
 	have := map[string]*store.App{}
 	for i := range apps {
@@ -144,7 +149,7 @@ func (s *Server) handleInstallerCatalog(w http.ResponseWriter, r *http.Request) 
 			"repo_url": rel.RepoURL, "version": rel.Version, "tag": rel.Tag, "container": rel.Container, "present": rel.Present,
 			"category": rel.Category, "icon": rel.Icon, "page": rel.Page, "digest": rel.Digest, "platforms": rel.Platforms,
 			"requires": rel.Requires, "available": rel.Available, "running": rel.Running, "updatable": rel.Updatable,
-			"update_note": rel.UpdateNote, "archive": rel.Archive}
+			"update_note": rel.UpdateNote, "archive": rel.Archive, "kind": rel.Kind}
 		if a := have[rel.Slug]; a != nil {
 			item["installed"], item["name"], item["installed_version"] = true, a.Name, a.Version
 		}
@@ -258,6 +263,9 @@ func (s *Server) handleUpgradeApp(w http.ResponseWriter, r *http.Request) {
 func (s *Server) startUpgrade(ctx context.Context, a *store.App, by string) (*installJob, error) {
 	if a.Slug == "core" {
 		return nil, &installer.Error{Status: http.StatusForbidden, Msg: "Pocket Core is updated on its own"}
+	}
+	if b := s.findBinaryApp(ctx, a.Slug); b != nil && !s.installerCarries(ctx, a.Slug) {
+		return s.startBinaryUpdate(ctx, a, b, by)
 	}
 	// The restart is on purpose: no "app down" event meanwhile.
 	s.removing.Store(a.Slug, true)
@@ -492,4 +500,22 @@ func urlPort(raw string) int {
 	}
 	p, _ := strconv.Atoi(u.Port())
 	return p
+}
+
+// installerCarries: the installer agent's own catalog has the app (a Pocket
+// Box builds Pocket AI into the system and updates it with the system).
+func (s *Server) installerCarries(ctx context.Context, slug string) bool {
+	if s.installerState(ctx) != "" {
+		return false
+	}
+	rels, err := s.inst.Catalog(ctx, false)
+	if err != nil {
+		return false
+	}
+	for _, rel := range rels {
+		if rel.Slug == slug {
+			return true
+		}
+	}
+	return false
 }

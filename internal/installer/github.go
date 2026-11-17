@@ -3,6 +3,7 @@ package installer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +38,10 @@ type Release struct {
 	Digest    string            `json:"digest,omitempty"`
 	Platforms []string          `json:"platforms,omitempty"`
 	Requires  appstore.Requires `json:"requires"`
+
+	// Kind is "binary" for an app that runs as a program on the machine and
+	// updates itself (catalog "binaries"); empty for a docker app.
+	Kind string `json:"kind,omitempty"`
 
 	// About this server.
 	Available  bool   `json:"available"`             // the image runs on this machine
@@ -89,6 +94,15 @@ type GitHub struct {
 	mu      sync.Mutex
 	cached  []Release
 	fetched time.Time
+	// failed are the repos the last Catalog left out, with why (the
+	// catalog builder logs them and looks for release downloads instead).
+	failed []RepoError
+}
+
+// RepoError is a repo Catalog could not read as a docker app.
+type RepoError struct {
+	Name, Description string
+	Err               error
 }
 
 func NewGitHub(cfg *Config) *GitHub {
@@ -115,6 +129,7 @@ func (g *GitHub) Catalog(ctx context.Context, refresh bool) ([]Release, error) {
 	}
 	out := make([]Release, len(repos))
 	ok := make([]bool, len(repos))
+	errs := make([]error, len(repos))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
 	for i, r := range repos {
@@ -126,10 +141,18 @@ func (g *GitHub) Catalog(ctx context.Context, refresh bool) ([]Release, error) {
 			rel, err := g.release(ctx, r.Name, r.Description)
 			if err == nil {
 				out[i], ok[i] = *rel, true
+			} else {
+				errs[i] = err
 			}
 		}()
 	}
 	wg.Wait()
+	g.failed = nil
+	for i, r := range repos {
+		if errs[i] != nil {
+			g.failed = append(g.failed, RepoError{Name: r.Name, Description: r.Description, Err: errs[i]})
+		}
+	}
 	var rels []Release
 	seen := map[string]bool{}
 	for i := range out {
@@ -198,6 +221,9 @@ func (g *GitHub) release(ctx context.Context, name, desc string) (*Release, erro
 	}
 	compose, err := g.get(ctx, fmt.Sprintf("%s/%s/%s/%s/docker-compose.yml", g.raw, g.cfg.Owner, name, tag), false)
 	if err != nil {
+		if strings.Contains(err.Error(), "HTTP 404") {
+			return nil, fmt.Errorf("%s has no docker-compose.yml: %w", tag, errNoCompose)
+		}
 		return nil, err
 	}
 	envEx, _ := g.get(ctx, fmt.Sprintf("%s/%s/%s/%s/.env.example", g.raw, g.cfg.Owner, name, tag), false)
@@ -219,6 +245,9 @@ func (g *GitHub) release(ctx context.Context, name, desc string) (*Release, erro
 	return &Release{Slug: slug, Repo: name, RepoURL: "https://github.com/" + g.cfg.Owner + "/" + name, Description: desc,
 		Version: strings.TrimPrefix(tag, "v"), Tag: tag, Image: image, Container: ctr, Available: true, compose: compose, envExample: envEx}, nil
 }
+
+// errNoCompose: the release ships no docker-compose.yml (maybe downloads).
+var errNoCompose = errors.New("not a docker app")
 
 var tagRe = regexp.MustCompile(`refs/tags/(v(\d+)\.(\d+)\.(\d+))[\n\x00^]`)
 

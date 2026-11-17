@@ -39,7 +39,12 @@ type Config struct {
 	// Installer: the installer agent's unix socket and token (`pocket-core
 	// installer` on the host). Empty = no Install/Remove buttons.
 	InstallerSocket string
-	InstallerToken  string
+	// AppCatalogURL / AppCatalogKeys: the signed app catalog Core reads
+	// itself for apps that update themselves (INSTALLER_CATALOG_URL,
+	// INSTALLER_CATALOG_KEYS; "github" or empty = the official one).
+	AppCatalogURL  string
+	AppCatalogKeys []string
+	InstallerToken string
 	// InstallerEnabled=false keeps Install/Remove off whatever the admin
 	// switch says (installs on this box are done by hand).
 	InstallerEnabled bool
@@ -149,6 +154,8 @@ func Load() (*Config, error) {
 		BoxDownloads: env("BOX_DOWNLOADS", ""),
 
 		InstallerSocket:  env("INSTALLER_SOCKET", ""),
+		AppCatalogURL:    env("INSTALLER_CATALOG_URL", ""),
+		AppCatalogKeys:   splitList(env("INSTALLER_CATALOG_KEYS", "")),
 		InstallerToken:   env("INSTALLER_TOKEN", ""),
 		InstallerEnabled: envBool("INSTALLER_ENABLED", true),
 		NotifyURL:        env("NOTIFY_URL", ""),
@@ -286,4 +293,9 @@ func (c *Config) Warnings() []string {
 func IsLoopback(host string) bool {
 	host = strings.Trim(strings.ToLower(host), "[]")
 	return host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "::1" || strings.HasPrefix(host, "127.")
+}
+
+// splitList reads a comma or space separated list.
+func splitList(v string) []string {
+	return strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' })
 }

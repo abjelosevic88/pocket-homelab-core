@@ -111,7 +111,7 @@ func catalogBuild(args []string) {
 		fail(err)
 	}
 	if *skip && appstore.SameApps(prev, c) {
-		fmt.Printf("unchanged: %d apps\n", len(c.Apps))
+		fmt.Printf("unchanged: %d apps, %d downloadable\n", len(c.Apps), len(c.Binaries))
 		return
 	}
 	b, err := appstore.Sign(c, key)
@@ -121,7 +121,7 @@ func catalogBuild(args []string) {
 	if err := os.WriteFile(*out, b, 0o644); err != nil {
 		fail(err)
 	}
-	fmt.Printf("wrote %s: %d apps\n", *out, len(c.Apps))
+	fmt.Printf("wrote %s: %d apps, %d downloadable\n", *out, len(c.Apps), len(c.Binaries))
 	if prev != nil {
 		was := map[string]string{}
 		for _, a := range prev.Apps {
@@ -132,6 +132,17 @@ func catalogBuild(args []string) {
 				fmt.Printf("  new  %s %s\n", a.Slug, a.Version)
 			} else if v != a.Version {
 				fmt.Printf("  %s %s → %s\n", a.Slug, v, a.Version)
+			}
+		}
+		wasBin := map[string]string{}
+		for _, a := range prev.Binaries {
+			wasBin[a.Slug] = a.Version
+		}
+		for _, a := range c.Binaries {
+			if v, ok := wasBin[a.Slug]; !ok {
+				fmt.Printf("  new  %s %s (download)\n", a.Slug, a.Version)
+			} else if v != a.Version {
+				fmt.Printf("  %s %s → %s (download)\n", a.Slug, v, a.Version)
 			}
 		}
 	}

@@ -51,20 +51,21 @@ type Server struct {
 	requests    atomic.Int64
 	errors      atomic.Int64
 	http        *http.Client
-	connHTTP    *http.Client      // connectors talking to third-party apps
-	ctx         context.Context   // lives as long as the server; background work hangs off it
-	box         *boxAgent         // the Pocket Box agent (BOX_AGENT); nil off a box
-	boxAddr     *boxAgent         // the Pocket Box address service (BOX_ADDRESS); nil off a box
-	boxDL       *boxAgent         // the Pocket Box downloads service (BOX_DOWNLOADS); nil off a box
-	inst        *installer.Client // the installer agent (INSTALLER_SOCKET); nil = no one-click installs
-	setup       setupQueue        // first-run setup off a Pocket Box: the apps being installed (setup.go)
-	bundleCache bundleCache       // Pocket Box's app bundles, for that setup
-	installs    sync.Map          // job id → *installJob
-	removing    sync.Map          // slug → true: being removed, not health-checked
-	polling     sync.Map          // service id → struct{}: a poll is running
-	nextPoll    sync.Map          // service id → time.Time: when the scheduler polls next
-	provMu      sync.Mutex        // one provisioning at a time: no duplicate accounts from racing clicks
-	rotations   sync.WaitGroup    // background key replacements after a service link was switched off
+	connHTTP    *http.Client       // connectors talking to third-party apps
+	ctx         context.Context    // lives as long as the server; background work hangs off it
+	box         *boxAgent          // the Pocket Box agent (BOX_AGENT); nil off a box
+	boxAddr     *boxAgent          // the Pocket Box address service (BOX_ADDRESS); nil off a box
+	boxDL       *boxAgent          // the Pocket Box downloads service (BOX_DOWNLOADS); nil off a box
+	inst        *installer.Client  // the installer agent (INSTALLER_SOCKET); nil = no one-click installs
+	setup       setupQueue         // first-run setup off a Pocket Box: the apps being installed (setup.go)
+	bundleCache bundleCache        // Pocket Box's app bundles, for that setup
+	installs    sync.Map           // job id → *installJob
+	bins        binaryCatalogCache // the catalog's self-updating apps (binary_updates.go)
+	removing    sync.Map           // slug → true: being removed, not health-checked
+	polling     sync.Map           // service id → struct{}: a poll is running
+	nextPoll    sync.Map           // service id → time.Time: when the scheduler polls next
+	provMu      sync.Mutex         // one provisioning at a time: no duplicate accounts from racing clicks
+	rotations   sync.WaitGroup     // background key replacements after a service link was switched off
 
 	hookMu    sync.Mutex // one subscription sync at a time
 	hookSyncs sync.Map   // service id → hookSyncResult: what the last sync found per person
@@ -281,6 +282,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/links/status", s.handleLinkStatus)
 			r.Post("/services/credential", s.handleServiceCredential)
 			r.Put("/links/modes", s.handleReportModes)
+			r.Get("/apps/self/update", s.handleSelfUpdateCheck)
+			r.Post("/apps/self/update", s.handleSelfUpdateReport)
 			r.Get("/me/links", s.handleMyLinks)
 			r.Put("/me/links/{id}", s.handleUpdateMyLink)
 
