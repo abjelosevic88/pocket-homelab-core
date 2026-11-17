@@ -18,6 +18,7 @@ export interface Release {
   category?: string; icon?: string; page?: string; digest?: string; platforms?: string[]; requires?: Requires
   available?: boolean; running?: string; updatable?: boolean; update_note?: string
   archive?: { name: string; saved_at: string }
+  kind?: 'binary' // runs as a program on the machine and updates itself (Pocket AI)
 }
 interface Catalog {
   status: { owner: string; apps_dir: string; archive_dir: string; public_url: string; proxy: boolean; source?: string; source_url?: string; platform?: string }
@@ -198,11 +199,13 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
                       </label>
                     )}
                     {!a.installed && <RequireChips r={a.requires} />}
-                    {!a.installed && cat?.status.public_url && <div className="muted small mono inst-url">{cat.status.public_url.replace('{slug}', a.slug).replace('{port}', '<port>')}</div>}
+                    {!a.installed && a.kind === 'binary' && <div className="muted small">Runs as a program on your computer, not in Docker: set it up from its download once; after that it updates from here.</div>}
+                    {!a.installed && a.kind !== 'binary' && cat?.status.public_url && <div className="muted small mono inst-url">{cat.status.public_url.replace('{slug}', a.slug).replace('{port}', '<port>')}</div>}
                   </div>
                   {a.installed ? (late && a.updatable
                     ? <button type="button" className="btn primary sm" disabled={!!starting} onClick={() => update(a)} title={`${formatVersion(a.installed_version || a.running)} → ${formatVersion(a.version)}`}>{starting === a.slug ? <Spinner /> : <Icon name="refresh" size={14} />}Update</button>
                     : <span className="pill ok" title={a.installed_version ? `Running ${formatVersion(a.installed_version)}` : undefined}>Installed</span>)
+                    : a.kind === 'binary' ? <a className="btn sm" href={a.page || `${a.repo_url}/releases/latest`} target="_blank" rel="noreferrer"><Icon name="download" size={14} />Get it</a>
                     : a.present ? <span className="pill" title={`A container named ${a.container} already exists on the server but is not registered here. Start it with CORE_URL and the registration key, or remove it first.`}>Container exists</span>
                     : off ? <span className="pill" title={`Built for ${(a.platforms || []).join(', ')}`}>Not for {cat?.status.platform || 'this server'}</span>
                     : <button type="button" className="btn primary sm" disabled={!!starting} onClick={() => install(a)}>{starting === a.slug ? <Spinner /> : <Icon name="download" size={14} />}Install</button>}

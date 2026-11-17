@@ -93,6 +93,11 @@ func (s *Server) runUpdates(ctx context.Context, apply bool) (*updateRun, error)
 	if err != nil {
 		return nil, err
 	}
+	covered := map[string]bool{}
+	for _, rel := range rels {
+		covered[rel.Slug] = true
+	}
+	rels = append(rels, s.binaryReleases(ctx, true, covered)...)
 	apps, err := s.store.ListApps(ctx)
 	if err != nil {
 		return nil, err

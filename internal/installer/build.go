@@ -120,6 +120,7 @@ func BuildCatalog(ctx context.Context, o BuildOptions) (*appstore.Catalog, error
 		}
 	}
 	sort.Slice(c.Apps, func(i, j int) bool { return c.Apps[i].Slug < c.Apps[j].Slug })
+	c.Binaries = buildBinaries(ctx, gh, o, meta, logf)
 	if len(c.Apps) == 0 {
 		return nil, fmt.Errorf("no releases found for github.com/%s/%s*", o.Owner, o.RepoPrefix)
 	}
