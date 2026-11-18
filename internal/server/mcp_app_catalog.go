@@ -1419,7 +1419,7 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	write("projects", "link_pr", "Link a pull request you opened to an issue (numeric id); Pocket Projects then tracks whether it is merged and completes the issue when it is.", "POST", "/issues/{id}/pull-requests", linkPR, "url")
 	read("projects", "projects", "List projects you can see with status, health, progress, lead, start and target dates.", "/projects", "team_id status q")
 	read("projects", "get_project", "Read a project with milestones, latest status updates, documents, resources and stakeholders.", "/projects/{id}", "")
-	newProject := textFields("name summary content start_date target_date").enum("status", "backlog", "planned", "started", "paused", "completed", "canceled").
+	newProject := textFields("name summary content start_date target_date").enum("status", "backlog", "planned", "started", "blocked", "paused", "completed", "canceled").
 		field("team_ids", arraySchema(map[string]any{"type": "integer"})).strings("teams")
 	newProject["teams"].(map[string]any)["description"] = "Team keys like [\"WEB\"]; required instead of team_ids once workspaces are connected."
 	write("projects", "create_project", "Create a project for one or more of your teams.", "POST", "/projects", newProject, "name")
