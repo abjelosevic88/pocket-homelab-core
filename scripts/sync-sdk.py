@@ -6,6 +6,7 @@ from pathlib import Path
 p=argparse.ArgumentParser()
 p.add_argument('--check',action='store_true')
 p.add_argument('--apps-root',type=Path,default=Path(__file__).resolve().parents[2])
+p.add_argument('--app',action='append',default=[],help='only these apps (errors, projects…); every app with a snapshot when left out')
 a=p.parse_args()
 root=Path(__file__).resolve().parents[1]
 files={str(f.relative_to(root)):f.read_bytes() for f in sorted((root/'sdk').glob('*.go')) if not f.name.endswith('_test.go')}
@@ -16,6 +17,7 @@ lock={'source':'https://github.com/abjelosevic88/pocket-homelab-core','contract'
 files['sdk.lock.json']=(json.dumps(lock,indent=2)+'\n').encode()
 files['SHA256SUMS']=''.join(hashlib.sha256(body).hexdigest()+'  '+name+'\n' for name,body in files.items()).encode()
 names=[p.name.removeprefix('pocket-homelab-') for p in sorted(a.apps_root.glob('pocket-homelab-*')) if p.name != 'pocket-homelab-core' and (p/'third_party/pocket-core').is_dir()]
+if a.app:names=[n for n in names if n in a.app]
 apps=[a.apps_root / ('pocket-homelab-'+name) for name in names]
 failed=[]
 for app in apps:

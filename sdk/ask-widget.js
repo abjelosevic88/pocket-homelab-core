@@ -1,6 +1,51 @@
 // Shared Ask panel. Shadow DOM keeps host application styles and layout intact.
 // Apps open it from their own header button (pocket-ask event); the old floating
 // launcher pill is never shown, so it cannot cover full-screen views.
+// Pocket Hub (the native app that shows Pocket apps) puts window.pocketHub in an
+// app's page. Every Pocket app gets the hub's two shortcuts from the shared
+// conventions here, and one call to say what needs the person:
+//   pocketApp.report({ count, status, items, open })  - Activity, the badge (no-op outside the hub)
+//   pocketApp.handle({ navigate, toggleSidebar })      - the app's own ways, when the defaults don't fit
+if (!window.pocketApp) {
+ const hub = window.pocketHub;
+ const sidebarButton = () => [...document.querySelectorAll('[aria-label="Hide the sidebar"],[aria-label="Show the sidebar"]')].find(b => b.getClientRects().length);
+ const defaults = {
+  // A link from another app: the router (React Router, like every Pocket app) follows a history entry
+  // written its way; false when the page didn't take it (the hub then loads the page).
+  navigate: async url => {
+   const u = new URL(url, location.href);
+   if (u.origin !== location.origin) return false;
+   const to = u.pathname + u.search + u.hash;
+   if (location.pathname + location.search + location.hash === to) return true;
+   const st = history.state || {};
+   const next = { usr: null, key: Math.random().toString(36).slice(2, 10), idx: (typeof st.idx === 'number' ? st.idx : 0) + 1 };
+   history.pushState(next, '', to);
+   dispatchEvent(new PopStateEvent('popstate', { state: next }));
+   await new Promise(r => setTimeout(r, 120));
+   const main = document.getElementById('root') || document.body;
+   return location.pathname + location.search === u.pathname + u.search && main.childElementCount > 0 && document.body.innerText.trim().length > 0;
+  },
+  // The "Hide the sidebar" / "Show the sidebar" button every Pocket app has.
+  toggleSidebar: () => { const b = sidebarButton(); if (!b) return false; b.click(); return true },
+ };
+ let own = {};
+ const register = () => hub?.handle?.({ navigate: u => (own.navigate || defaults.navigate)(u), toggleSidebar: () => (own.toggleSidebar || defaults.toggleSidebar)() });
+ register();
+ window.pocketApp = Object.freeze({
+  inHub: !!hub,
+  handle(h) { own = h && typeof h === 'object' ? h : {}; register() },
+  // count: the badge (also an installed web app's); status: what's busy ("2 working");
+  // items: [{ id, title, detail, state: 'needs-you'|'working'|'failed'|'unread'|'done'|'info', url, at }];
+  // open(id): show that item without a reload.
+  report({ count, status, items, open } = {}) {
+   if (count !== undefined) { const n = Number(count) || 0; try { n ? navigator.setAppBadge?.(n) : navigator.clearAppBadge?.() } catch {} }
+   if (!hub) return;
+   if (status !== undefined) hub.setStatus?.(status || null);
+   if (items !== undefined) hub.setItems?.(Array.isArray(items) ? items : [], typeof open === 'function' ? open : undefined);
+  },
+ });
+ window.dispatchEvent(new Event('pocket-app-ready'));
+}
 if (document.querySelector('pocket-ask-launcher')) return;
 const host = document.createElement('pocket-ask-launcher');
 const root = host.attachShadow({mode:'open'});
