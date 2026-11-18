@@ -144,3 +144,35 @@ database locations. Coding tasks still use their usual development tools.
 totals, categories, comparison period and top expenses. The response specifies
 the date range, home currency and integer minor-unit amounts. Notes tools explain
 that `category` is the folder path returned by `pocket_notes_folders`.
+
+## Inside Pocket Hub
+
+Pocket Hub (the native app for the Mac, iPhone and iPad) shows Pocket apps in web views
+and puts `window.pocketHub` in each app's page, on the app's own address only. The same
+`/pocket-ask.js` gives every Pocket app `window.pocketApp`:
+
+```js
+// What needs the person: the hub's Activity panel, its sidebar badge and the Dock.
+// Does nothing outside the hub (apart from an installed web app's badge).
+window.pocketApp?.report({
+  count: 3,                       // the badge
+  status: '1 syncing',            // what's busy, or null
+  items: [{ id: 'ATH-12', title: 'Fix the login', detail: 'Assigned to you',
+            state: 'needs-you',   // needs-you | working | failed | unread | done | info
+            url: location.origin + '/issue/ATH-12', at: '2026-11-18T09:00:00Z' }],
+  open: id => navigate(`/issue/${id}`), // show one without a reload
+})
+
+// The app's own ways, when the shared ones don't fit (a router basename, workspaces).
+window.pocketApp?.handle({
+  navigate: url => true,          // show this page in place; false lets the hub load it
+  toggleSidebar: () => true,      // the hub's App Sidebar shortcut; false if there's none
+})
+```
+
+Without `handle`, a link from another app follows React Router's history (every Pocket
+app's router) and the sidebar shortcut presses the `Hide the sidebar` / `Show the sidebar`
+button. `pocket-app-ready` is dispatched on `window` once `pocketApp` is there.
+
+`scripts/sync-sdk.py --app <name>` copies the SDK snapshot (this script included) into
+just those apps.
