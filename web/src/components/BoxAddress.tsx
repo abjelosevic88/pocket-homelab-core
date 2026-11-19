@@ -136,9 +136,20 @@ export function AddressPanel({ onChosen, startOpen, commitRef }: { onChosen?: ()
     guarded({ mode })
   }
   if (commitRef) commitRef.current = async () => {
-    if (!open || mode === a.mode) return true
+    // Nothing new picked (a new Cloudflare domain counts as new).
+    if (!open || (mode === a.mode && !(mode === 'cloudflare' && zones?.length))) return true
     if (mode === 'cloudflare') {
-      setErr(zones?.length ? `Press “Use ${cleanSub || 'pocket'}.${zoneName}” first, or pick another option.` : 'Sign in with Cloudflare first, or pick another option.')
+      // One step of the Cloudflare sign-in per Continue: sign in (or check the token), then use the name.
+      if (zones?.length) {
+        if (!zone || !cleanSub) { setErr('Pick a domain and a name for the box first.'); return false }
+        const body = { mode: 'cloudflare', zone_id: zone, sub: cleanSub, ...signin }
+        if (a.domain && window.location.hostname.endsWith(a.domain)) { guarded(body); return false }
+        return save(body)
+      }
+      if (zones) { setErr("This sign-in can't change any domain. Add your domain to Cloudflare first, or sign in differently."); return false }
+      if (a.options.oauth && !useToken) { await startOAuth(); return false }
+      if (!token.trim()) { setErr('Paste the token from Cloudflare first, or pick another option.'); return false }
+      await verifyToken()
       return false
     }
     // Moving off the address this page is open on asks first; Continue again goes on.
@@ -152,12 +163,12 @@ export function AddressPanel({ onChosen, startOpen, commitRef }: { onChosen?: ()
       window.location.href = r.url
     } catch (e) { setErr(errMsg(e)); setBusy(false) }
   }
-  const checkToken = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const verifyToken = async () => {
     setBusy(true); setErr('')
     try { const r = await api.post<{ zones: CloudflareZone[] }>(`${ADDRESS}/cloudflare/zones`, { token: token.trim() }); setSignin({ token: token.trim() }); pickZones(r.zones) }
     catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
+  const checkToken = (e: React.FormEvent) => { e.preventDefault(); verifyToken() }
 
   const st = a.status?.state || ''
   const now = a.domain && a.mode !== 'own-ca' && a.mode !== 'plain'
@@ -193,16 +204,16 @@ export function AddressPanel({ onChosen, startOpen, commitRef }: { onChosen?: ()
           <p className="muted small">You need a domain whose DNS is on Cloudflare (the free plan is enough). The box adds two records, <code>name.yourdomain</code> and <code>*.name.yourdomain</code>, pointing at its home address, keeps them current and renews the certificate itself. Some routers block names that point into the home network; if yours does, the box's own address keeps working.</p>
           {!zones && (a.options.oauth && !useToken ? <>
             <div className="row wrap">
-              <button type="button" className="btn primary" onClick={startOAuth} disabled={busy}>{busy ? <Spinner /> : <Icon name="key" size={15} />}Sign in with Cloudflare</button>
+              {!commitRef && <button type="button" className="btn primary" onClick={startOAuth} disabled={busy}>{busy ? <Spinner /> : <Icon name="key" size={15} />}Sign in with Cloudflare</button>}
               <button type="button" className="btn ghost" onClick={() => setUseToken(true)}>Use an API token</button>
             </div>
-            <p className="muted small">Cloudflare asks you to allow “Pocket Box” to read your domains and edit their DNS. You can take that back any time under My Profile → Access Management in Cloudflare.</p>
+            <p className="muted small">{commitRef ? <>Continue takes you to Cloudflare to sign in, then back here. </> : null}Cloudflare asks you to allow “Pocket Box” to read your domains and edit their DNS. You can take that back any time under My Profile → Access Management in Cloudflare.</p>
           </> : <form onSubmit={checkToken} className="stack tight">
             <p className="small"><b>1.</b> <a href={a.options.token_link} target="_blank" rel="noopener noreferrer">Create a token in Cloudflare <Icon name="external" size={12} /></a>. The permissions are filled in already (Zone · Read and DNS · Edit); press <i>Continue to summary</i>, then <i>Create Token</i>.</p>
             <p className="small"><b>2.</b> Paste it here:</p>
             <div className="row wrap">
               <input value={token} onChange={e => setToken(e.target.value)} placeholder="The token Cloudflare shows once" autoComplete="off" spellCheck={false} style={{ flex: '1 1 260px' }} />
-              <button className="btn primary" disabled={busy || !token.trim()}>{busy ? <Spinner /> : null}Next</button>
+              {!commitRef && <button className="btn primary" disabled={busy || !token.trim()}>{busy ? <Spinner /> : null}Next</button>}
               {a.options.oauth && <button type="button" className="btn ghost" onClick={() => setUseToken(false)}>Back</button>}
             </div>
           </form>)}
@@ -215,7 +226,7 @@ export function AddressPanel({ onChosen, startOpen, commitRef }: { onChosen?: ()
             </div>
             <p className="muted small">Pocket Core will be at <b>https://core.{cleanSub || 'pocket'}.{zoneName}</b>, every other app next to it.</p>
             <div className="row wrap">
-              <button type="button" className="btn primary" disabled={busy || !zone || !cleanSub} onClick={() => guarded({ mode: 'cloudflare', zone_id: zone, sub: cleanSub, ...signin })}>{busy ? <Spinner /> : null}Use {cleanSub || 'pocket'}.{zoneName}</button>
+              {!commitRef && <button type="button" className="btn primary" disabled={busy || !zone || !cleanSub} onClick={() => guarded({ mode: 'cloudflare', zone_id: zone, sub: cleanSub, ...signin })}>{busy ? <Spinner /> : null}Use {cleanSub || 'pocket'}.{zoneName}</button>}
               <button type="button" className="btn ghost" onClick={() => { setZones(null); setSignin({}); setErr('') }}>Sign in differently</button>
             </div>
           </div>}
