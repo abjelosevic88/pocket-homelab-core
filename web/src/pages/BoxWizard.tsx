@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useApp } from '../lib/app-context'
 import type { BoxAddress, BoxDownloads, BoxSystem } from '../lib/types'
 import { BOX, BoxLoading, DiskPanel, NetworkPanel, PasswordPanel, TailscalePanel, TimezonePanel, useBoxStatus } from '../components/BoxSystem'
-import { ADDRESS, AddressPanel } from '../components/BoxAddress'
+import { ADDRESS, AddressPanel, type AddressCommit } from '../components/BoxAddress'
 import { DownloadsPanel, downloadsSummary, useBoxDownloads } from '../components/BoxDownloads'
 import { Icon } from '../components/icons'
 import { Spinner } from '../components/ui'
@@ -71,7 +71,17 @@ export default function BoxWizard() {
     await refresh()
     navigate('/', { replace: true })
   }
-  const next = () => (last ? finish() : go(i + 1))
+  // Continue on the address step saves the option picked there first.
+  const commit: AddressCommit = useRef(null)
+  const [saving, setSaving] = useState(false)
+  const next = async () => {
+    if (last) return finish()
+    if (step.id === 'address' && commit.current) {
+      setSaving(true)
+      try { if (!(await commit.current())) return } finally { setSaving(false) }
+    }
+    go(i + 1)
+  }
   const pct = last ? 100 : Math.round(((i + 1) / (total + 1)) * 100)
   const left = total - i
 
@@ -115,7 +125,7 @@ export default function BoxWizard() {
             <p className="wz-sub">{step.sub}</p>
             <div className="wz-body">
               {!st ? <BoxLoading err={err} /> : <>
-                {step.id === 'address' && <AddressPanel startOpen />}
+                {step.id === 'address' && <AddressPanel startOpen commitRef={commit} />}
                 {step.id === 'time' && <TimezonePanel current={st.timezone} onSaved={() => { reload(); go(i + 1) }} />}
                 {step.id === 'network' && <NetworkPanel st={st} onChanged={reload} />}
                 {step.id === 'remote' && <TailscalePanel st={st} onChanged={reload} />}
@@ -141,8 +151,8 @@ export default function BoxWizard() {
             {i > 0 ? <button type="button" className="btn ghost" onClick={() => go(i - 1)}><Icon name="chevron-left" size={15} />Back</button> : <span />}
             <span className="grow" />
             {step.optional && <button type="button" className="btn ghost" onClick={next}>Skip</button>}
-            <button type="button" className="btn primary lg" onClick={next} disabled={finishing}>
-              {finishing ? <Spinner /> : null}{last ? 'Open Pocket Core' : 'Continue'}{!finishing && <Icon name="chevron-right" size={15} />}
+            <button type="button" className="btn primary lg" onClick={next} disabled={finishing || saving}>
+              {finishing || saving ? <Spinner /> : null}{last ? 'Open Pocket Core' : 'Continue'}{!finishing && !saving && <Icon name="chevron-right" size={15} />}
             </button>
           </nav>
         </main>

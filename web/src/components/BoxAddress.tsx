@@ -2,7 +2,7 @@
 // address (<random>.box.pockethomelab.net), the owner's own domain on Cloudflare ("Sign in with
 // Cloudflare" or an API token), or the box's own certificate. The landing page at http://pocket.local
 // asks the same thing before anyone has signed in; here an admin can change it at any time.
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MutableRefObject } from 'react'
 import { api, V1 } from '../lib/api'
 import type { BoxAddress, BoxAddressMode, CloudflareZone } from '../lib/types'
 import { Confirm, errMsg, Loading, Spinner } from './ui'
@@ -41,8 +41,12 @@ function describe(a: BoxAddress): React.ReactNode {
   return <>Getting {want ? <b>{want}</b> : 'the address'} ready{a.status?.message ? `: ${a.status.message}` : '.'}</>
 }
 
-/** The box's address: what it is now, and choosing another. */
-export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; startOpen?: boolean }) {
+/** Filled by AddressPanel for a setup wizard: saves the option picked and says whether to go on. */
+export type AddressCommit = MutableRefObject<(() => Promise<boolean>) | null>
+
+/** The box's address: what it is now, and choosing another. In a setup wizard (commitRef) the
+ *  wizard's Continue saves the option picked, so the panel has no button of its own for it. */
+export function AddressPanel({ onChosen, startOpen, commitRef }: { onChosen?: () => void; startOpen?: boolean; commitRef?: AddressCommit }) {
   const [a, setA] = useState<BoxAddress | null>(null)
   const [err, setErr] = useState('')
   const [open, setOpen] = useState(false)
@@ -104,7 +108,10 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
     try { setA(await api.post<BoxAddress>(`${ADDRESS}/retry`)); window.setTimeout(load, 5000) } catch (e) { setErr(errMsg(e)) } finally { window.setTimeout(() => setRetrying(false), 5000) }
   }
 
-  if (!a) return err ? <Problem text={err} /> : <Loading />
+  if (!a) {
+    if (commitRef) commitRef.current = async () => true
+    return err ? <Problem text={err} /> : <Loading />
+  }
 
   const zoneName = zones?.find(z => z.id === zone)?.name || ''
   const cleanSub = sub.trim().toLowerCase()
@@ -115,7 +122,8 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
       setA(await api.put<BoxAddress>(ADDRESS, body))
       setOpen(false); setZones(null); setToken(''); setSignin({})
       onChosen?.()
-    } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
+      return true
+    } catch (e) { setErr(errMsg(e)); return false } finally { setBusy(false) }
   }
   // Moving off the address this page is open on: say so first.
   const guarded = (body: Record<string, unknown>) => {
@@ -126,6 +134,16 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
   const choose = () => {
     if (mode === 'cloudflare') return
     guarded({ mode })
+  }
+  if (commitRef) commitRef.current = async () => {
+    if (!open || mode === a.mode) return true
+    if (mode === 'cloudflare') {
+      setErr(zones?.length ? `Press “Use ${cleanSub || 'pocket'}.${zoneName}” first, or pick another option.` : 'Sign in with Cloudflare first, or pick another option.')
+      return false
+    }
+    // Moving off the address this page is open on asks first; Continue again goes on.
+    if (a.domain && window.location.hostname.endsWith(a.domain)) { guarded({ mode }); return false }
+    return save({ mode })
   }
   const startOAuth = async () => {
     setBusy(true); setErr('')
@@ -204,7 +222,7 @@ export function AddressPanel({ onChosen, startOpen }: { onChosen?: () => void; s
         </div>}
         <Problem text={err} />
         <div className="row wrap">
-          {mode !== 'cloudflare' && <button type="button" className="btn primary" onClick={choose} disabled={busy || mode === a.mode}>{busy ? <Spinner /> : null}{mode === 'own-ca' ? "Use the box's own certificate" : mode === 'plain' ? "Use this network's addresses" : "Use Pocket's address"}</button>}
+          {mode !== 'cloudflare' && !commitRef && <button type="button" className="btn primary" onClick={choose} disabled={busy || mode === a.mode}>{busy ? <Spinner /> : null}{mode === 'own-ca' ? "Use the box's own certificate" : mode === 'plain' ? "Use this network's addresses" : "Use Pocket's address"}</button>}
           {!(startOpen && a.mode === null) && <button type="button" className="btn ghost" onClick={() => { setOpen(false); setErr(''); setZones(null) }}>Cancel</button>}
         </div>
       </div>}
