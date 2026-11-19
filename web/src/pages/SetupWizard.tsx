@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { useApp } from '../lib/app-context'
@@ -7,7 +7,7 @@ import { shortName } from '../lib/format'
 import type { Release } from '../components/Installer'
 import { Icon } from '../components/icons'
 import { Loading, Spinner, errMsg } from '../components/ui'
-import { ADDRESS, AddressPanel } from '../components/BoxAddress'
+import { ADDRESS, AddressPanel, type AddressCommit } from '../components/BoxAddress'
 import { RemotePanel } from '../components/RemoteAccess'
 import type { BoxAddress } from '../lib/types'
 
@@ -81,6 +81,13 @@ export default function SetupWizard() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [all, setAll] = useState(false) // the whole catalog, to tick single apps
+  // Continue on the address step saves the option picked there, then goes on.
+  const commit: AddressCommit = useRef(null)
+  const [saving, setSaving] = useState(false)
+  const leaveAddress = async () => {
+    setSaving(true)
+    try { if (!commit.current || await commit.current()) setStep('apps') } finally { setSaving(false) }
+  }
 
   // The bundles, the catalog, and whether installs are already under way (a reload mid-install).
   useEffect(() => {
@@ -212,7 +219,7 @@ export default function SetupWizard() {
             <p className="wz-sub">{cur.sub}</p>
             <div className="wz-body">
               {err && <div className="callout danger">{err}</div>}
-              {step === 'address' && <AddressPanel startOpen />}
+              {step === 'address' && <AddressPanel startOpen commitRef={commit} />}
               {step === 'remote' && <RemotePanel />}
               {step === 'address' || step === 'remote' ? null : !setup || !apps ? (!err && <Loading />) : <>
                 {step === 'apps' && <>
@@ -270,7 +277,7 @@ export default function SetupWizard() {
           <nav className="wz-nav">
             {step === 'apps' && steps[at - 1]?.id === 'address' && <button type="button" className="btn ghost" onClick={() => setStep('address')}><Icon name="chevron-left" size={15} />Back</button>}
             <span className="grow" />
-            {step === 'address' && <button type="button" className="btn primary lg" onClick={() => setStep('apps')}>Continue<Icon name="chevron-right" size={15} /></button>}
+            {step === 'address' && <button type="button" className="btn primary lg" onClick={leaveAddress} disabled={saving}>{saving ? <Spinner /> : null}Continue{!saving && <Icon name="chevron-right" size={15} />}</button>}
             {step === 'remote' && <button type="button" className="btn primary lg" onClick={() => setStep('install')}>Continue<Icon name="chevron-right" size={15} /></button>}
             {step === 'apps' && <button type="button" className="btn primary lg" onClick={install} disabled={busy || !chosen.length}>
               {busy ? <Spinner /> : null}{chosen.length ? `Install ${chosen.length} app${chosen.length === 1 ? '' : 's'}` : 'Pick at least one app'}{!busy && <Icon name="chevron-right" size={15} />}
