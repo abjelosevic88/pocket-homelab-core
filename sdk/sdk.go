@@ -59,6 +59,9 @@ type Manifest struct {
 	// Services are third-party services (immich, maloja, dawarich…) the app
 	// reaches for a person through Core instead of a pasted URL and key.
 	Services []ServiceUse `json:"services,omitempty"`
+	// Portable is what Pocket Move may copy out and bring in for a person
+	// (docs/move.md); Register adds the move:export / move:import offers.
+	Portable *Portable `json:"portable,omitempty"`
 }
 
 // ServiceUse asks Core for people's way into a third-party service, by its
@@ -351,6 +354,8 @@ func (c *Client) Register(ctx context.Context, registrationKey string, m Manifes
 			m.Offers = append(m.Offers, Offer{Scope: "events:read", Name: "Read activity events", Description: "Read this person's attributed events through approved app links"})
 		}
 	}
+
+	addPortableOffers(&m)
 
 	auth := c.Token()
 	if auth == "" {
