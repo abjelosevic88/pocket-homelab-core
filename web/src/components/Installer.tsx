@@ -5,6 +5,7 @@ import { formatVersion, shortName } from '../lib/format'
 import { Empty, Loading, Modal, Spinner, errMsg } from './ui'
 import { Icon } from './icons'
 import { useApp } from '../lib/app-context'
+import { useInstallProgress } from './InstallProgress'
 
 // One-click install and removal of Pocket apps (the installer agent on the
 // server does the work; see docs/installer.md).
@@ -124,6 +125,10 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
   useEffect(() => { load() }, [])
   useEffect(() => { if (cat?.running_job && !jobId) setJobId(cat.running_job) }, [cat, jobId])
   const { job } = useJob(jobId, j => { if (j.state === 'done') onInstalled() })
+  // A job of the setup's queue: say where it is in the line.
+  const { progress, open: openProgress } = useInstallProgress()
+  const qItems = progress?.queue?.items || []
+  const qAt = jobId ? qItems.findIndex(i => i.job === jobId) : -1
   const install = async (a: Release) => {
     setStarting(a.slug)
     const restore_from = a.archive && !fresh[a.slug] ? a.archive.name : undefined
@@ -151,6 +156,10 @@ export function InstallModal({ onClose, onInstalled }: { onClose: () => void; on
           {!running && <button type="button" className="btn" onClick={() => { setJobId(null); load() }}>Install another</button>}
           <button type="button" className="btn" onClick={onClose}>{running ? 'Hide' : 'Close'}</button>
         </>}>
+        {qAt >= 0 && <p className="small install-modal-queue" style={{ marginTop: 0 }}>
+          App <b>{qAt + 1} of {qItems.length}</b> you picked · {qItems.filter(i => i.state === 'done').length} ready{' '}
+          <button type="button" className="link-btn" onClick={() => { onClose(); setTimeout(openProgress, 50) }}>Show all</button>
+        </p>}
         {running && <p className="muted small" style={{ marginTop: 0 }}>You can close this; the work keeps going on the server.</p>}
         <JobView job={job} />
       </Modal>

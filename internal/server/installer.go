@@ -180,6 +180,24 @@ func (s *Server) handleInstallerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": st})
 }
 
+// handleInstallProgress is everything on its way, for the progress chip in the top bar (polled every
+// few seconds while something installs): the queue of apps picked in the setup (installed one after
+// the other) and, on a Pocket Box, the apps the box is still fetching.
+func (s *Server) handleInstallProgress(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"queue": nil, "arriving": nil}
+	if s.inst == nil {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if q := s.setup.snapshot(); len(q["items"].([]setupItem)) > 0 {
+		out["queue"] = q
+	}
+	if st, err := s.inst.Status(r.Context()); err == nil && st.Installing != nil {
+		out["arriving"] = st.Installing
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	if s.installerOff(w, r) {
 		return

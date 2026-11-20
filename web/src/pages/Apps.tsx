@@ -7,6 +7,7 @@ import { useApp } from '../lib/app-context'
 import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
 import { InstallModal, RemoveModal } from '../components/Installer'
+import { QueueBar, aboutLeft, summarize, useInstallProgress } from '../components/InstallProgress'
 
 interface Arriving { state: 'downloading' | 'switching' | 'starting'; message: string; apps: string[]; running: number; total: number }
 
@@ -17,6 +18,13 @@ export default function Apps() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [installing, setInstalling] = useState(false)
   const [arriving, setArriving] = useState<Arriving | null>(null)
+  const { progress, open: openProgress } = useInstallProgress()
+  const queue = progress?.queue ? summarize(progress.queue) : null
+  // The top bar's progress follows the queue; reload this list as each app comes up.
+  useEffect(() => {
+    window.addEventListener('pc:apps-changed', reload)
+    return () => window.removeEventListener('pc:apps-changed', reload)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The sidebar's app list loads on its own; tell it whenever this list reloads with something new (an install, a removal, Refresh).
   const shown = useRef('')
   useEffect(() => {
@@ -56,6 +64,19 @@ export default function Apps() {
         {status?.installer && <button type="button" className="btn primary" onClick={() => setInstalling(true)}><Icon name="download" size={15} />Install app</button>}
       </>} />
       {installing && <InstallModal onClose={() => setInstalling(false)} onInstalled={reload} />}
+      {queue && !queue.finished && (
+        <div className="callout info mb install-callout">
+          <Icon name="download" size={15} />
+          <div className="grow">
+            <b>Installing your apps: {queue.done} of {queue.total} ready.</b>{' '}
+            {queue.current ? <>Now {queue.current.name} (app {queue.position} of {queue.total}){queue.left !== undefined ? `, ${aboutLeft(queue.left)}` : ''}. </> : null}
+            {queue.failed > 0 && <>{queue.failed} didn't install. </>}
+            They appear here as they start.
+            <div className="mt-s"><QueueBar q={queue} /></div>
+          </div>
+          <button type="button" className="btn sm" onClick={openProgress}>Show all</button>
+        </div>
+      )}
       {arriving && (
         <div className="callout info mb">
           <Icon name="download" size={15} />
