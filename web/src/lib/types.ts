@@ -126,7 +126,9 @@ export interface BoxAddress {
   plain_url?: string
 }
 /** Tailscale through the installer agent (install.sh). */
-export interface RemoteStatus { state: 'off' | 'host' | 'starting' | 'needs-login' | 'running'; name?: string; ips?: string[]; auth_url?: string; managed: boolean }
+/** route: this machine's home address offered to the tailnet ("192.168.1.20/32"), so the name (which
+ *  points at it) works away from home; route_on once it is approved in Tailscale's admin console. */
+export interface RemoteStatus { state: 'off' | 'host' | 'starting' | 'needs-login' | 'running'; name?: string; ips?: string[]; auth_url?: string; managed: boolean; route?: string; route_on?: boolean }
 export interface CloudflareZone { id: string; name: string }
 
 /** Downloads on the Pocket Box (the box downloads service, BOX_DOWNLOADS): the Usenet provider,

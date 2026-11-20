@@ -116,6 +116,7 @@ type Address struct {
 	signins map[string]cfSignin // finished sign-ins waiting for the domain choice, by pending id
 	oauth   *cfOAuth
 	oauthAt time.Time
+	tsRoute string // the home address Pocket's Tailscale was last told to offer (tailscale.go)
 }
 
 func newAddress(ag *Agent, cfg AddressConfig, log *slog.Logger) *Address {
@@ -661,6 +662,9 @@ type sentAddress struct {
 // sendAddress points the Pocket name at this machine's home address, when it changed and twice a
 // day as a sign of life (names that go quiet for months are given back).
 func (ad *Address) sendAddress(ctx context.Context, a *pocketAccount) error {
+	if !ad.tailnet() && ad.tsRunning(ctx) {
+		ad.tsStatus(ctx) // offers the home address to the tailnet, also when it changed (tailscale.go)
+	}
 	ip := ad.nameTarget(ctx)
 	if ip == "" {
 		if ad.domain() == a.Domain {

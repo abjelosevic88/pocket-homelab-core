@@ -419,3 +419,7 @@
 .mem-meter-heavy { display: flex; flex-wrap: wrap; gap: 6px; }
 .mem-meter-heavy .btn { gap: 6px; }
 .mem-meter-heavy em { font-style: normal; color: var(--muted); font-weight: 500; }
+
+/* Away from home: the one approval left in Tailscale's admin console */
+.remote-approve ol { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 3px; }
+.remote-approve .spinner { vertical-align: -2px; margin-right: 4px; }

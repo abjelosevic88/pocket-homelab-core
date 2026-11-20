@@ -226,3 +226,63 @@ func TestAddressRelease(t *testing.T) {
 		t.Fatal("release changed the install's settings; it should only give the name back")
 	}
 }
+
+// On a home machine Pocket's Tailscale offers the home address to the tailnet (once), and the
+// status says whether the owner approved it: only then does the name work away from home.
+func TestTailscaleOffersHomeAddress(t *testing.T) {
+	home := homeAddress()
+	if home == "" {
+		t.Skip("this machine has no home-network address")
+	}
+	route := home + "/32"
+	ad, dir := testAddress(t)
+	if err := os.MkdirAll(ad.state(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ad.state("choice.json"), []byte(`{"mode":"pocket"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls := filepath.Join(dir, "calls")
+	allowed := filepath.Join(dir, "allowed")
+	if err := os.WriteFile(allowed, []byte(`"100.89.12.103/32"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := filepath.Join(dir, "docker")
+	script := `#!/bin/sh
+echo "$*" >> "` + calls + `"
+case "$*" in
+  inspect*) echo true ;;
+  *"status --json"*) echo "{\"BackendState\":\"Running\",\"Self\":{\"DNSName\":\"pi5.tail.ts.net.\",\"TailscaleIPs\":[\"100.89.12.103\"],\"AllowedIPs\":[$(cat "` + allowed + `")]}}" ;;
+esac
+`
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ad.ag.dk = &Docker{Bin: fake, env: []string{"PATH=" + os.Getenv("PATH")}}
+	ctx := context.Background()
+
+	st := ad.tsStatus(ctx)
+	if st.State != "running" || st.Route != route || st.RouteOn {
+		t.Fatalf("before approval: %+v", st)
+	}
+	st = ad.tsStatus(ctx)
+	log, _ := os.ReadFile(calls)
+	if n := strings.Count(string(log), "set --advertise-routes="+route); n != 1 {
+		t.Fatalf("the route was offered %d times, want once:\n%s", n, log)
+	}
+	// The owner approves it in Tailscale's admin console: it shows among the allowed addresses.
+	if err := os.WriteFile(allowed, []byte(`"100.89.12.103/32","`+route+`"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st = ad.tsStatus(ctx); !st.RouteOn {
+		t.Fatalf("after approval: %+v", st)
+	}
+	// With the name on Tailscale itself there is nothing to offer.
+	env, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	if err := os.WriteFile(filepath.Join(dir, ".env"), append(env, []byte("POCKET_NAME_ON=tailscale\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st = ad.tsStatus(ctx); st.Route != "" {
+		t.Fatalf("name on Tailscale: route %q", st.Route)
+	}
+}
