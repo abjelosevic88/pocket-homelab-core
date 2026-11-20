@@ -69,6 +69,7 @@ export default function Apps() {
           <Icon name="download" size={15} />
           <div className="grow">
             <b>Installing your apps: {queue.done} of {queue.total} ready.</b>{' '}
+            {queue.pause && !queue.current ? <>Next app waits: {queue.pause}. </> : null}
             {queue.current ? <>Now {queue.current.name} (app {queue.position} of {queue.total}){queue.left !== undefined ? `, ${aboutLeft(queue.left)}` : ''}. </> : null}
             {queue.failed > 0 && <>{queue.failed} didn't install. </>}
             They appear here as they start.

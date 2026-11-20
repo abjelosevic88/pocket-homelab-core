@@ -11,7 +11,7 @@ import { Popover, Spinner, rectOf, type Anchor } from './ui'
 // A chip in the top bar shows "12/60"; it opens the whole list. GET /api/v1/installer/progress.
 
 export interface QueueItem { slug: string; name: string; state: 'waiting' | 'installing' | 'done' | 'failed'; error?: string; job?: string; began_at?: string; ended_at?: string }
-interface Queue { running: boolean; started_at?: string; items: QueueItem[] }
+interface Queue { running: boolean; started_at?: string; pause?: string; items: QueueItem[] }
 interface Arriving { state: 'downloading' | 'switching' | 'starting'; message: string; apps: string[]; running: number; total: number }
 interface Progress { queue: Queue | null; arriving: Arriving | null }
 
@@ -19,6 +19,7 @@ export interface QueueSummary {
   total: number; done: number; failed: number; finished: boolean
   current?: QueueItem; position: number // 1-based place of the app installing now
   left?: number // seconds, a guess from the apps done so far
+  pause?: string // why the next app waits for the machine to catch up
   key: string // tells one queue from the next (the "seen it" mark)
 }
 
@@ -30,16 +31,15 @@ export function summarize(q: Queue): QueueSummary {
   const current = idx >= 0 ? items[idx] : undefined
   const waiting = items.filter(i => i.state === 'waiting').length
   const finished = !q.running && waiting === 0 && !current
-  // Time left: the average of the last apps that installed (failures are quick and would flatter it).
-  const took = items.filter(i => i.state === 'done' && i.began_at && i.ended_at)
-    .map(i => (Date.parse(i.ended_at!) - Date.parse(i.began_at!)) / 1000).filter(s => s > 0).slice(-12)
+  // Time left: the pace so far (from the start to the last app that ended), breathers included.
+  const ends = items.map(i => i.ended_at ? Date.parse(i.ended_at) : 0).filter(Boolean)
   let left: number | undefined
-  if (took.length && !finished) {
-    const avg = took.reduce((a, b) => a + b, 0) / took.length
-    const now = current?.began_at ? Math.max(0, avg - (Date.now() - Date.parse(current.began_at)) / 1000) : 0
-    left = waiting * avg + now
+  if (ends.length && q.started_at && !finished) {
+    const per = (Math.max(...ends) - Date.parse(q.started_at)) / 1000 / ends.length
+    const now = current?.began_at ? Math.max(0, per - (Date.now() - Date.parse(current.began_at)) / 1000) : 0
+    if (per > 0) left = waiting * per + now
   }
-  return { total: items.length, done, failed, finished, current, position: idx >= 0 ? idx + 1 : done + failed, left, key: q.started_at || String(items.length) }
+  return { total: items.length, done, failed, finished, current, position: idx >= 0 ? idx + 1 : done + failed, left, pause: finished ? undefined : q.pause, key: q.started_at || String(items.length) }
 }
 
 export function aboutLeft(s?: number): string {
@@ -178,6 +178,9 @@ function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; 
           </span>
         </div>
         <QueueBar q={q} />
+        {q.pause && !q.current && <div className="install-now pause">
+          <Icon name="clock" size={14} /><span className="grow">Next app waits: {q.pause}. Slower, but your machine keeps up.</span>
+        </div>}
         {q.current && <div className="install-now">
           <Spinner size={13} /><span className="grow">Now: <b>{q.current.name}</b> <span className="muted">· app {q.position} of {q.total}</span></span>
         </div>}

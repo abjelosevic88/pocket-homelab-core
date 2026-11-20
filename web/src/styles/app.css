@@ -182,3 +182,4 @@
 .install-callout .install-bar { max-width: 28rem; }
 .sheet .install-panel { padding: 4px 16px 16px; }
 .sheet .install-list { max-height: 50vh; }
+.install-now.pause { color: var(--text-2); }
