@@ -358,3 +358,35 @@
   .wz-head h1 { font-size: 20px; }
   .wz-body .address-facts { display: none; }
 }
+
+/* Compact bundles and install list (both sizes) */
+.setup-bundle-head { display: flex; align-items: baseline; gap: 8px; }
+.setup-bundle-head em { font-style: normal; font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.setup-bundle .address-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.setup-q-state { flex: none; font-size: 12.5px; color: var(--muted); }
+.setup-q-state.done { color: var(--success); }
+.setup-q-state.failed { color: var(--danger); }
+.setup-q-state.installing { color: var(--accent-ink, var(--accent)); font-weight: 600; }
+.setup-q-err { display: block; font-size: 11.5px; color: var(--danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setup-queue .setup-queue-row { padding: 7px 12px; gap: 10px; min-width: 0; }
+.setup-queue .wz-sum-ico { width: 24px; height: 24px; }
+.setup-queue .grow { min-width: 0; }
+.setup-queue b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 761px) {
+  /* one steady card height, whatever the step */
+  .wz-shell { height: min(700px, calc(100% - 44px)); }
+  .setup-bundles { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .setup-bundle.address-choice { padding: 10px 12px; gap: 10px; }
+  .setup-bundle .address-text { -webkit-line-clamp: 1; }
+  .setup-cat { margin-top: 6px; }
+  .setup-apps { gap: 6px; }
+  .setup-app { padding: 7px 10px; }
+  .setup-app-icon { width: 26px; height: 26px; }
+  .wz-summary.setup-queue { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .wz-summary.setup-queue li + li { border-top: 0; }
+  .wz-summary.setup-queue li { box-shadow: 0 1px 0 var(--border), 1px 0 0 var(--border); }
+}
+.setup-queue li { min-width: 0; }
+.setup-queue .setup-queue-row { display: flex; align-items: center; width: 100%; box-sizing: border-box; }
+.setup-queue .grow { flex: 1; overflow: hidden; }
+.setup-queue b { display: block; }
