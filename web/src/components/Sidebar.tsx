@@ -1,6 +1,6 @@
 // Left column: pair/add button, sections, the registered apps (or your apps), settings — the Pocket Calendar sidebar.
 import { useState } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { useApp } from '../lib/app-context'
 import type { App, MyService } from '../lib/types'
 import { bundledIcon, iconCandidates } from '../lib/icons'
@@ -126,18 +126,25 @@ function AppRow({ a, onNavigate }: { a: App; onNavigate: () => void }) {
   const navigate = useNavigate()
   const [menu, setMenu] = useState<Anchor | null>(null)
   const pub = a.open_url || a.public_url || a.url
+  const settings = useMatch(`/apps/${a.slug}`)
+  const openSettings = () => { onNavigate(); navigate(`/apps/${a.slug}`) }
   const items: MenuItem[] = [
-    { label: 'Details', icon: 'info', onSelect: () => { onNavigate(); navigate(`/apps/${a.slug}`) } },
-    ...(pub ? [{ label: 'Open app', icon: 'external', onSelect: () => window.open(pub, '_blank', 'noopener') }] : []),
+    ...(pub ? [{ label: 'Open', icon: 'external', onSelect: () => window.open(pub, '_blank', 'noopener') }] : []),
+    { label: 'App settings', icon: 'settings', onSelect: openSettings },
   ]
+  const title = a.status === 'down' ? `${a.name}: down${a.last_error ? ` — ${a.last_error}` : ''}` : `Open ${a.name}${a.version ? ` ${formatVersion(a.version)}` : ''}`
+  const inner = <>
+    <SbIcon srcs={appIconSrc(a)} letter={short(a.name)[0]} />
+    <span className="cal-name ellipsis">{short(a.name)}</span>
+    <span className={`status-dot ${a.status}`} />
+  </>
   return (
     <li className={`cal-row app-row ${a.status === 'down' ? 'off' : ''}`}>
-      <NavLink to={`/apps/${a.slug}`} onClick={onNavigate} className={({ isActive }) => `cal-check ${isActive ? 'is-active' : ''}`} title={a.status === 'down' ? `${a.name}: down${a.last_error ? ` — ${a.last_error}` : ''}` : `${a.name}${a.version ? ` ${formatVersion(a.version)}` : ''}`}>
-        <SbIcon srcs={appIconSrc(a)} letter={short(a.name)[0]} />
-        <span className="cal-name ellipsis">{short(a.name)}</span>
-        <span className={`status-dot ${a.status}`} />
-      </NavLink>
-      <button type="button" className="btn ghost icon-only xs cal-more" aria-label={`Options for ${a.name}`} aria-haspopup="menu" aria-expanded={!!menu} onClick={e => setMenu(rectOf(e.currentTarget))}><Icon name="more" size={15} /></button>
+      {/* The row opens the app (signed in with Pocket Core); its settings here are in the ⋯ menu. */}
+      {pub
+        ? <a href={pub} target="_blank" rel="noreferrer" onClick={onNavigate} className={`cal-check ${settings ? 'is-active' : ''}`} title={title}>{inner}</a>
+        : <button type="button" onClick={openSettings} className={`cal-check ${settings ? 'is-active' : ''}`} title={title}>{inner}</button>}
+      <button type="button" className="btn ghost icon-only xs cal-more" aria-label={`More for ${a.name}`} title="More" aria-haspopup="menu" aria-expanded={!!menu} onClick={e => setMenu(rectOf(e.currentTarget))}><Icon name="more" size={15} /></button>
       {menu && <Menu anchor={menu} items={items} onClose={() => setMenu(null)} width={190} />}
     </li>
   )
