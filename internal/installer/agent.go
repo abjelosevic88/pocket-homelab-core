@@ -115,6 +115,7 @@ type Agent struct {
 	work sync.Mutex // one install or removal at a time
 
 	healthWait time.Duration
+	pullWaits  []time.Duration // how long before each new try of a download that didn't get through
 	httpc      *http.Client
 
 	addr *Address // the address choice (INSTALLER_ADDRESS_SOCKET); nil = none
@@ -127,7 +128,8 @@ func NewAgent(cfg *Config, log *slog.Logger) *Agent {
 		src = newCatalogSource(cfg, keys)
 	}
 	a := &Agent{cfg: cfg, src: src, dk: NewDocker(), log: log, jobs: map[string]*Job{},
-		healthWait: 3 * time.Minute, httpc: &http.Client{Timeout: 5 * time.Second}}
+		healthWait: 3 * time.Minute, pullWaits: []time.Duration{10 * time.Second, 30 * time.Second, time.Minute},
+		httpc: &http.Client{Timeout: 5 * time.Second}}
 	if cfg.Address.Socket != "" {
 		a.addr = newAddress(a, cfg.Address, log)
 	}
@@ -345,9 +347,21 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return fmt.Errorf("%s %s has no image for %s/%s (only %s)", rel.Repo, rel.Tag, runtime.GOOS, runtime.GOARCH, strings.Join(rel.Platforms, ", "))
 	}
 	a.logf(j, "Found %s %s", rel.Repo, rel.Tag)
+	dir := filepath.Join(a.cfg.AppsDir, rel.Container)
 	cs, err := a.dk.containers(ctx)
 	if err != nil {
 		return err
+	}
+	// What an install that was cut off left behind (the installer restarted in the middle: an update
+	// of Pocket Core, a reboot) must not block this one (interrupted.go).
+	if a.leftover(dir, rel.Container, cs) {
+		a.logf(j, "Clearing what an interrupted install of this app left behind")
+		if err := a.clearLeftover(ctx, dir); err != nil {
+			return fmt.Errorf("an interrupted install left %s behind and it couldn't be cleared: %w", dir, err)
+		}
+		if cs, err = a.dk.containers(ctx); err != nil {
+			return err
+		}
 	}
 	used := map[int]bool{}
 	for _, p := range req.Reserved {
@@ -366,7 +380,6 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 			}
 		}
 	}
-	dir := filepath.Join(a.cfg.AppsDir, rel.Container)
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("%s already exists; move it away first", dir)
 	}
@@ -401,6 +414,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 	if err := writePlan(dir, plan, a.cfg.AppOwner, a.cfg.FilesOwner); err != nil {
 		return err
 	}
+	markInstalling(dir) // gone again once the app answers; found by the next install if this one is cut off
 	if archived != "" {
 		got, err := restoreInto(dir, archived, plan.Dirs)
 		if err != nil {
@@ -424,7 +438,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 	a.logf(j, "Wrote %s (host port %d)", dir, plan.Port)
 
 	a.logf(j, "Downloading %s", rel.ref())
-	if _, err := a.dk.run(ctx, dir, "compose", "pull", "--quiet"); err != nil {
+	if err := a.pull(ctx, j, dir, "compose", "pull", "--quiet"); err != nil {
 		return a.rollback(ctx, j, dir, err)
 	}
 	a.logf(j, "Starting %s", plan.Container)
@@ -442,6 +456,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 		return a.rollback(ctx, j, dir, fmt.Errorf("%w\n%s", err, logs))
 	}
 	a.logf(j, "%s is up", plan.Container)
+	doneInstalling(dir)
 	if a.addr != nil && (a.addr.domain() != "" || a.addr.tailnet()) {
 		if err := a.addr.refreshCaddy(ctx); err != nil {
 			res.Warnings = append(res.Warnings, "The app runs, but Caddy doesn't serve it yet: "+err.Error())
