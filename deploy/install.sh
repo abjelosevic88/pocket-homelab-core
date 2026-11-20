@@ -159,12 +159,19 @@ if [ "$UNINSTALL" = 1 ]; then
 	if [ -n "$DOCKER" ]; then
 		rmi="--rmi all" vols="-v"
 		[ "$KEEP_DATA" != 1 ] || vols=""
-		for d in "$DIR"/apps/*/; do
+		# The apps, and the folders of installs that failed (kept for reading in apps/pocket-archive).
+		for d in "$DIR"/apps/*/ "$DIR"/apps/pocket-archive/*/; do
 			[ -f "$d/docker-compose.yml" ] || continue
 			(cd "$d" && $DOCKER compose down $vols $rmi >/dev/null 2>&1) || true
 		done
 		[ ! -f "$DIR/docker-compose.yml" ] || (cd "$DIR" && $DOCKER compose --profile proxy --profile tailscale --profile domain down $vols $rmi >/dev/null 2>&1) || true
 		for c in $($DOCKER ps -aq --filter name='^pocket-' 2>/dev/null); do $DOCKER rm -f "$c" >/dev/null 2>&1 || true; done
+		# What compose down leaves: older versions of Pocket's own images (every update keeps the one
+		# before) and layers no tag points at any more. Never `prune -a`: other images on this machine stay.
+		for i in $($DOCKER images --format '{{.Repository}} {{.ID}}' 2>/dev/null | awk '$1 ~ /^ghcr\.io\/abjelosevic88\/pocket-homelab-/ {print $2}' | sort -u); do
+			$DOCKER rmi -f "$i" >/dev/null 2>&1 || true
+		done
+		$DOCKER image prune -f >/dev/null 2>&1 || true
 		ok "Containers and images removed"
 	fi
 	FW_WAS=""
