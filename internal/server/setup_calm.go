@@ -98,39 +98,81 @@ func smallMachine() bool {
 	return numCPU() <= 4 || total > 0 && total <= 4<<30
 }
 
+// Where the machine has to be before the next app starts.
+const (
+	maxCPU    = 85  // % of the processor in use
+	maxDisk   = 50  // % of the time waiting on the disk
+	minFreeMB = 400 // MB of memory free (and at least 10%)
+	breatherS = 30  // seconds between apps on a small machine
+)
+
+// pauseInfo is why the next app waits, for the progress panel: what holds it, the machine's
+// numbers right now, the levels it waits for, and when it goes on anyway.
+type pauseInfo struct {
+	Kind     string    `json:"kind"` // breather | cpu | disk | memory
+	Text     string    `json:"text"` // the same in a few words
+	CPU      float64   `json:"cpu"`  // % in use, -1 unknown
+	Disk     float64   `json:"disk"` // % waiting on the disk, -1 unknown
+	FreeMB   uint64    `json:"free_mb"`
+	TotalMB  uint64    `json:"total_mb"`
+	Cores    int       `json:"cores"`
+	MaxCPU   int       `json:"max_cpu"`
+	MaxDisk  int       `json:"max_disk"`
+	MinFree  int       `json:"min_free_mb"`
+	Small    bool      `json:"small"`
+	Since    time.Time `json:"since"`
+	Next     time.Time `json:"next"`     // the next look (a breather: when it ends)
+	Deadline time.Time `json:"deadline"` // the next app starts by then whatever the numbers say
+}
+
+// machineNow fills in the machine's numbers and says what holds the next app ("" = nothing).
+func machineNow(p *pauseInfo) string {
+	p.CPU, p.Disk = readCPU()
+	avail, total := readMemory()
+	p.FreeMB, p.TotalMB, p.Cores = avail>>20, total>>20, numCPU()
+	p.MaxCPU, p.MaxDisk, p.MinFree = maxCPU, maxDisk, minFreeMB
+	switch {
+	case p.CPU > maxCPU:
+		p.Kind, p.Text = "cpu", fmt.Sprintf("the processor is %.0f%% busy", p.CPU)
+	case p.Disk > maxDisk:
+		p.Kind, p.Text = "disk", fmt.Sprintf("the disk is busy (%.0f%% of the time spent waiting on it)", p.Disk)
+	case total > 0 && (avail < minFreeMB<<20 || avail*100/total < 10):
+		p.Kind, p.Text = "memory", fmt.Sprintf("only %d MB of memory is free", p.FreeMB)
+	default:
+		p.Kind, p.Text = "", ""
+	}
+	return p.Kind
+}
+
 // machineBusy says why the next install should wait, or "" when the machine has room.
 func machineBusy() string {
-	busy, wait := readCPU()
-	if busy > 85 {
-		return fmt.Sprintf("the processor is busy (%.0f%% in use)", busy)
-	}
-	if wait > 50 {
-		return fmt.Sprintf("the disk is busy (%.0f%% of the time waiting on it)", wait)
-	}
-	if avail, total := readMemory(); total > 0 && (avail < 400<<20 || avail*100/total < 10) {
-		return fmt.Sprintf("memory is short (%d MB free of %.1f GB)", avail>>20, float64(total)/(1<<30))
-	}
-	return ""
+	var p pauseInfo
+	machineNow(&p)
+	return p.Text
 }
 
 // waitCalm holds the queue before its next app: a breather on a small machine, then until the
 // machine isn't busy (at most calmMaxWait). The reason shows in the progress chip. False = Core stops.
 func (s *Server) waitCalm(first bool) bool {
 	q := &s.setup
-	defer q.setPause("")
-	start := time.Now()
-	if !first && smallMachine() {
-		q.setPause("giving the machine a moment after the last app")
-		if !s.sleep(30 * time.Second) {
+	defer q.setPause(nil)
+	start := time.Now().UTC()
+	p := pauseInfo{Since: start, Deadline: start.Add(calmMaxWait), Small: smallMachine()}
+	if !first && p.Small {
+		machineNow(&p)
+		p.Kind, p.Text, p.Next = "breather", "a short pause between apps", start.Add(breatherS*time.Second)
+		q.setPause(&p)
+		if !s.sleep(breatherS * time.Second) {
 			return false
 		}
 	}
 	for time.Since(start) < calmMaxWait {
-		why := machineBusy()
-		if why == "" {
+		if machineNow(&p) == "" {
 			return true
 		}
-		q.setPause(why)
+		p.Next = time.Now().UTC().Add(calmCheck)
+		cp := p
+		q.setPause(&cp)
 		if !s.sleep(calmCheck) {
 			return false
 		}
@@ -147,8 +189,8 @@ func (s *Server) sleep(d time.Duration) bool {
 	}
 }
 
-func (q *setupQueue) setPause(why string) {
+func (q *setupQueue) setPause(p *pauseInfo) {
 	q.mu.Lock()
-	q.pause = why
+	q.pause = p
 	q.mu.Unlock()
 }

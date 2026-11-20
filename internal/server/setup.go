@@ -75,7 +75,7 @@ type setupItem struct {
 type setupQueue struct {
 	mu      sync.Mutex
 	running bool
-	pause   string // why the next app waits for the machine to catch up (setup_calm.go)
+	pause   *pauseInfo // why the next app waits for the machine to catch up (setup_calm.go)
 	items   []*setupItem
 	userID  int64
 	started time.Time
@@ -90,8 +90,9 @@ func (q *setupQueue) snapshot() map[string]any {
 		items[i] = *it
 	}
 	out := map[string]any{"running": q.running, "items": items}
-	if q.pause != "" {
-		out["pause"] = q.pause
+	if q.pause != nil {
+		out["pause"] = q.pause.Text
+		out["pause_info"] = *q.pause
 	}
 	if !q.started.IsZero() {
 		out["started_at"] = q.started

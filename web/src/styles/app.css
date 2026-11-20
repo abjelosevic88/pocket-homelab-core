@@ -189,3 +189,15 @@
 .install-list li.failed .install-icon { margin-top: 1px; }
 .install-again { flex: none; }
 .install-retry { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--danger-soft); color: var(--text-2); }
+.install-pause { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.45; }
+.install-pause.compact { background: color-mix(in srgb, var(--surface) 70%, transparent); max-width: 44rem; }
+.install-pause-head { display: flex; align-items: center; gap: 8px; }
+.install-pause-head .icon { color: var(--accent); }
+.install-pause p { margin: 0; color: var(--text-2); }
+.install-pause-why { display: grid; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.install-pause-why table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.install-pause-why th { text-align: left; font-weight: 500; color: var(--text-2); padding: 3px 8px 3px 0; white-space: nowrap; }
+.install-pause-why td { padding: 3px 8px 3px 0; font-variant-numeric: tabular-nums; }
+.install-pause-why td.ok { color: var(--success); }
+.install-pause-why td.wait { color: var(--warning); font-weight: 600; }
+.install-pause-why p.muted { font-size: 12px; }
