@@ -332,3 +332,23 @@ func TestExplainDocker(t *testing.T) {
 		t.Fatal("other errors must pass through")
 	}
 }
+
+// A helper published as an image loses its build: (the source isn't in the app's folder); one that
+// only exists as a local build is refused before anything is downloaded.
+func TestBuildPlanHelpers(t *testing.T) {
+	_, doc := plan(t, "helper-published.yml", "pocket-homelab-remote", "remote")
+	g := doc["services"].(map[string]any)["guacd"].(map[string]any)
+	if _, ok := g["build"]; ok {
+		t.Fatalf("guacd kept its build: %v", g)
+	}
+	if g["image"] != "ghcr.io/abjelosevic88/pocket-homelab-remote-guacd:latest" {
+		t.Fatalf("guacd image = %v", g["image"])
+	}
+	rel := &Release{Slug: "remote", Repo: "pocket-homelab-remote", Version: "1.2.3", Tag: "v1.2.3",
+		Image: "ghcr.io/abjelosevic88/pocket-homelab-remote", Container: "pocket-remote", compose: fixture(t, "helper-local.yml")}
+	_, err := BuildPlan(PlanInput{Release: rel, PublicURL: "https://remote.example.org", CoreURL: "http://x:8179",
+		RegistrationKey: "k", AdminEmail: "me@example.org", NextPort: ports(8300), Now: time.Now()})
+	if err == nil || !strings.Contains(err.Error(), "only built from source") {
+		t.Fatalf("local-only helper: err = %v", err)
+	}
+}

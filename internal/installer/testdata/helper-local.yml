@@ -1,0 +1,13 @@
+services:
+  pocket-remote:
+    image: ghcr.io/abjelosevic88/pocket-homelab-remote:latest
+    container_name: pocket-remote
+    network_mode: host
+    depends_on: [guacd]
+    environment:
+      PORT: ${PORT:-8080}
+  guacd:
+    image: pocket-remote-guacd:local
+    build:
+      context: ./deploy/guacd
+    network_mode: host

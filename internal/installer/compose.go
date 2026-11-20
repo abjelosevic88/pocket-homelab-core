@@ -134,6 +134,19 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		}
 		p.Dirs = append(p.Dirs, bindDirs(svc, &p.Notes)...)
 	}
+	// Helper services (guacd, a model server…) come as published images; a build: section points at
+	// source that isn't in the app's folder, so it goes. One that only exists as a local build can't
+	// be installed: say so before anything is downloaded.
+	for i := 0; i+1 < len(svcs.Content); i += 2 {
+		name, s := svcs.Content[i].Value, svcs.Content[i+1]
+		if name == mainName || mapGet(s, "build") == nil {
+			continue
+		}
+		if img := mapGet(s, "image"); img == nil || !strings.Contains(img.Value, "/") {
+			return nil, fmt.Errorf("its %q part is only built from source, not published as an image, so this release can't be installed with one click; a newer release may fix that", name)
+		}
+		mapDel(s, "build")
+	}
 	svc := mapGet(svcs, mainName)
 	mapSet(svc, "image", str(rel.ref()))
 	mapDel(svc, "build")
