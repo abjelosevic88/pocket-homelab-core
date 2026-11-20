@@ -2,8 +2,10 @@ package server
 
 // A small machine (a Raspberry Pi) struggles when the next app's download, unpacking and first
 // start pile onto the last one's. Between the setup's installs Core waits until the machine has
-// caught up: the processor's load and the free memory, as the host's /proc shows them (load and
-// meminfo are not per container). Slower, but nothing gets starved. It never waits forever.
+// caught up: how much of the processor is really in use and the free memory, as the host's /proc
+// shows them (stat and meminfo are not per container). Not the load average: on a Raspberry Pi it
+// counts everything waiting on the SD card and reads 5–6 on a mostly idle machine. Slower, but
+// nothing gets starved. It never waits forever.
 
 import (
 	"bufio"
@@ -17,7 +19,7 @@ import (
 
 // The machine's numbers; variables so tests can stand in for /proc.
 var (
-	readLoad1  = procLoad1
+	readCPU    = procCPU
 	readMemory = procMemory
 	numCPU     = runtime.NumCPU
 )
@@ -27,17 +29,43 @@ const (
 	calmMaxWait = 10 * time.Minute // then the next app goes anyway
 )
 
-func procLoad1() float64 {
-	b, err := os.ReadFile("/proc/loadavg")
+// procCPU samples /proc/stat for a second: the share of the processor in use (not idle, not
+// waiting on the disk) and the share waiting on the disk, in percent. -1, -1 when unknown.
+func procCPU() (busy, iowait float64) {
+	a, ok1 := cpuTimes()
+	time.Sleep(time.Second)
+	b, ok2 := cpuTimes()
+	if !ok1 || !ok2 {
+		return -1, -1
+	}
+	var total float64
+	for i := range b {
+		total += float64(b[i] - a[i])
+	}
+	if total <= 0 {
+		return -1, -1
+	}
+	idle := float64(b[3] - a[3])
+	wait := float64(b[4] - a[4])
+	return 100 * (total - idle - wait) / total, 100 * wait / total
+}
+
+// cpuTimes is the first line of /proc/stat: user nice system idle iowait irq softirq steal.
+func cpuTimes() ([8]uint64, bool) {
+	var t [8]uint64
+	b, err := os.ReadFile("/proc/stat")
 	if err != nil {
-		return 0
+		return t, false
 	}
-	f := strings.Fields(string(b))
-	if len(f) == 0 {
-		return 0
+	line, _, _ := strings.Cut(string(b), "\n")
+	f := strings.Fields(line)
+	if len(f) < 9 || f[0] != "cpu" {
+		return t, false
 	}
-	v, _ := strconv.ParseFloat(f[0], 64)
-	return v
+	for i := range t {
+		t[i], _ = strconv.ParseUint(f[i+1], 10, 64)
+	}
+	return t, true
 }
 
 // procMemory is MemAvailable and MemTotal in bytes (0, 0 when unknown).
@@ -72,9 +100,12 @@ func smallMachine() bool {
 
 // machineBusy says why the next install should wait, or "" when the machine has room.
 func machineBusy() string {
-	cpus := numCPU()
-	if l := readLoad1(); l > float64(cpus)*1.2 {
-		return fmt.Sprintf("the processor is busy (load %.1f on %d cores)", l, cpus)
+	busy, wait := readCPU()
+	if busy > 85 {
+		return fmt.Sprintf("the processor is busy (%.0f%% in use)", busy)
+	}
+	if wait > 50 {
+		return fmt.Sprintf("the disk is busy (%.0f%% of the time waiting on it)", wait)
 	}
 	if avail, total := readMemory(); total > 0 && (avail < 400<<20 || avail*100/total < 10) {
 		return fmt.Sprintf("memory is short (%d MB free of %.1f GB)", avail>>20, float64(total)/(1<<30))
