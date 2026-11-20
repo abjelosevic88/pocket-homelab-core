@@ -4,9 +4,12 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -190,5 +193,36 @@ func TestTailnetIPv4(t *testing.T) {
 	}
 	if got := tailnetIPv4([]string{"192.168.1.5"}); got != "" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// install.sh --uninstall gives the name back straight away, without moving the apps first.
+func TestAddressRelease(t *testing.T) {
+	var gotDelete atomic.Bool
+	names := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/box" {
+			gotDelete.Store(true)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer names.Close()
+	ad, dir := testAddress(t)
+	ad.cfg.NamesURL = names.URL
+	acct := filepath.Dir(ad.private("account.json"))
+	if err := os.MkdirAll(acct, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ad.private("account.json"), []byte(`{"name":"rnqe8r","token":"t","domain":"rnqe8r.box.pockethomelab.net"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	rec := httptest.NewRecorder()
+	ad.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/address/release", nil))
+	if rec.Code != http.StatusOK || !gotDelete.Load() {
+		t.Fatalf("release: code %d, name given back %v: %s", rec.Code, gotDelete.Load(), rec.Body)
+	}
+	if after, _ := os.ReadFile(filepath.Join(dir, ".env")); string(after) != string(before) {
+		t.Fatal("release changed the install's settings; it should only give the name back")
 	}
 }

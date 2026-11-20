@@ -143,7 +143,10 @@ if [ "$UNINSTALL" = 1 ]; then
 	SOCK_A="$DIR/installer/address.sock"
 	if [ -n "$(get POCKET_ADDRESS)" ] && running pocket-core-installer && $SUDO test -S "$SOCK_A"; then
 		printf '  Giving the address back'
-		$SUDO curl -fsS --unix-socket "$SOCK_A" -X PUT -H 'Content-Type: application/json' --data '{"mode":"plain"}' http://agent/v1/address >/dev/null 2>&1 || true
+		# Straight away, without moving the apps back first (they go next anyway); an installer from
+		# before 0.42.14 doesn't know release, so it gets the slower switch back to this network.
+		$SUDO curl -fsS --unix-socket "$SOCK_A" -X POST http://agent/v1/address/release >/dev/null 2>&1 ||
+			$SUDO curl -fsS --unix-socket "$SOCK_A" -X PUT -H 'Content-Type: application/json' --data '{"mode":"plain"}' http://agent/v1/address >/dev/null 2>&1 || true
 		n=0
 		until $DOCKER logs --since 10m pocket-core-installer 2>&1 | grep -q 'gave the Pocket name back\|removed from Cloudflare'; do
 			n=$((n + 1)); [ $n -lt 40 ] || break
