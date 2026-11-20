@@ -21,6 +21,7 @@ import (
 var (
 	readCPU    = procCPU
 	readMemory = procMemory
+	readSwap   = procSwap
 	numCPU     = runtime.NumCPU
 )
 
@@ -92,6 +93,30 @@ func procMemory() (avail, total uint64) {
 	return avail, total
 }
 
+// procSwap is SwapFree and SwapTotal in bytes (0, 0 without swap).
+func procSwap() (free, total uint64) {
+	fh, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0, 0
+	}
+	defer fh.Close()
+	sc := bufio.NewScanner(fh)
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) < 2 {
+			continue
+		}
+		kb, _ := strconv.ParseUint(f[1], 10, 64)
+		switch f[0] {
+		case "SwapFree:":
+			free = kb << 10
+		case "SwapTotal:":
+			total = kb << 10
+		}
+	}
+	return free, total
+}
+
 // smallMachine: four cores or fewer, or 4 GB of memory or less (a Raspberry Pi, a mini PC).
 func smallMachine() bool {
 	_, total := readMemory()
@@ -120,6 +145,8 @@ type pauseInfo struct {
 	MaxDisk  int       `json:"max_disk"`
 	MinFree  int       `json:"min_free_mb"`
 	Small    bool      `json:"small"`
+	SwapUsed int       `json:"swap_used"` // % of the swap space in use, -1 without swap
+	Full     bool      `json:"full"`      // out of memory: more apps would only make it worse
 	Since    time.Time `json:"since"`
 	Next     time.Time `json:"next"`     // the next look (a breather: when it ends)
 	Deadline time.Time `json:"deadline"` // the next app starts by then whatever the numbers say
@@ -131,11 +158,20 @@ func machineNow(p *pauseInfo) string {
 	avail, total := readMemory()
 	p.FreeMB, p.TotalMB, p.Cores = avail>>20, total>>20, numCPU()
 	p.MaxCPU, p.MaxDisk, p.MinFree = maxCPU, maxDisk, minFreeMB
+	p.SwapUsed, p.Full = -1, false
+	if free, st := readSwap(); st > 0 {
+		p.SwapUsed = int((st - free) * 100 / st)
+	}
 	switch {
 	case p.CPU > maxCPU:
 		p.Kind, p.Text = "cpu", fmt.Sprintf("the processor is %.0f%% busy", p.CPU)
 	case p.Disk > maxDisk:
 		p.Kind, p.Text = "disk", fmt.Sprintf("the disk is busy (%.0f%% of the time spent waiting on it)", p.Disk)
+	case outOfMemory(avail, total, p.SwapUsed):
+		// "Available" still counts what can be dropped from the file cache, so a machine can show a
+		// few hundred MB of it while its swap is full and everything waits on the disk.
+		p.Kind, p.Full = "memory", true
+		p.Text = fmt.Sprintf("this machine is out of memory (%d MB free, swap %d%% full)", p.FreeMB, p.SwapUsed)
 	case total > 0 && (avail < minFreeMB<<20 || avail*100/total < 10):
 		p.Kind, p.Text = "memory", fmt.Sprintf("only %d MB of memory is free", p.FreeMB)
 	default:
@@ -151,9 +187,24 @@ func machineBusy() string {
 	return p.Text
 }
 
+// outOfMemory: the swap space is used up (over 90%) and less than a quarter of the memory can still
+// be had. From there every new app pushes running ones onto the disk and the machine crawls.
+func outOfMemory(avail, total uint64, swapUsed int) bool {
+	return total > 0 && swapUsed >= 90 && avail*100/total < 25
+}
+
+type calm int
+
+const (
+	calmGo       calm = iota // room for the next app (or waited long enough)
+	calmStopping             // Core is shutting down
+	calmNoMemory             // out of memory the whole time: don't install more
+)
+
 // waitCalm holds the queue before its next app: a breather on a small machine, then until the
-// machine isn't busy (at most calmMaxWait). The reason shows in the progress chip. False = Core stops.
-func (s *Server) waitCalm(first bool) bool {
+// machine isn't busy (at most calmMaxWait). The reason shows in the progress chip. A machine that is
+// out of memory for the whole wait gets no more apps: calmNoMemory.
+func (s *Server) waitCalm(first bool) calm {
 	q := &s.setup
 	defer q.setPause(nil)
 	start := time.Now().UTC()
@@ -163,21 +214,26 @@ func (s *Server) waitCalm(first bool) bool {
 		p.Kind, p.Text, p.Next = "breather", "a short pause between apps", start.Add(breatherS*time.Second)
 		q.setPause(&p)
 		if !s.sleep(breatherS * time.Second) {
-			return false
+			return calmStopping
 		}
 	}
+	full := false
 	for time.Since(start) < calmMaxWait {
 		if machineNow(&p) == "" {
-			return true
+			return calmGo
 		}
+		full = p.Full
 		p.Next = time.Now().UTC().Add(calmCheck)
 		cp := p
 		q.setPause(&cp)
 		if !s.sleep(calmCheck) {
-			return false
+			return calmStopping
 		}
 	}
-	return true
+	if full {
+		return calmNoMemory
+	}
+	return calmGo
 }
 
 func (s *Server) sleep(d time.Duration) bool {

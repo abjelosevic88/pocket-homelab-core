@@ -88,3 +88,45 @@ func TestSetupQueueNext(t *testing.T) {
 		t.Fatalf("next = %v, want nil", it)
 	}
 }
+
+// Swap used up and little memory to be had = out of memory (a Pi with 80 apps showed 850 MB
+// "available" with its swap full and a load of 90); plenty of memory with a full swap is not.
+func TestOutOfMemory(t *testing.T) {
+	defer func(m func() (uint64, uint64), sw func() (uint64, uint64), c func() (float64, float64)) {
+		readMemory, readSwap, readCPU = m, sw, c
+	}(readMemory, readSwap, readCPU)
+	readCPU = func() (float64, float64) { return 15, 5 }
+	avail, swapFree := uint64(852<<20), uint64(0)
+	readMemory = func() (uint64, uint64) { return avail, 3789 << 20 }
+	readSwap = func() (uint64, uint64) { return swapFree, 2047 << 20 }
+	var p pauseInfo
+	if machineNow(&p) != "memory" || !p.Full || p.SwapUsed != 100 {
+		t.Fatalf("the Pi's numbers: kind %q full %v swap %d", p.Kind, p.Full, p.SwapUsed)
+	}
+	avail = 2500 << 20 // swap full of idle pages, memory to spare: fine
+	if machineNow(&p) != "" || p.Full {
+		t.Fatalf("plenty of memory: kind %q full %v", p.Kind, p.Full)
+	}
+	avail, swapFree = 300<<20, 1500<<20 // short for now, not out: a pause, not a stop
+	if machineNow(&p) != "memory" || p.Full {
+		t.Fatalf("short of memory: kind %q full %v", p.Kind, p.Full)
+	}
+	readSwap = func() (uint64, uint64) { return 0, 0 } // no swap at all
+	if machineNow(&p); p.SwapUsed != -1 || p.Full {
+		t.Fatalf("no swap: used %d full %v", p.SwapUsed, p.Full)
+	}
+}
+
+// The apps still waiting are marked not installed when the queue stops for memory.
+func TestFailWaiting(t *testing.T) {
+	a := &setupItem{Slug: "a", State: "done"}
+	b := &setupItem{Slug: "b", State: "waiting"}
+	c := &setupItem{Slug: "c", State: "waiting"}
+	q := &setupQueue{items: []*setupItem{a, b, c}}
+	if n := q.failWaiting("out of memory"); n != 2 || b.State != "failed" || c.Error != "out of memory" || a.State != "done" || b.Ended == nil {
+		t.Fatalf("n %d, b %+v, c %+v", n, b, c)
+	}
+	if it, _ := q.next(); it != nil {
+		t.Fatalf("nothing should be left to install, got %v", it)
+	}
+}
