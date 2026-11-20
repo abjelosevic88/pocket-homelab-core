@@ -27,6 +27,8 @@ export interface QueueSummary {
   left?: number // seconds, a guess from the apps done so far
   pause?: string // why the next app waits for the machine to catch up
   pauseInfo?: PauseInfo
+  next?: QueueItem // the first app still waiting
+  nextAt: number // its 1-based place
   key: string // tells one queue from the next (the "seen it" mark)
 }
 
@@ -46,7 +48,7 @@ export function summarize(q: Queue): QueueSummary {
     const now = current?.began_at ? Math.max(0, per - (Date.now() - Date.parse(current.began_at)) / 1000) : 0
     if (per > 0) left = waiting * per + now
   }
-  return { total: items.length, done, failed, finished, current, position: idx >= 0 ? idx + 1 : done + failed, left, pause: finished ? undefined : q.pause, pauseInfo: finished ? undefined : q.pause_info, key: q.started_at || String(items.length) }
+  return { total: items.length, done, failed, finished, current, position: idx >= 0 ? idx + 1 : done + failed, left, next: items.find(i => i.state === 'waiting'), nextAt: items.findIndex(i => i.state === 'waiting') + 1, pause: finished ? undefined : q.pause, pauseInfo: finished ? undefined : q.pause_info, key: q.started_at || String(items.length) }
 }
 
 export function aboutLeft(s?: number): string {
@@ -250,10 +252,10 @@ function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; 
   )
 }
 
-function AppIcon({ slug, name }: { slug: string; name: string }) {
+function AppIcon({ slug, name, big }: { slug: string; name: string; big?: boolean }) {
   const [ok, setOk] = useState(true)
   const src = bundledIcon(slug)
-  return <span className="install-icon">{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : shortName(name)[0]}</span>
+  return <span className={big ? 'app-tile-icon' : 'install-icon'}>{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : shortName(name)[0]}</span>
 }
 
 function useNow(on: boolean) {
@@ -320,6 +322,115 @@ export function PauseBox({ q, compact }: { q: QueueSummary; compact?: boolean })
         </table>
         <p className="muted">Measured every 15 seconds. Pausing between apps happens on machines with 4 cores or fewer, or 4 GB of memory or less.</p>
       </div></Collapse>
+    </div>
+  )
+}
+
+// ---- the card at the top of the Apps page: the app installing now and how far it got ----
+
+interface JobSnap { id: string; state: 'running' | 'done' | 'failed'; log: string[]; started_at: string; error?: string }
+
+const STEPS: { label: string; start: RegExp; done: RegExp }[] = [
+  { label: 'Find the newest release', start: /^Looking up/, done: /^Found / },
+  { label: 'Download', start: /^Downloading /, done: /^Starting / },
+  { label: 'Start the app', start: /^Starting /, done: / is up$/ },
+  { label: 'Connect to Pocket Core', start: /( is up$|^Waiting for the app to register)/, done: /^Registered with Pocket Core/ },
+  { label: 'Sign-in and app links', start: /^Registered with Pocket Core/, done: /^App links: / },
+]
+
+function useJobSnap(id?: string) {
+  const [job, setJob] = useState<JobSnap | null>(null)
+  useEffect(() => {
+    setJob(null)
+    if (!id) return
+    let stop = false, timer: number | undefined
+    const tick = async () => {
+      try {
+        const j = await api.get<JobSnap>(`${V1}/installer/jobs/${id}`)
+        if (stop) return
+        setJob(j)
+        if (j.state !== 'running') return
+      } catch { /* the queue's own state still shows */ }
+      if (!stop) timer = window.setTimeout(tick, 2000)
+    }
+    tick()
+    return () => { stop = true; window.clearTimeout(timer) }
+  }, [id])
+  return job
+}
+
+/** Plain words for the installer's last log line. */
+function stepDetail(line?: string): string {
+  if (!line) return 'Getting ready…'
+  if (/^Downloading /.test(line)) return 'Downloading the app. On a slow connection or a memory card this is the longest part.'
+  if (/^Starting /.test(line)) return 'Starting it up and waiting until it answers (up to 3 minutes on a small machine).'
+  if (/ is up$/.test(line) || /^Waiting for the app to register/.test(line)) return 'It runs. Now it introduces itself to Pocket Core.'
+  if (/^Registered with Pocket Core/.test(line)) return 'Setting up sign-in with your Pocket account and the links to your other apps.'
+  if (/^Found /.test(line) || /^Wrote /.test(line)) return 'Found the newest release; preparing its folder.'
+  return line.length > 90 ? line.slice(0, 90) + '…' : line
+}
+
+function pauseShort(p: PauseInfo, now: number): string {
+  const by = ` Starts by ${clock(p.deadline)} at the latest.`
+  switch (p.kind) {
+    case 'breather': return `Short pause between apps; starts in ${mmss(Date.parse(p.next) - now)}.`
+    case 'cpu': return `Waiting for the processor (${Math.round(p.cpu)}% busy, goes on below ${p.max_cpu}%).` + by
+    case 'disk': return `Waiting for the disk (busy ${Math.round(p.disk)}% of the time, goes on below ${p.max_disk}%).` + by
+    case 'memory': return `Waiting for free memory (${gb(p.free_mb)} free, needs ${p.min_free_mb} MB).` + by
+  }
+}
+
+export function InstallingCard() {
+  const { progress, open } = useInstallProgress()
+  const q = progress?.queue ? summarize(progress.queue) : null
+  const job = useJobSnap(q?.current?.job)
+  const now = useNow(!!q && !q.finished)
+  if (!q || q.finished) return null
+  const it = q.current
+  if (!it) {
+    const nx = q.next
+    if (!nx) return null
+    const p = q.pauseInfo
+    return (
+      <div className="app-tile install-tile waiting" role="status" onClick={open}>
+        <div className="app-tile-head">
+          <AppIcon slug={nx.slug} name={nx.name} big />
+          <div className="grow">
+            <div className="app-tile-name">{nx.name}</div>
+            <div className="app-tile-meta">Up next · app {q.nextAt} of {q.total}</div>
+          </div>
+          <span className="pill"><Icon name="clock" size={12} />Waiting</span>
+        </div>
+        <p className="app-tile-desc">{p ? pauseShort(p, now) : 'Starting in a moment…'}</p>
+        <div className="app-tile-foot"><span className="muted small">{q.done} of {q.total} ready</span><span className="grow" /><button type="button" className="btn sm" onClick={e => { e.stopPropagation(); open() }}>Show all</button></div>
+      </div>
+    )
+  }
+  const log = job?.log || []
+  const last = log[log.length - 1]
+  const reached = (re: RegExp) => log.some(l => re.test(l))
+  const since = job?.started_at || it.began_at
+  return (
+    <div className="app-tile install-tile" role="status" aria-live="polite" onClick={open}>
+      <div className="app-tile-head">
+        <AppIcon slug={it.slug} name={it.name} big />
+        <div className="grow">
+          <div className="app-tile-name">{it.name}</div>
+          <div className="app-tile-meta">Installing · app {q.position} of {q.total}{since ? ` · ${mmss(now - Date.parse(since))}` : ''}</div>
+        </div>
+        <span className="pill accent"><Spinner size={11} />Installing</span>
+      </div>
+      <ol className="install-steps">
+        {STEPS.map((s, i) => {
+          const done = reached(s.done) || job?.state === 'done'
+          const active = !done && (reached(s.start) || (i === 0 && !log.length))
+          return <li key={s.label} className={done ? 'done' : active ? 'active' : ''}>
+            {done ? <Icon name="check" size={12} /> : active ? <Spinner size={11} /> : <span className="dot-s" />}{s.label}
+          </li>
+        })}
+      </ol>
+      <p className="app-tile-desc install-detail">{stepDetail(last)}</p>
+      <div className="app-tile-foot"><span className="muted small">{q.done} of {q.total} ready{q.left !== undefined ? ` · ${aboutLeft(q.left)}` : ''}</span><span className="grow" /><button type="button" className="btn sm" onClick={e => { e.stopPropagation(); open() }}>Show all</button></div>
     </div>
   )
 }
