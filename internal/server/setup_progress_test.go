@@ -55,3 +55,26 @@ func TestMachineBusy(t *testing.T) {
 		t.Fatal("4 cores, 4 GB is a small machine")
 	}
 }
+
+// The queue picks an interrupted install first, then the first one waiting (apps tried again too).
+func TestSetupQueueNext(t *testing.T) {
+	a := &setupItem{Slug: "a", State: "done"}
+	b := &setupItem{Slug: "b", State: "failed"}
+	c := &setupItem{Slug: "c", State: "waiting"}
+	q := &setupQueue{items: []*setupItem{a, b, c}}
+	if it, _ := q.next(); it != c {
+		t.Fatalf("next = %v, want c", it)
+	}
+	b.State = "waiting" // tried again
+	if it, _ := q.next(); it != b {
+		t.Fatalf("next = %v, want b", it)
+	}
+	c.State = "installing"
+	if it, st := q.next(); it != c || st != "installing" {
+		t.Fatalf("next = %v %s, want the interrupted c", it, st)
+	}
+	b.State, c.State = "done", "done"
+	if it, _ := q.next(); it != nil {
+		t.Fatalf("next = %v, want nil", it)
+	}
+}

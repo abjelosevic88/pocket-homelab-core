@@ -47,7 +47,7 @@ export function aboutLeft(s?: number): string {
   if (s < 90) return 'about a minute left'
   const m = Math.round(s / 60)
   if (m < 60) return `about ${m} min left`
-  const h = Math.floor(m / 60), r = Math.round((m % 60) / 5) * 5
+  const five = Math.round(m / 5) * 5, h = Math.floor(five / 60), r = five % 60
   return `about ${h} h${r ? ` ${r} min` : ''} left`
 }
 
@@ -157,8 +157,16 @@ export function QueueBar({ q }: { q: QueueSummary }) {
   )
 }
 
+/** Puts the apps that didn't install (all, or one) back in the line. */
+export async function retryFailed(slugs?: string[]) {
+  await api.post(`${V1}/first-apps/retry`, slugs ? { slugs } : {})
+  window.dispatchEvent(new CustomEvent('pc:install-started'))
+}
+
 function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; a?: Arriving; queue: Queue | null; onClose: () => void; onDismiss?: () => void }) {
   const navigate = useNavigate()
+  const [busy, setBusy] = useState('')
+  const retry = async (slug?: string) => { setBusy(slug || '*'); try { await retryFailed(slug ? [slug] : undefined) } catch { /* the list shows what happened */ } setBusy('') }
   const list = useRef<HTMLUListElement>(null)
   // Once it's over, the ones that didn't install come first.
   const items = q?.finished ? [...(queue?.items || [])].sort((x, y) => Number(y.state === 'failed') - Number(x.state === 'failed')) : queue?.items || []
@@ -173,11 +181,15 @@ function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; 
         <div className="install-head">
           <b>{q.finished ? (q.failed ? `${q.done} of ${q.total} apps installed` : `All ${q.total} apps installed`) : 'Installing your apps'}</b>
           <span className="muted small">
-            {q.finished ? (q.failed ? `${q.failed} didn't install; try them again under Apps → Install app.` : 'Each one signs you in with your Pocket Core account.')
+            {q.finished ? (q.failed ? `${q.failed} didn't install. The reason is under each one; try them again below.` : 'Each one signs you in with your Pocket Core account.')
               : <>{q.done} of {q.total} ready{q.failed ? ` · ${q.failed} didn't install` : ''}{q.left !== undefined ? ` · ${aboutLeft(q.left)}` : ''}</>}
           </span>
         </div>
         <QueueBar q={q} />
+        {q.failed > 0 && <div className="install-retry">
+          <span className="grow small">{q.failed} didn't install, often because the machine was too busy to start them in time. Trying again is safe.</span>
+          <button type="button" className="btn sm" onClick={() => retry()} disabled={!!busy}>{busy === '*' ? <Spinner size={12} /> : <Icon name="refresh" size={13} />}Try {q.failed === 1 ? 'it' : `all ${q.failed}`} again</button>
+        </div>}
         {q.pause && !q.current && <div className="install-now pause">
           <Icon name="clock" size={14} /><span className="grow">Next app waits: {q.pause}. Slower, but your machine keeps up.</span>
         </div>}
@@ -188,10 +200,15 @@ function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; 
           {items.map(it => (
             <li key={it.slug} className={it.state}>
               <AppIcon slug={it.slug} name={it.name} />
-              <span className="grow ellipsis">{it.name}</span>
-              <span className="install-state" title={it.error}>
-                {it.state === 'installing' ? <><Spinner size={12} />Installing</> : it.state === 'done' ? <><Icon name="check" size={13} />Ready</> : it.state === 'failed' ? <><Icon name="alert" size={13} />Didn't install</> : 'Waiting'}
+              <span className="grow install-name">
+                <span className="ellipsis">{it.name}</span>
+                {it.state === 'failed' && it.error && <small className="install-err">{it.error}</small>}
               </span>
+              {it.state === 'failed' ? <button type="button" className="btn sm install-again" onClick={() => retry(it.slug)} disabled={!!busy} title="Try this app again">
+                {busy === it.slug ? <Spinner size={12} /> : <Icon name="refresh" size={13} />}Try again
+              </button> : <span className="install-state">
+                {it.state === 'installing' ? <><Spinner size={12} />Installing</> : it.state === 'done' ? <><Icon name="check" size={13} />Ready</> : 'Waiting'}
+              </span>}
             </li>
           ))}
         </ul>
@@ -200,7 +217,7 @@ function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; 
         <div className="install-head"><b>{a.total === 1 ? 'An app is' : `${a.total} apps are`} on the way to this box</b><span className="muted small">{a.message}</span></div>
         {a.state === 'starting' && a.total > 0 && <div className="install-bar"><span style={{ width: `${Math.round(100 * a.running / a.total)}%` }} /></div>}
       </div>}
-      {!q?.finished && <p className="muted small install-note">Keep working; installs carry on on the server, even with this page closed. Each app shows up in the sidebar when it's ready.</p>}
+      {!q?.finished && <p className="muted small install-note">Keep working; installs keep going on the server, even with this page closed. Each app shows up in the sidebar when it's ready.</p>}
       <div className="install-foot">
         {onDismiss && <button type="button" className="btn sm" onClick={onDismiss}>Dismiss</button>}
         <button type="button" className="btn sm primary" onClick={() => { onClose(); navigate('/apps') }}>Open Apps<Icon name="chevron-right" size={14} /></button>
