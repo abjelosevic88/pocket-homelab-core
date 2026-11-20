@@ -160,7 +160,8 @@ export default function SetupWizard() {
   const install = async () => {
     setBusy(true); setErr('')
     try {
-      await api.post(`${V1}/first-apps/install`, { apps: chosen.map(s => ({ slug: s, name: known.get(s)!.name })) })
+      const q = await api.post<Setup['install']>(`${V1}/first-apps/install`, { apps: chosen.map(s => ({ slug: s, name: known.get(s)!.name })) })
+      setSetup(s => s && q?.items ? { ...s, install: q } : s) // the rail counts them from the next step on
       setStep(steps.some(s => s.id === 'remote') ? 'remote' : 'install')
     } catch (e) { setErr(errMsg(e)) }
     setBusy(false)
@@ -229,9 +230,8 @@ export default function SetupWizard() {
                         <input type="checkbox" checked={bundles.has(b.id)} onChange={() => toggleBundle(b)} />
                         <span className="setup-check"><Icon name="check" size={13} /></span>
                         <span className="grow">
-                          <b>{b.name}</b>
-                          <span className="address-text">{b.description}</span>
-                          <span className="address-facts">{b.apps.filter(s => known.has(s)).length} apps</span>
+                          <span className="setup-bundle-head"><b>{b.name}</b><em>{b.apps.filter(s => known.has(s)).length} apps</em></span>
+                          <span className="address-text" title={b.description}>{b.description}</span>
                         </span>
                       </label>
                     ))}
@@ -264,9 +264,8 @@ export default function SetupWizard() {
                       <span className={`wz-sum-ico ${it.state === 'done' ? 'ok' : ''}`}>
                         {it.state === 'installing' ? <Spinner /> : <Icon name={it.state === 'done' ? 'check' : it.state === 'failed' ? 'alert' : 'clock'} size={14} />}
                       </span>
-                      <span className="grow"><b>{it.name}</b><span>{
-                        it.state === 'installing' ? 'Installing…' : it.state === 'waiting' ? 'Waiting' : it.state === 'done' ? 'Ready' : `Didn't install: ${it.error || 'see Apps → Install app'}`
-                      }</span></span>
+                      <span className="grow"><b>{it.name}</b>{it.state === 'failed' && <span className="setup-q-err" title={it.error}>{it.error || 'see Apps → Install app'}</span>}</span>
+                      <span className={`setup-q-state ${it.state}`}>{it.state === 'installing' ? 'Installing…' : it.state === 'waiting' ? 'Waiting' : it.state === 'done' ? 'Ready' : "Didn't install"}</span>
                     </span></li>
                   ))}
                 </ul>}
