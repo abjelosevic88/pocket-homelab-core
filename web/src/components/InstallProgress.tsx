@@ -4,7 +4,7 @@ import { api, V1 } from '../lib/api'
 import { bundledIcon } from '../lib/icons'
 import { shortName } from '../lib/format'
 import { Icon } from './icons'
-import { Popover, Spinner, rectOf, type Anchor } from './ui'
+import { Collapse, Popover, Spinner, rectOf, type Anchor } from './ui'
 
 // How far the apps on their way are, on every page: the apps picked in the setup (Core installs them
 // one after the other, internal/server/setup.go) and, on a Pocket Box, the apps the box still fetches.
@@ -156,10 +156,29 @@ function Ring({ pct }: { pct: number }) {
 
 /** The bar and the line under it, for the Apps page and the chip's panel. */
 export function QueueBar({ q }: { q: QueueSummary }) {
+  const [open, setOpen] = useState(false)
+  const pct = (n: number) => `${(100 * n / Math.max(1, q.total)).toFixed(2)}%`
+  const busy = q.current ? 1 : 0
+  const waiting = Math.max(0, q.total - q.done - q.failed - busy)
+  const label = `${q.done} ready, ${q.failed} didn't install, ${busy ? `${q.current!.name} installing, ` : ''}${waiting} waiting`
   return (
-    <div className="install-bar" role="progressbar" aria-valuemin={0} aria-valuemax={q.total} aria-valuenow={q.done + q.failed}>
-      <span style={{ width: `${Math.round(100 * q.done / Math.max(1, q.total))}%` }} />
-      {q.failed > 0 && <span className="failed" style={{ width: `${Math.round(100 * q.failed / Math.max(1, q.total))}%` }} />}
+    <div className="install-bar-wrap" tabIndex={0} onBlur={() => setOpen(false)}
+      onPointerEnter={e => { if (e.pointerType === 'mouse') setOpen(true) }}
+      onPointerLeave={e => { if (e.pointerType === 'mouse') setOpen(false) }}
+      onPointerUp={e => { if (e.pointerType !== 'mouse') { e.stopPropagation(); setOpen(o => !o) } }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } if (e.key === 'Escape') setOpen(false) }}>
+      <div className="install-bar" role="progressbar" aria-valuemin={0} aria-valuemax={q.total} aria-valuenow={q.done} aria-valuetext={label}>
+        {q.done > 0 && <span className="done" style={{ width: pct(q.done) }} />}
+        {q.failed > 0 && <span className="failed" style={{ width: pct(q.failed) }} />}
+        {busy > 0 && <span className="busy" style={{ width: pct(1) }} />}
+      </div>
+      {open && <div className="install-key" role="tooltip">
+        <b>{q.done} of {q.total} apps ready</b>
+        <span><i className="done" />Ready<em>{q.done}</em></span>
+        {busy > 0 && <span><i className="busy" />Installing now: {q.current!.name}<em>1</em></span>}
+        {q.failed > 0 && <span><i className="failed" />Didn't install (try again in the list)<em>{q.failed}</em></span>}
+        <span><i className="waiting" />{q.finished ? 'Left' : q.pauseInfo ? 'Waiting their turn (paused for the machine)' : 'Waiting their turn'}<em>{waiting}</em></span>
+      </div>}
     </div>
   )
 }
@@ -284,10 +303,12 @@ export function PauseBox({ q, compact }: { q: QueueSummary; compact?: boolean })
       <div className="install-pause-head">
         <Icon name="clock" size={14} />
         <b className="grow">{HEAD[p.kind]}</b>
-        <button type="button" className="link-btn small" onClick={() => setOpen(o => !o)} aria-expanded={open}>{open ? 'Hide' : 'Why?'}</button>
+        <button type="button" className={`link-btn small install-why-btn${open ? ' open' : ''}`} onClick={() => setOpen(o => !o)} aria-expanded={open}>
+          {open ? 'Hide' : 'Why?'}<Icon name="chevron-down" size={13} />
+        </button>
       </div>
       <p>{sentence}</p>
-      {open && <div className="install-pause-why">
+      <Collapse open={open}><div className="install-pause-why">
         <p>Pocket installs apps one at a time and checks the machine between them, so a small computer like a Raspberry Pi doesn't get overloaded. Nothing is stuck; this only makes the installs slower.</p>
         <table>
           <tbody>
@@ -298,7 +319,7 @@ export function PauseBox({ q, compact }: { q: QueueSummary; compact?: boolean })
           </tbody>
         </table>
         <p className="muted">Measured every 15 seconds. Pausing between apps happens on machines with 4 cores or fewer, or 4 GB of memory or less.</p>
-      </div>}
+      </div></Collapse>
     </div>
   )
 }
