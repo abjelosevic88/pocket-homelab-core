@@ -12,6 +12,7 @@ import PairModal from './PairModal'
 import { Avatar, type MenuItem, MenuButton, modalOpen, useIsMobile, useMediaQuery } from './ui'
 import { AskButton } from './AskButton'
 import { InstallChip, InstallProgressProvider } from './InstallProgress'
+import { AddressStrip } from './AddressWatch'
 
 const SIDEBAR_KEY = 'pc-sidebar'
 
@@ -124,6 +125,7 @@ export default function Layout() {
         <Sidebar data={shell} onPair={startPair} onNavigate={closeDrawer} />
       </div>
       <div className="main">
+        <AddressStrip enabled={admin && !!status?.box_address} />
         <TopBar onMenu={toggleSidebar} onPalette={() => setPalette(true)} mobile={mobile} compact={narrow} sidebarOpen={sidebarOpen} data={shell} />
         <main className="content"><div className="content-inner"><Outlet /></div></main>
       </div>

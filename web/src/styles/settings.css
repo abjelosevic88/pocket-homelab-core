@@ -390,3 +390,16 @@
 .setup-queue .setup-queue-row { display: flex; align-items: center; width: 100%; box-sizing: border-box; }
 .setup-queue .grow { flex: 1; overflow: hidden; }
 .setup-queue b { display: block; }
+
+/* The secure address on its way, in the setup's side rail and as a banner once it's ready */
+.addr-rail { display: grid; gap: 3px; margin: auto 6px 0; padding: 10px 12px; border-radius: 12px; background: var(--raised); border: 1px solid var(--border); font-size: 12.5px; }
+.addr-rail + .wz-rail-note { margin-top: 10px; }
+.addr-rail-head { display: flex; align-items: center; gap: 7px; }
+.addr-rail-head .icon { color: var(--accent); }
+.addr-rail-text { color: var(--muted); line-height: 1.4; }
+.addr-rail.ok { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: var(--success-soft); }
+.addr-rail.ok .icon { color: var(--success); }
+.addr-rail-url { font-weight: 600; overflow-wrap: anywhere; color: var(--accent-ink, var(--accent)); }
+.addr-rail.warn .icon { color: var(--warning); }
+.addr-ready { align-items: center; }
+@media (max-width: 760px) { .addr-rail { display: none; } }

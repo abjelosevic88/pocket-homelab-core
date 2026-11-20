@@ -7,9 +7,9 @@ import { shortName } from '../lib/format'
 import type { Release } from '../components/Installer'
 import { Icon } from '../components/icons'
 import { Loading, Spinner, errMsg } from '../components/ui'
-import { ADDRESS, AddressPanel, type AddressCommit } from '../components/BoxAddress'
+import { AddressPanel, type AddressCommit } from '../components/BoxAddress'
+import { AddressRailStatus, AddressReadyBanner, useBoxAddress } from '../components/AddressWatch'
 import { RemotePanel } from '../components/RemoteAccess'
-import type { BoxAddress } from '../lib/types'
 
 // First-run setup of a Core that is not on a Pocket Box (install.sh on any Linux machine): pick the
 // apps to start with, as Pocket Box's bundles or one by one, and Core installs them one after the
@@ -76,7 +76,8 @@ export default function SetupWizard() {
   const [err, setErr] = useState('')
   const steps = STEPS.filter(s => (s.id !== 'address' || status?.box_address) && (s.id !== 'remote' || status?.box_remote))
   const [step, setStep] = useState<StepId>(steps[0].id)
-  const [addr, setAddr] = useState<BoxAddress | null>(null)
+  // The address carries on in the background after the first step: followed on every step (side rail, banner).
+  const addr = useBoxAddress(!!status?.box_address, step)
   const [bundles, setBundles] = useState<Set<string>>(new Set())
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -104,7 +105,6 @@ export default function SetupWizard() {
 
   // At the end: the address Pocket ended up at (a new name means signing in there once more).
   useEffect(() => {
-    if (step === 'done' && status?.box_address) api.get<BoxAddress>(ADDRESS).then(setAddr).catch(() => setAddr(null))
   }, [step])
 
   // While installing: follow the queue.
@@ -205,6 +205,7 @@ export default function SetupWizard() {
               </li>
             ))}
           </ol>
+          <AddressRailStatus a={addr} />
           <p className="wz-rail-note">Apps can be added and removed any time under Apps.</p>
         </aside>
 
@@ -220,6 +221,7 @@ export default function SetupWizard() {
             <p className="wz-sub">{cur.sub}</p>
             <div className="wz-body">
               {err && <div className="callout danger">{err}</div>}
+              {step !== 'address' && step !== 'done' && <AddressReadyBanner a={addr} />}
               {step === 'address' && <AddressPanel startOpen commitRef={commit} />}
               {step === 'remote' && <RemotePanel />}
               {step === 'address' || step === 'remote' ? null : !setup || !apps ? (!err && <Loading />) : <>
