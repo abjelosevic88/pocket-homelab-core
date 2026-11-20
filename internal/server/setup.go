@@ -118,6 +118,22 @@ func (q *setupQueue) set(it *setupItem, state, errText, job string) {
 	q.persist()
 }
 
+// failWaiting marks every app still waiting as not installed, with the reason; it returns how many.
+func (q *setupQueue) failWaiting(reason string) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := time.Now().UTC()
+	n := 0
+	for _, it := range q.items {
+		if it.State == "waiting" {
+			it.State, it.Error, it.Ended = "failed", reason, &now
+			n++
+		}
+	}
+	q.persist()
+	return n
+}
+
 // persist saves the queue (q.mu held).
 func (q *setupQueue) persist() {
 	if q.save == nil {
@@ -218,6 +234,8 @@ func (s *Server) handleFirstApps(w http.ResponseWriter, r *http.Request) {
 		"pending": s.setupPending(r.Context()),
 		"bundles": s.bundles(r.Context()),
 		"install": s.setup.snapshot(),
+		"machine": machineSize(), // for the memory meter on "Choose your apps" (setup_memory.go)
+		"memory":  memoryGuide(),
 	})
 }
 
@@ -317,7 +335,14 @@ func (s *Server) runSetupInstall(u *store.User) {
 			q.set(it, "done", "", "")
 			continue
 		}
-		if !s.waitCalm(first) {
+		switch s.waitCalm(first) {
+		case calmStopping:
+			return
+		case calmNoMemory:
+			// Installing on would only push running apps onto the disk until nothing answers. The
+			// rest stay uninstalled, each with the reason and Try again.
+			n := q.failWaiting("Not installed: this machine is out of memory. Stop or remove some apps (the heavy ones first), then try again.")
+			s.log.Warn("setup install: stopped, the machine is out of memory", "left", n)
 			return
 		}
 		first = false

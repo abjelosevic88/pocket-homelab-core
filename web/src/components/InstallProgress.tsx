@@ -15,6 +15,7 @@ export interface PauseInfo {
   kind: 'breather' | 'cpu' | 'disk' | 'memory'; text: string
   cpu: number; disk: number; free_mb: number; total_mb: number; cores: number
   max_cpu: number; max_disk: number; min_free_mb: number; small: boolean
+  swap_used?: number; full?: boolean // out of memory: the queue stops instead of going on
   since: string; next: string; deadline: string
 }
 interface Queue { running: boolean; started_at?: string; pause?: string; pause_info?: PauseInfo; items: QueueItem[] }
@@ -286,7 +287,9 @@ export function pauseSentence(p: PauseInfo, now: number): string {
     case 'breather': return `Your machine is on the small side (${p.cores} cores, ${gb(p.total_mb)} memory), so each new app gets a few seconds to settle before the next one starts. Next app in ${mmss(Date.parse(p.next) - now)}.`
     case 'cpu': return `The processor is ${Math.round(p.cpu)}% busy right now. Starting another app on top would slow everything down, so the next one starts once it's below ${p.max_cpu}%. Apps that just started (an office suite, a photo library) often keep it busy for a few minutes.` + latest
     case 'disk': return `The machine spends ${Math.round(p.disk)}% of its time waiting on its disk. Memory cards, like a Raspberry Pi's, are slow; the next app starts once that's below ${p.max_disk}%.` + latest
-    case 'memory': return `Only ${gb(p.free_mb)} of ${gb(p.total_mb)} memory is free. Another app needs room, so the next one starts once at least ${p.min_free_mb} MB is free. If this keeps happening, this machine may have more apps than it can run comfortably.` + latest
+    case 'memory':
+      if (p.full) return `This machine is out of memory: ${gb(p.total_mb)} in all, and its swap space is ${p.swap_used}% full, so everything waits on the disk. More apps would only make it worse. If it is still like this at ${clock(p.deadline)}, the apps left are not installed; stop or remove some apps (the heavy ones first), then try them again.`
+      return `Only ${gb(p.free_mb)} of ${gb(p.total_mb)} memory is free. Another app needs room, so the next one starts once at least ${p.min_free_mb} MB is free. If this keeps happening, this machine may have more apps than it can run comfortably.` + latest
   }
 }
 
@@ -304,7 +307,7 @@ export function PauseBox({ q, compact }: { q: QueueSummary; compact?: boolean })
     <div className={`install-pause${compact ? ' compact' : ''}`} title={sentence}>
       <div className="install-pause-head">
         <Icon name="clock" size={14} />
-        <b className="grow">{HEAD[p.kind]}</b>
+        <b className="grow">{p.full ? 'Out of memory' : HEAD[p.kind]}</b>
         <button type="button" className={`link-btn small install-why-btn${open ? ' open' : ''}`} onClick={() => setOpen(o => !o)} aria-expanded={open}>
           {open ? 'Hide' : 'Why?'}<Icon name="chevron-down" size={13} />
         </button>
@@ -376,7 +379,9 @@ function pauseShort(p: PauseInfo, now: number): string {
     case 'breather': return `Short pause between apps; starts in ${mmss(Date.parse(p.next) - now)}.`
     case 'cpu': return `Waiting for the processor (${Math.round(p.cpu)}% busy, goes on below ${p.max_cpu}%).` + by
     case 'disk': return `Waiting for the disk (busy ${Math.round(p.disk)}% of the time, goes on below ${p.max_disk}%).` + by
-    case 'memory': return `Waiting for free memory (${gb(p.free_mb)} free, needs ${p.min_free_mb} MB).` + by
+    case 'memory':
+      if (p.full) return `This machine is out of memory (swap ${p.swap_used}% full). If it stays so until ${clock(p.deadline)}, the apps left are not installed.`
+      return `Waiting for free memory (${gb(p.free_mb)} free, needs ${p.min_free_mb} MB).` + by
   }
 }
 

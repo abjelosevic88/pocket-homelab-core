@@ -17,7 +17,12 @@ import { RemotePanel } from '../components/RemoteAccess'
 
 interface Bundle { id: string; name: string; description: string; apps: string[] }
 interface QueueItem { slug: string; name: string; state: 'waiting' | 'installing' | 'done' | 'failed'; error?: string }
-interface Setup { pending: boolean; bundles: { base: string[]; bundles: Bundle[] }; install: { running: boolean; items: QueueItem[] } }
+/** What apps need in memory (internal/server/setup_memory.go): per app, and per service one brings along. */
+interface MemoryGuide { app_mb: number; helper_over_mb: number; unknown_helper_mb: number; system_mb: number; helpers: { match: string; name: string; mb: number }[] }
+interface Setup {
+  pending: boolean; bundles: { base: string[]; bundles: Bundle[] }; install: { running: boolean; items: QueueItem[] }
+  machine?: { memory_mb: number; swap_mb: number; cores: number }; memory?: MemoryGuide
+}
 
 type StepId = 'address' | 'apps' | 'remote' | 'install' | 'done'
 const STEPS: { id: StepId; icon: string; title: string; sub: string; optional?: boolean }[] = [
@@ -43,6 +48,46 @@ function serviceName(svc: string): string {
   const fromImage = img.split(':')[0].split('/').pop() || ''
   for (const n of [key.split('-')[0], fromImage.split('-')[0], fromImage]) if (KNOWN[n]) return KNOWN[n]
   return key
+}
+
+/** About how much memory an app needs once it runs, in MB. */
+function appMB(a: Release, g: MemoryGuide): number {
+  let mb = g.app_mb
+  for (const svc of a.requires?.services || []) {
+    const h = g.helpers.find(h => svc.toLowerCase().includes(h.match))
+    mb += (h ? h.mb : g.unknown_helper_mb) + g.helper_over_mb
+  }
+  return mb
+}
+const gb = (mb: number) => mb >= 1000 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb / 10) * 10} MB`
+
+/** The memory the picks need against what this machine has, with the heaviest picks to untick. */
+function MemoryMeter({ setup, chosen, installed, known, toggle }: { setup: Setup; chosen: string[]; installed: string[]; known: Map<string, Release>; toggle: (slug: string) => void }) {
+  const g = setup.memory, have = setup.machine?.memory_mb || 0
+  if (!g || !have || !chosen.length) return null
+  const size = (slug: string) => appMB(known.get(slug)!, g)
+  const need = g.system_mb + [...chosen, ...installed].reduce((n, s) => n + size(s), 0)
+  const pct = need / have
+  const state = pct > 1 ? 'over' : pct > 0.8 ? 'tight' : 'ok'
+  const heavy = chosen.map(s => ({ slug: s, mb: size(s), name: shortName(known.get(s)!.name) })).filter(h => h.mb >= 120).sort((x, y) => y.mb - x.mb).slice(0, 5)
+  return (
+    <div className={`mem-meter ${state}`}>
+      <div className="mem-meter-head">
+        <b>{state === 'over' ? "Too much for this machine's memory" : state === 'tight' ? "Close to this machine's memory" : 'Fits in memory'}</b>
+        <span>your picks need about <b>{gb(need)}</b> · this machine has <b>{gb(have)}</b></span>
+      </div>
+      <div className="mem-meter-bar" role="img" aria-label={`About ${Math.round(pct * 100)}% of this machine's memory`}><span style={{ width: `${Math.min(100, Math.round(pct * 100))}%` }} /></div>
+      {state !== 'ok' && <p>
+        {state === 'over'
+          ? 'They would install, and then the machine runs out of memory: pages stop loading and apps show as down. Pick fewer apps; the rest stay one click away under Apps → Install app.'
+          : 'It will work, but may feel slow when several apps are busy at once.'}
+        {heavy.length > 0 && <> The heaviest of your picks (click to leave one out):</>}
+      </p>}
+      {state !== 'ok' && heavy.length > 0 && <div className="mem-meter-heavy">
+        {heavy.map(h => <button key={h.slug} type="button" className="btn sm" onClick={() => toggle(h.slug)} title={`Leave ${h.name} out`}>{h.name} <em>≈ {gb(h.mb)}</em><Icon name="x" size={12} /></button>)}
+      </div>}
+    </div>
+  )
 }
 
 /** What an app brings along, so a big one (Immich, ONLYOFFICE…) is no surprise. */
@@ -226,6 +271,7 @@ export default function SetupWizard() {
               {step === 'remote' && <RemotePanel />}
               {step === 'address' || step === 'remote' ? null : !setup || !apps ? (!err && <Loading />) : <>
                 {step === 'apps' && <>
+                  <MemoryMeter setup={setup} chosen={chosen} installed={installed} known={known} toggle={toggleApp} />
                   <div className="setup-bundles">
                     {setup.bundles.bundles.map(b => (
                       <label key={b.id} className={`address-choice setup-bundle ${bundles.has(b.id) ? 'on' : ''}`}>

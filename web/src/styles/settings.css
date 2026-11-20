@@ -403,3 +403,19 @@
 .addr-rail.warn .icon { color: var(--warning); }
 .addr-ready { align-items: center; }
 @media (max-width: 760px) { .addr-rail { display: none; } }
+
+/* Memory the picked apps need against what the machine has ("Choose your apps") */
+.mem-meter { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; }
+.mem-meter-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--text-2); }
+.mem-meter-head > b { color: var(--text); font-size: 13.5px; }
+.mem-meter-bar { height: 7px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.mem-meter-bar span { display: block; height: 100%; border-radius: inherit; background: var(--success); transition: width .3s ease, background .3s ease; }
+.mem-meter p { margin: 0; color: var(--text-2); line-height: 1.45; }
+.mem-meter.tight { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: var(--warning-soft); }
+.mem-meter.tight .mem-meter-bar span { background: var(--warning); }
+.mem-meter.over { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: var(--danger-soft); }
+.mem-meter.over .mem-meter-bar span { background: var(--danger); }
+.mem-meter.over .mem-meter-head > b { color: var(--danger); }
+.mem-meter-heavy { display: flex; flex-wrap: wrap; gap: 6px; }
+.mem-meter-heavy .btn { gap: 6px; }
+.mem-meter-heavy em { font-style: normal; color: var(--muted); font-weight: 500; }
