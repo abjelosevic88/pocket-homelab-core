@@ -75,6 +75,7 @@ type setupItem struct {
 type setupQueue struct {
 	mu      sync.Mutex
 	running bool
+	pause   string // why the next app waits for the machine to catch up (setup_calm.go)
 	items   []*setupItem
 	userID  int64
 	started time.Time
@@ -89,6 +90,9 @@ func (q *setupQueue) snapshot() map[string]any {
 		items[i] = *it
 	}
 	out := map[string]any{"running": q.running, "items": items}
+	if q.pause != "" {
+		out["pause"] = q.pause
+	}
 	if !q.started.IsZero() {
 		out["started_at"] = q.started
 	}
@@ -270,6 +274,7 @@ func (s *Server) runSetupInstall(u *store.User, items []*setupItem) {
 		q.running = false
 		q.mu.Unlock()
 	}()
+	first := true
 	for _, it := range items {
 		if s.ctx.Err() != nil {
 			return // Core is stopping: the saved queue carries on when it is back
@@ -291,6 +296,10 @@ func (s *Server) runSetupInstall(u *store.User, items []*setupItem) {
 			q.set(it, "done", "", "")
 			continue
 		}
+		if !s.waitCalm(first) {
+			return
+		}
+		first = false
 		q.set(it, "installing", "", "")
 		j, err := s.startSetupInstall(u, it)
 		if err != nil {
