@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -326,7 +327,9 @@ func (s *Server) runSetupInstall(u *store.User) {
 			if s.ctx.Err() != nil {
 				return
 			}
-			if s.isRegistered(it.Slug) {
+			// "already exists": an install of it from before a restart of Core got there first and
+			// the app is on its way; give it time to register before calling this a failure.
+			if s.isRegistered(it.Slug) || strings.Contains(err.Error(), "already exists") && s.waitRegistered(it.Slug, 3*time.Minute) {
 				q.set(it, "done", "", "")
 			} else {
 				q.set(it, "failed", err.Error(), "")
@@ -354,6 +357,19 @@ func (s *Server) runSetupInstall(u *store.User) {
 		}
 		s.log.Info("setup install", "slug", it.Slug, "state", it.State)
 	}
+}
+
+// waitRegistered waits up to d for the app to register (false when it didn't, or Core is stopping).
+func (s *Server) waitRegistered(slug string, d time.Duration) bool {
+	for until := time.Now().Add(d); time.Now().Before(until); {
+		if s.isRegistered(slug) {
+			return true
+		}
+		if !s.sleep(2 * time.Second) {
+			return false
+		}
+	}
+	return s.isRegistered(slug)
 }
 
 func (s *Server) isRegistered(slug string) bool {

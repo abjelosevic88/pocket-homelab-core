@@ -161,7 +161,7 @@ func (a *Agent) update(ctx context.Context, j *Job, req UpdateRequest) error {
 
 	// Download first, while the old version still runs.
 	a.logf(j, "Downloading %s", rel.ref())
-	if _, err := a.dk.run(ctx, "", "pull", "--quiet", rel.ref()); err != nil {
+	if err := a.pull(ctx, j, "", "pull", "--quiet", rel.ref()); err != nil {
 		return err
 	}
 

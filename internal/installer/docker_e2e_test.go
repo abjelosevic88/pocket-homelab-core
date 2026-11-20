@@ -103,9 +103,22 @@ func TestDockerEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	// What an install cut off by a restart of the installer leaves: the folder with its compose file
+	// and nothing running. It used to block every later try ("already exists; move it away first").
+	half := filepath.Join(cfg.AppsDir, ctrName)
+	os.MkdirAll(filepath.Join(half, "data"), 0o755)
+	os.WriteFile(filepath.Join(half, "docker-compose.yml"), []byte("services: {}\n"), 0o644)
+	os.WriteFile(filepath.Join(half, ".env"), []byte("ADMIN_EMAIL=old@example.test\n"), 0o600)
+
 	j := &Job{}
 	if err := a.install(ctx, j, InstallRequest{Slug: "e2e-habits", Name: "Pocket Habits (e2e)", RegistrationKey: "e2e-key", AdminEmail: "e2e@example.test", AdminName: "E2E"}); err != nil {
 		t.Fatalf("install: %v\n%s", err, strings.Join(j.Log, "\n"))
+	}
+	if !strings.Contains(strings.Join(j.Log, "\n"), "Clearing what an interrupted install") {
+		t.Fatalf("the half-made folder was not cleared:\n%s", strings.Join(j.Log, "\n"))
+	}
+	if _, err := os.Stat(filepath.Join(half, installingMarker)); err == nil {
+		t.Fatal("the installing mark is still there after the app came up")
 	}
 	t.Logf("install log:\n%s", strings.Join(j.Log, "\n"))
 	res := j.Result
