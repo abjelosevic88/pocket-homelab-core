@@ -2,6 +2,7 @@ package installer
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -319,5 +320,15 @@ func TestAgentAuthAndCatalog(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("removing core: %d", rec.Code)
+	}
+}
+
+func TestExplainDocker(t *testing.T) {
+	err := explainDocker(errors.New("docker compose up: failed to create network pocket-x_default: Error response from daemon: all predefined address pools have been fully subnetted"))
+	if !strings.Contains(err.Error(), "no network addresses left") {
+		t.Fatalf("not explained: %v", err)
+	}
+	if other := errors.New("boom"); explainDocker(other) != other {
+		t.Fatal("other errors must pass through")
 	}
 }
