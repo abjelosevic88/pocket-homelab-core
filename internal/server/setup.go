@@ -159,7 +159,7 @@ func (s *Server) resumeFirstApps(ctx context.Context) {
 	q.running = true
 	q.mu.Unlock()
 	s.log.Info("setup install: carrying on after a restart", "apps", len(items))
-	go s.runSetupInstall(u, items)
+	go s.runSetupInstall(u)
 }
 
 // setupPending says whether the admin still gets the setup: a Core with an installer agent but no
@@ -262,12 +262,30 @@ func (s *Server) handleFirstAppsInstall(w http.ResponseWriter, r *http.Request) 
 	q.persist()
 	q.mu.Unlock()
 	user := *u
-	go s.runSetupInstall(&user, items)
+	go s.runSetupInstall(&user)
 	writeJSON(w, http.StatusAccepted, q.snapshot())
 }
 
+// next is the queue's next app: one a restart interrupted, else the first one waiting (apps tried
+// again go back to waiting, so they are picked up too). Nil = nothing left. The state is a copy.
+func (q *setupQueue) next() (*setupItem, string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, it := range q.items {
+		if it.State == "installing" {
+			return it, it.State
+		}
+	}
+	for _, it := range q.items {
+		if it.State == "waiting" {
+			return it, it.State
+		}
+	}
+	return nil, ""
+}
+
 // runSetupInstall installs the queue's apps in order; one that fails doesn't stop the rest.
-func (s *Server) runSetupInstall(u *store.User, items []*setupItem) {
+func (s *Server) runSetupInstall(u *store.User) {
 	q := &s.setup
 	defer func() {
 		q.mu.Lock()
@@ -275,14 +293,15 @@ func (s *Server) runSetupInstall(u *store.User, items []*setupItem) {
 		q.mu.Unlock()
 	}()
 	first := true
-	for _, it := range items {
+	for {
 		if s.ctx.Err() != nil {
 			return // Core is stopping: the saved queue carries on when it is back
 		}
-		if it.State == "done" || it.State == "failed" {
-			continue
+		it, state := q.next()
+		if it == nil {
+			return
 		}
-		if it.State == "installing" {
+		if state == "installing" {
 			// Interrupted by a restart: the agent kept going, so give the app time to register.
 			for i := 0; i < 45 && !s.isRegistered(it.Slug); i++ {
 				select {
@@ -359,6 +378,52 @@ func (s *Server) startSetupInstall(u *store.User, it *setupItem) (*installJob, e
 		case <-time.After(10 * time.Second):
 		}
 	}
+}
+
+// POST /api/v1/first-apps/retry {slugs?: [...]}: the apps that didn't install (all, or these) go
+// back in the line; the queue starts again if it had finished.
+func (s *Server) handleFirstAppsRetry(w http.ResponseWriter, r *http.Request) {
+	if s.installerOff(w, r) {
+		return
+	}
+	var in struct {
+		Slugs []string `json:"slugs"`
+	}
+	_ = decode(r, &in) // an empty body = all of them
+	u := userFrom(r.Context())
+	if u == nil {
+		writeErr(w, http.StatusUnauthorized, "sign in first")
+		return
+	}
+	only := map[string]bool{}
+	for _, sl := range in.Slugs {
+		only[sl] = true
+	}
+	q := &s.setup
+	q.mu.Lock()
+	n := 0
+	for _, it := range q.items {
+		if it.State == "failed" && (len(only) == 0 || only[it.Slug]) {
+			it.State, it.Error, it.Job, it.Began, it.Ended = "waiting", "", "", nil, nil
+			n++
+		}
+	}
+	if n == 0 {
+		q.mu.Unlock()
+		writeErr(w, http.StatusBadRequest, "nothing to try again")
+		return
+	}
+	start := !q.running
+	if start {
+		q.running, q.userID = true, u.ID
+	}
+	q.persist()
+	q.mu.Unlock()
+	if start {
+		user := *u
+		go s.runSetupInstall(&user)
+	}
+	writeJSON(w, http.StatusAccepted, q.snapshot())
 }
 
 // POST /api/v1/first-apps/done: the admin finished or skipped the setup; it is not offered again.

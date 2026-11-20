@@ -363,6 +363,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/first-apps", s.handleFirstApps)
 				r.Post("/first-apps/install", s.handleFirstAppsInstall)
 				r.Post("/first-apps/done", s.handleFirstAppsDone)
+				r.Post("/first-apps/retry", s.handleFirstAppsRetry)
 				r.Get("/installer/jobs/{id}", s.handleInstallJob)
 				r.Post("/installer/check-updates", s.handleCheckUpdates)
 				r.Post("/settings/notify-test", s.handleNotifyTest)
