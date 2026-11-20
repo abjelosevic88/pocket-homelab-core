@@ -33,23 +33,33 @@ func TestSetupQueueTimes(t *testing.T) {
 
 // A busy or short-of-memory machine holds the next install; a calm one doesn't.
 func TestMachineBusy(t *testing.T) {
-	defer func(l func() float64, m func() (uint64, uint64), c func() int) {
-		readLoad1, readMemory, numCPU = l, m, c
-	}(readLoad1, readMemory, numCPU)
+	defer func(l func() (float64, float64), m func() (uint64, uint64), c func() int) {
+		readCPU, readMemory, numCPU = l, m, c
+	}(readCPU, readMemory, numCPU)
 	numCPU = func() int { return 4 }
-	load, avail := 1.0, uint64(2<<30)
-	readLoad1 = func() float64 { return load }
+	load, wait, avail := 38.0, 2.0, uint64(2<<30)
+	readCPU = func() (float64, float64) { return load, wait }
 	readMemory = func() (uint64, uint64) { return avail, 4 << 30 }
 	if why := machineBusy(); why != "" {
 		t.Fatalf("calm machine busy: %s", why)
 	}
-	load = 6.3
+	load = 95
 	if why := machineBusy(); why == "" {
-		t.Fatal("load 6.3 on 4 cores not busy")
+		t.Fatal("95% in use not busy")
 	}
-	load, avail = 1, 200<<20
+	load, wait = 30, 70
+	if why := machineBusy(); why == "" {
+		t.Fatal("70% waiting on the disk not busy")
+	}
+	load, wait, avail = 30, 2, 200<<20
 	if why := machineBusy(); why == "" {
 		t.Fatal("200 MB free not busy")
+	}
+	if _, w := procCPU(); w < -1 {
+		t.Fatal("procCPU")
+	}
+	if b, _ := procCPU(); b < -1 || b > 100 {
+		t.Fatalf("procCPU busy %v", b)
 	}
 	if !smallMachine() {
 		t.Fatal("4 cores, 4 GB is a small machine")
