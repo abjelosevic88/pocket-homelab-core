@@ -28,6 +28,7 @@ const keepUpdateBackups = 3
 // volumes it can't copy.
 func dataDirs(files []string, wd string) (dirs, notes []string) {
 	seen := map[string]bool{}
+	var volumes []string
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -68,10 +69,20 @@ func dataDirs(files []string, wd string) (dirs, notes []string) {
 						dirs = append(dirs, rel)
 					}
 				case src != "" && !strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "$") && !strings.HasPrefix(src, "~") && !strings.Contains(src, "docker.sock"):
-					notes = append(notes, "named volume "+src+" is not copied")
+					if !seen["volume:"+src] {
+						seen["volume:"+src] = true
+						volumes = append(volumes, src)
+					}
 				}
 			}
 		}
+	}
+	if len(volumes) > 0 { // one calm line for all of them: they aren't touched, just not in the copy
+		what := "its Docker volume " + volumes[0] + " stays as it is"
+		if len(volumes) > 1 {
+			what = "its Docker volumes (" + strings.Join(volumes, ", ") + ") stay as they are"
+		}
+		notes = append(notes, "the app's folder is copied; "+what+", outside the copy")
 	}
 	sort.Strings(dirs)
 	var out []string
