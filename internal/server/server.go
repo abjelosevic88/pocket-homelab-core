@@ -358,6 +358,7 @@ func (s *Server) Router() http.Handler {
 				r.Post("/apps/{slug}/upgrade", s.handleUpgradeApp)
 				r.Get("/installer", s.handleInstallerCatalog)
 				r.Get("/installer/status", s.handleInstallerStatus)
+				r.Get("/installer/progress", s.handleInstallProgress)
 				r.Post("/installer/install", s.handleInstallApp)
 				r.Get("/first-apps", s.handleFirstApps)
 				r.Post("/first-apps/install", s.handleFirstAppsInstall)

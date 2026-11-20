@@ -11,6 +11,7 @@ import { ShortcutsSheet } from './ShortcutsSheet'
 import PairModal from './PairModal'
 import { Avatar, type MenuItem, MenuButton, modalOpen, useIsMobile, useMediaQuery } from './ui'
 import { AskButton } from './AskButton'
+import { InstallChip, InstallProgressProvider } from './InstallProgress'
 
 const SIDEBAR_KEY = 'pc-sidebar'
 
@@ -39,7 +40,7 @@ function useShellData(admin: boolean) {
 }
 
 export default function Layout() {
-  const { user } = useApp()
+  const { user, status } = useApp()
   const admin = user?.role === 'admin'
   const navigate = useNavigate()
   const loc = useLocation()
@@ -116,6 +117,7 @@ export default function Layout() {
   ]
 
   return (
+    <InstallProgressProvider enabled={admin && !!status?.installer}>
     <div className={`app ${sidebarOpen ? 'with-sidebar' : 'no-sidebar'} ${mobile ? 'is-mobile' : ''} ${drawer ? 'drawer-mode' : ''}`}>
       {drawer && sidebarOpen && <div className="drawer-backdrop" onClick={e => { if (e.timeStamp - drawerOpenedAt.current > 400) setSidebarOpen(false) }} />}
       <div className={`sidebar-wrap ${sidebarOpen ? 'open' : ''}`}>
@@ -129,6 +131,7 @@ export default function Layout() {
       {shortcuts && <ShortcutsSheet admin={admin} onClose={() => setShortcuts(false)} />}
       {pair && <PairModal onClose={() => { setPair(false); window.dispatchEvent(new CustomEvent('pc:paired')) }} />}
     </div>
+    </InstallProgressProvider>
   )
 }
 
@@ -161,6 +164,7 @@ function TopBar({ onMenu, onPalette, mobile, compact, sidebarOpen, data }: { onM
         {appMatch ? <><button type="button" className="crumb" onClick={() => navigate('/apps')}>Apps</button><Icon name="chevron-right" size={16} className="crumb-sep" /><span className="ellipsis">{app?.name || appMatch.params.slug}</span></> : section}
       </h1>
       <span className="spacer" />
+      <InstallChip compact={mobile || compact} />
       <button type="button" className="btn ghost icon-only" onClick={onPalette} aria-label="Search" title="Search (⌘K or /)"><Icon name="search" size={18} /></button>
       <AskButton />
       <MenuButton label="Account" className="avatar-btn" align="right" width={220} items={avatarMenu}>

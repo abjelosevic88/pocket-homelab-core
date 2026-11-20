@@ -37,8 +37,9 @@ const setupDoneKey = "setup_wizard_done"
 const setupQueueKey = "setup_install_queue"
 
 type savedQueue struct {
-	UserID int64       `json:"user_id"`
-	Items  []setupItem `json:"items"`
+	UserID  int64       `json:"user_id"`
+	Started time.Time   `json:"started_at"`
+	Items   []setupItem `json:"items"`
 }
 
 type bundle struct {
@@ -66,6 +67,9 @@ type setupItem struct {
 	State string `json:"state"` // waiting | installing | done | failed
 	Error string `json:"error,omitempty"`
 	Job   string `json:"job,omitempty"`
+	// When the app started and finished installing: the progress view guesses the time left from them.
+	Began *time.Time `json:"began_at,omitempty"`
+	Ended *time.Time `json:"ended_at,omitempty"`
 }
 
 type setupQueue struct {
@@ -73,6 +77,7 @@ type setupQueue struct {
 	running bool
 	items   []*setupItem
 	userID  int64
+	started time.Time
 	save    func(savedQueue) // set by the server: into the settings table
 }
 
@@ -83,12 +88,23 @@ func (q *setupQueue) snapshot() map[string]any {
 	for i, it := range q.items {
 		items[i] = *it
 	}
-	return map[string]any{"running": q.running, "items": items}
+	out := map[string]any{"running": q.running, "items": items}
+	if !q.started.IsZero() {
+		out["started_at"] = q.started
+	}
+	return out
 }
 
 func (q *setupQueue) set(it *setupItem, state, errText, job string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	now := time.Now().UTC()
+	switch {
+	case state == "installing" && it.State != "installing":
+		it.Began, it.Ended = &now, nil
+	case (state == "done" || state == "failed") && it.Ended == nil:
+		it.Ended = &now
+	}
 	it.State, it.Error = state, errText
 	if job != "" {
 		it.Job = job
@@ -101,7 +117,7 @@ func (q *setupQueue) persist() {
 	if q.save == nil {
 		return
 	}
-	sq := savedQueue{UserID: q.userID}
+	sq := savedQueue{UserID: q.userID, Started: q.started}
 	for _, it := range q.items {
 		sq.Items = append(sq.Items, *it)
 	}
@@ -126,7 +142,7 @@ func (s *Server) resumeFirstApps(ctx context.Context) {
 		open = open || items[i].State == "waiting" || items[i].State == "installing"
 	}
 	q.mu.Lock()
-	q.items, q.userID = items, sq.UserID
+	q.items, q.userID, q.started = items, sq.UserID, sq.Started
 	q.mu.Unlock()
 	if !open || s.inst == nil {
 		return
@@ -238,7 +254,7 @@ func (s *Server) handleFirstAppsInstall(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusConflict, "the apps chosen before are still being installed")
 		return
 	}
-	q.running, q.items, q.userID = true, items, u.ID
+	q.running, q.items, q.userID, q.started = true, items, u.ID, time.Now().UTC()
 	q.persist()
 	q.mu.Unlock()
 	user := *u
