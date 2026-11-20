@@ -260,6 +260,47 @@ if ! docker info >/dev/null 2>&1; then
 	fi
 fi
 ok Docker
+
+# ---- room for every app's network ----
+# Each app gets its own small Docker network, and Docker's default address ranges run out after about
+# 30 ("all predefined address pools have been fully subnetted"): every app after that fails to install.
+# /24 networks from 172.16.0.0/12 (the range Docker uses anyway) leave room for thousands. docker0 keeps
+# its usual 172.17.0.1/16. Needs a restart of Docker, so on a machine with running containers it asks.
+DJ=/etc/docker/daemon.json
+if ! $SUDO grep -q '"default-address-pools"' "$DJ" 2>/dev/null; then
+	cur=$($SUDO cat "$DJ" 2>/dev/null | tr -d ' \t\r\n')
+	new=""
+	case "$cur" in
+	"" | "{}") new=$(printf '%s\n' '{' '  "bip": "172.17.0.1/16",' '  "default-address-pools": [{ "base": "172.16.0.0/12", "size": 24 }]' '}') ;;
+	*) command -v python3 >/dev/null 2>&1 && new=$($SUDO cat "$DJ" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+d["default-address-pools"] = [{"base": "172.16.0.0/12", "size": 24}]
+if "bip" not in d and "--bip" not in sys.argv[1]:
+    d["bip"] = "172.17.0.1/16"
+print(json.dumps(d, indent=2))' "$(ps -o args= -C dockerd 2>/dev/null)" 2>/dev/null) || new="" ;;
+	esac
+	running=$($DOCKER ps -q 2>/dev/null | wc -l | tr -d ' ')
+	if [ -z "$new" ]; then
+		say "  Docker can only make networks for about 30 apps. Add this to $DJ and restart Docker for more:"
+		say '    "default-address-pools": [{ "base": "172.16.0.0/12", "size": 24 }]'
+	elif ! command -v systemctl >/dev/null 2>&1; then
+		say "  Docker can only make networks for about 30 apps; add default-address-pools to $DJ for more (see pockethomelab.com/install)."
+	elif [ "$running" = 0 ] || ask "  Docker has room for about 30 apps' networks; give it room for thousands? Docker restarts, so running containers stop for about a minute."; then
+		$SUDO mkdir -p /etc/docker
+		[ -n "$cur" ] && $SUDO cp "$DJ" "$DJ.pocket-backup" 2>/dev/null || true
+		printf '%s\n' "$new" | $SUDO tee "$DJ" >/dev/null
+		if $SUDO systemctl restart docker >/dev/null 2>&1; then
+			i=0
+			while ! $DOCKER info >/dev/null 2>&1 && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
+			ok "Docker: room for every app's network"
+		else
+			[ -f "$DJ.pocket-backup" ] && $SUDO cp "$DJ.pocket-backup" "$DJ" || $SUDO rm -f "$DJ"
+			$SUDO systemctl restart docker >/dev/null 2>&1 || true
+			say "  Docker didn't restart with more network room, so its settings are back as they were."
+		fi
+	fi
+fi
 $DOCKER compose version >/dev/null 2>&1 || die "the Docker Compose plugin is missing (package docker-compose-plugin)."
 SOCK=/var/run/docker.sock
 [ -S "$SOCK" ] || die "no Docker socket at $SOCK (rootless Docker is not supported yet)."

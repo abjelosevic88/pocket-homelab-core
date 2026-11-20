@@ -429,7 +429,7 @@ func (a *Agent) install(ctx context.Context, j *Job, req InstallRequest) error {
 	}
 	a.logf(j, "Starting %s", plan.Container)
 	if _, err := a.dk.run(ctx, dir, "compose", "up", "-d"); err != nil {
-		return a.rollback(ctx, j, dir, err)
+		return a.rollback(ctx, j, dir, explainDocker(err))
 	}
 	if err := a.waitHealthy(ctx, plan.Port); err != nil {
 		logs, _ := a.dk.run(ctx, dir, "compose", "logs", "--no-color", "--tail", "15")
@@ -720,6 +720,15 @@ func (a *Agent) editCaddy(ctx context.Context, j *Job, slug string, change func(
 	}
 	a.logf(j, "Caddyfile backup: %s", backup)
 	return msg, nil
+}
+
+// explainDocker turns Docker errors people can fix themselves into what to do.
+func explainDocker(err error) error {
+	if err != nil && strings.Contains(err.Error(), "fully subnetted") {
+		return fmt.Errorf("Docker has no network addresses left for another app (its defaults allow about 30 apps). " +
+			"Run the install command from pockethomelab.com/install again: it gives Docker room for thousands, then try this app again")
+	}
+	return err
 }
 
 func firstNonEmpty(v ...string) string {
