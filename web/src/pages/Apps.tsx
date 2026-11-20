@@ -7,7 +7,7 @@ import { useApp } from '../lib/app-context'
 import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
 import { InstallModal, RemoveModal } from '../components/Installer'
-import { PauseBox, QueueBar, aboutLeft, summarize, useInstallProgress } from '../components/InstallProgress'
+import { InstallingCard, PauseBox, QueueBar, aboutLeft, summarize, useInstallProgress } from '../components/InstallProgress'
 
 interface Arriving { state: 'downloading' | 'switching' | 'starting'; message: string; apps: string[]; running: number; total: number }
 
@@ -85,14 +85,14 @@ export default function Apps() {
           </div>
         </div>
       )}
-      {apps.length === 0 ? <Card><Empty icon="grid" title="No apps registered">{status?.installer ? <>Press <b>Install app</b> to add one from the app catalog, or give</> : 'Give'} each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
+      {apps.length === 0 && !(queue && !queue.finished) ? <Card><Empty icon="grid" title="No apps registered">{status?.installer ? <>Press <b>Install app</b> to add one from the app catalog, or give</> : 'Give'} each Pocket app <span className="inline-code">CORE_URL</span> and <span className="inline-code">CORE_REGISTRATION_KEY</span>; it registers on start and shows up here.</Empty></Card> : <>
         <div className="app-summary">
           <span className="pill">{apps.length} apps</span>
           <span className="pill ok">{up} up</span>
           {down > 0 && <span className="pill err">{down} down</span>}
           {apps.length - up - down > 0 && <span className="pill">{apps.length - up - down} unknown</span>}
         </div>
-        <div className="app-tiles">{apps.map(a => <AppTile key={a.id} a={a} />)}</div>
+        <div className="app-tiles"><InstallingCard />{apps.map(a => <AppTile key={a.id} a={a} />)}</div>
       </>}
       {settings && <details className="card register-app mt">
         <summary><b>Register an app</b><span className="muted small">Two variables for any Pocket app built with the Go SDK</span></summary>

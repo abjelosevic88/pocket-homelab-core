@@ -220,3 +220,16 @@
 .install-key { animation: install-key-in .16s var(--ease); transform-origin: top left; }
 @keyframes install-key-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { .install-key, .install-bar > span.busy, .install-why-btn .icon { animation: none; transition: none; } }
+
+/* the app installing now, first in the Apps grid */
+.app-tile.install-tile { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--surface)), var(--surface)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
+.app-tile.install-tile.waiting { border-style: dashed; box-shadow: none; }
+.install-tile .pill { display: inline-flex; align-items: center; gap: 5px; }
+.install-tile .pill.accent { background: var(--accent-soft); color: var(--accent-ink); }
+.install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.install-steps li { display: flex; align-items: center; gap: 7px; }
+.install-steps li .dot-s { width: 6px; height: 6px; margin: 0 3px; border-radius: 50%; background: var(--border-strong, var(--border)); }
+.install-steps li.done { color: var(--success); }
+.install-steps li.active { color: var(--text); font-weight: 600; }
+.install-detail { -webkit-line-clamp: 3; }
+.install-tile .pill::before { display: none; }
