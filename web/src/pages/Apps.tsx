@@ -66,7 +66,6 @@ export default function Apps() {
       {installing && <InstallModal onClose={() => setInstalling(false)} onInstalled={reload} />}
       {queue && !queue.finished && (
         <div className="callout info mb install-callout">
-          <Icon name="download" size={15} />
           <div className="grow">
             <b>Installing your apps: {queue.done} of {queue.total} ready.</b>{' '}
             {queue.current ? <>Now {queue.current.name} (app {queue.position} of {queue.total}){queue.left !== undefined ? `, ${aboutLeft(queue.left)}` : ''}. </> : null}
@@ -80,7 +79,6 @@ export default function Apps() {
       )}
       {arriving && (
         <div className="callout info mb">
-          <Icon name="download" size={15} />
           <div className="grow">
             <b>Installing {arriving.total === 1 ? 'an app' : `${arriving.total} apps`} on this box.</b> {arriving.message}. They appear here as they start.
             {arriving.state === 'starting' && arriving.total > 0 && <div className="arriving-bar mt-s" role="progressbar" aria-valuemin={0} aria-valuemax={arriving.total} aria-valuenow={arriving.running}><span style={{ width: `${Math.round(100 * arriving.running / arriving.total)}%` }} /></div>}
