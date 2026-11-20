@@ -448,6 +448,17 @@ func (ad *Address) Handler() http.Handler {
 		v, err := ad.setChoice(r.Context(), b)
 		ad.reply(w, v, err)
 	})
+	// Give the address away now, without moving the apps first (install.sh --uninstall: the apps are
+	// removed right after, and moving 60 of them back to this network's addresses takes minutes on a
+	// Raspberry Pi). Pocket's free name goes back to Pocket Names, Cloudflare records are deleted.
+	mux.HandleFunc("POST /v1/address/release", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		ad.pocketForget(ctx)
+		ad.cfForget(ctx, "cloudflare.json", "")
+		ad.cfForget(ctx, "cloudflare-old.json", "")
+		writeJSON(w, http.StatusOK, map[string]bool{"released": true})
+	})
 	// Try again now (after a limit was lifted, or the network is back), instead of within 3 minutes.
 	mux.HandleFunc("POST /v1/address/retry", func(w http.ResponseWriter, r *http.Request) {
 		if ad.choice() == "" {
