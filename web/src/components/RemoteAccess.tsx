@@ -21,7 +21,9 @@ export function RemotePanel({ onChanged }: { onChanged?: (s: RemoteStatus) => vo
   }
   useEffect(() => { load() }, [])
   // While someone signs in on Tailscale's page, watch for the machine to come online.
-  const waiting = !!ts && (ts.state === 'needs-login' || ts.state === 'starting')
+  // … and, once connected, for the home address to be approved in Tailscale's admin console.
+  const approving = !!ts && ts.state === 'running' && !!ts.route && !ts.route_on
+  const waiting = !!ts && (ts.state === 'needs-login' || ts.state === 'starting' || approving)
   useEffect(() => {
     if (!waiting) return
     const id = window.setInterval(load, 3000)
@@ -50,13 +52,27 @@ export function RemotePanel({ onChanged }: { onChanged?: (s: RemoteStatus) => vo
   )
   if (ts.state === 'running') return (
     <div className="stack tight">
-      <div className="box-hero ok">
-        <span className="box-hero-ico"><Icon name="check" size={20} /></span>
-        <div className="grow"><b>On your tailnet</b>
-          <span>Phones and laptops signed in to the same Tailscale account reach Pocket from anywhere.</span>
-          <div className="box-chips">{ts.name && <span className="box-chip static"><Icon name="server" size={13} />{ts.name}</span>}{ts.ips?.[0] && <span className="box-chip static"><code>{ts.ips[0]}</code></span>}</div>
+      <div className={`box-hero ${approving ? '' : 'ok'}`}>
+        <span className="box-hero-ico"><Icon name={approving ? 'globe' : 'check'} size={20} /></span>
+        <div className="grow"><b>{approving ? 'On your tailnet: one step left' : 'On your tailnet'}</b>
+          <span>{approving
+            ? 'This machine is connected. Your Pocket address still points at its home-network address, so away from home it needs one approval in Tailscale.'
+            : ts.route ? 'Your Pocket address works at home as before, and away from home on every phone and laptop signed in to the same Tailscale account.' : 'Phones and laptops signed in to the same Tailscale account reach Pocket from anywhere.'}</span>
+          <div className="box-chips">{ts.name && <span className="box-chip static"><Icon name="server" size={13} />{ts.name}</span>}{ts.ips?.[0] && <span className="box-chip static"><code>{ts.ips[0]}</code></span>}{ts.route && ts.route_on && <span className="box-chip static"><Icon name="check" size={13} />{ts.route} approved</span>}</div>
         </div>
       </div>
+      {approving && <div className="callout remote-approve">
+        <Icon name="info" size={15} />
+        <div className="grow">
+          <b>Approve the home address in Tailscale</b>
+          <ol>
+            <li>Open <a href="https://login.tailscale.com/admin/machines" target="_blank" rel="noopener noreferrer">Tailscale's admin console → Machines</a>.</li>
+            <li>Find <b>{ts.name?.split('.')[0] || 'this machine'}</b>, open its <b>⋯</b> menu and choose <b>Edit route settings</b>.</li>
+            <li>Tick <code>{ts.route}</code> and save.</li>
+          </ol>
+          <span className="muted small"><Spinner size={11} /> Waiting for the approval; this turns green by itself. (A Linux computer also needs <code>tailscale set --accept-routes</code> once.)</span>
+        </div>
+      </div>}
       <div className="row"><button type="button" className="btn sm danger-ghost" onClick={down} disabled={busy}>{busy ? <Spinner /> : null}Leave the tailnet</button></div>
       {problem}
     </div>

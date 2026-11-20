@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -26,6 +27,12 @@ type tsStatus struct {
 	IPs     []string `json:"ips,omitempty"`
 	AuthURL string   `json:"auth_url,omitempty"`
 	Managed bool     `json:"managed"` // Pocket's own Tailscale container
+	// Route: the name points at this machine's home-network address, which exists only at home. So
+	// Pocket's Tailscale offers that one address to the tailnet (a /32 subnet route); once the owner
+	// approves it in Tailscale's admin console (RouteOn), the same name and padlock work away from
+	// home on every device signed in to the tailnet, and at home without Tailscale as before.
+	Route   string `json:"route,omitempty"`    // "192.168.1.20/32"; "" when the name isn't on a home address
+	RouteOn bool   `json:"route_on,omitempty"` // approved
 }
 
 func (ad *Address) tsContainer() string {
@@ -74,6 +81,7 @@ func (ad *Address) tsStatus(ctx context.Context) tsStatus {
 			DNSName      string
 			HostName     string
 			TailscaleIPs []string
+			AllowedIPs   []string // its own addresses plus the routes approved for it
 		}
 	}
 	if json.Unmarshal([]byte(out[strings.Index(out, "{"):]), &raw) != nil {
@@ -92,7 +100,49 @@ func (ad *Address) tsStatus(ctx context.Context) tsStatus {
 		st.Name = strings.TrimSuffix(raw.Self.DNSName, ".")
 		st.IPs = raw.Self.TailscaleIPs
 	}
+	if st.State == "running" {
+		if route := ad.wantRoute(); route != "" && ad.offerRoute(ctx, route) {
+			st.Route = route
+			st.RouteOn = raw.Self != nil && slices.Contains(raw.Self.AllowedIPs, route)
+		}
+	}
 	return st
+}
+
+// wantRoute is the home address the name points at, as a /32 route for the tailnet; "" when the
+// name is not on a home address (tailnet mode, the name on Tailscale, no name, no home network).
+func (ad *Address) wantRoute() string {
+	if ad.tailnet() || ad.envGet("POCKET_NAME_ON") == "tailscale" {
+		return ""
+	}
+	if c := ad.choice(); c != modePocket && c != modeCloudflare {
+		return ""
+	}
+	ip := homeAddress()
+	if ip == "" {
+		return ""
+	}
+	return ip + "/32"
+}
+
+// offerRoute has Pocket's Tailscale advertise the route (once per address; `tailscale set` keeps it
+// across restarts). False when Tailscale refused, so nothing is promised that isn't offered.
+func (ad *Address) offerRoute(ctx context.Context, route string) bool {
+	ad.mu.Lock()
+	done := ad.tsRoute == route
+	ad.mu.Unlock()
+	if done {
+		return true
+	}
+	if _, err := ad.ag.dk.run(ctx, "", "exec", ad.tsContainer(), "tailscale", "set", "--advertise-routes="+route); err != nil {
+		ad.log.Warn("tailscale: couldn't offer the home address as a route", "route", route, "err", err)
+		return false
+	}
+	ad.mu.Lock()
+	ad.tsRoute = route
+	ad.mu.Unlock()
+	ad.log.Info("tailscale: offering the home address to the tailnet; it works away from home once approved in Tailscale's admin console", "route", route)
+	return true
 }
 
 func (ad *Address) tsUp(ctx context.Context, authkey string) (tsStatus, error) {
