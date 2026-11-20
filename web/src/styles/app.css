@@ -233,3 +233,9 @@
 .install-steps li.active { color: var(--text); font-weight: 600; }
 .install-detail { -webkit-line-clamp: 3; }
 .install-tile .pill::before { display: none; }
+
+/* Over every page while an admin is on the plain address and the secure one is ready */
+.addr-strip { display: flex; align-items: center; gap: 10px; padding: 7px 12px 7px 16px; background: var(--success-soft); color: var(--text-2); font-size: 13px; border-bottom: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); flex-shrink: 0; }
+.addr-strip > .icon { color: var(--success); flex: none; }
+.addr-strip b { color: var(--text); }
+@media (max-width: 767px) { .addr-strip { flex-wrap: wrap; font-size: 12.5px; } }
