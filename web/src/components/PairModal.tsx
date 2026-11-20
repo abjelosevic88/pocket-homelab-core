@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import type { Device, Pairing } from '../lib/types'
-import { Modal, Secret, useToast } from './ui'
+import { Modal, Secret, copyText, useToast } from './ui'
 import { Icon } from './icons'
 
 /** Mint a pairing code, show the QR, and wait for the phone to claim it. */
@@ -16,14 +16,16 @@ export default function PairModal({ onClose, userId }: { onClose: () => void; us
   }, [userId])
   useEffect(() => {
     if (!p || claimed) return
+    const tick = () => setLeft(Math.max(0, Math.round((new Date(p.expires_at).getTime() - Date.now()) / 1000)))
+    tick()
+    const clock = setInterval(tick, 1000)
     const t = setInterval(async () => {
-      setLeft(Math.max(0, Math.round((new Date(p.expires_at).getTime() - Date.now()) / 1000)))
       try {
         const st = await api.get<{ claimed: boolean; device?: Device }>(`${V1}/pair/${p.code}`)
         if (st.claimed && st.device) { setClaimed(st.device); toast(`${st.device.name} paired`) }
       } catch { /* expired */ }
     }, 2000)
-    return () => clearInterval(t)
+    return () => { clearInterval(t); clearInterval(clock) }
   }, [p, claimed, toast])
   const code = p ? `${p.code.slice(0, 4)}-${p.code.slice(4)}` : ''
   return (
@@ -33,7 +35,10 @@ export default function PairModal({ onClose, userId }: { onClose: () => void; us
       {p && !claimed && (
         <div className="grid" style={{ gap: 14, justifyItems: 'center' }}>
           <div className="qr"><img src={p.qr_svg} alt="Pairing QR code" /></div>
-          <div className="code-big">{code}</div>
+          <div className="row" style={{ gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+            <div className="code-big">{code}</div>
+            <button type="button" className="btn sm" title="Copy the code" onClick={async () => toast(await copyText(code) ? 'Code copied' : 'Could not copy', 'ok')}><Icon name="copy" size={14} />Copy</button>
+          </div>
           <p className="muted small" style={{ textAlign: 'center', maxWidth: 380 }}>In <b>Pocket Homelab</b> open <i>Settings → Pair with a box</i> and scan, or type the code. Every service on this box lands in the app, credentials go into the Keychain. Code expires in {left}s.</p>
           <details style={{ width: '100%' }}><summary className="muted small">Manual import instead</summary>
             <p className="muted small mt-sm">Older client builds import an env file: download it from <b>Services → Download env</b> after signing in on that device, or paste this link into the client:</p>
