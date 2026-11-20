@@ -11,7 +11,13 @@ import { Popover, Spinner, rectOf, type Anchor } from './ui'
 // A chip in the top bar shows "12/60"; it opens the whole list. GET /api/v1/installer/progress.
 
 export interface QueueItem { slug: string; name: string; state: 'waiting' | 'installing' | 'done' | 'failed'; error?: string; job?: string; began_at?: string; ended_at?: string }
-interface Queue { running: boolean; started_at?: string; pause?: string; items: QueueItem[] }
+export interface PauseInfo {
+  kind: 'breather' | 'cpu' | 'disk' | 'memory'; text: string
+  cpu: number; disk: number; free_mb: number; total_mb: number; cores: number
+  max_cpu: number; max_disk: number; min_free_mb: number; small: boolean
+  since: string; next: string; deadline: string
+}
+interface Queue { running: boolean; started_at?: string; pause?: string; pause_info?: PauseInfo; items: QueueItem[] }
 interface Arriving { state: 'downloading' | 'switching' | 'starting'; message: string; apps: string[]; running: number; total: number }
 interface Progress { queue: Queue | null; arriving: Arriving | null }
 
@@ -20,6 +26,7 @@ export interface QueueSummary {
   current?: QueueItem; position: number // 1-based place of the app installing now
   left?: number // seconds, a guess from the apps done so far
   pause?: string // why the next app waits for the machine to catch up
+  pauseInfo?: PauseInfo
   key: string // tells one queue from the next (the "seen it" mark)
 }
 
@@ -39,7 +46,7 @@ export function summarize(q: Queue): QueueSummary {
     const now = current?.began_at ? Math.max(0, per - (Date.now() - Date.parse(current.began_at)) / 1000) : 0
     if (per > 0) left = waiting * per + now
   }
-  return { total: items.length, done, failed, finished, current, position: idx >= 0 ? idx + 1 : done + failed, left, pause: finished ? undefined : q.pause, key: q.started_at || String(items.length) }
+  return { total: items.length, done, failed, finished, current, position: idx >= 0 ? idx + 1 : done + failed, left, pause: finished ? undefined : q.pause, pauseInfo: finished ? undefined : q.pause_info, key: q.started_at || String(items.length) }
 }
 
 export function aboutLeft(s?: number): string {
@@ -190,9 +197,7 @@ function ProgressPanel({ q, a, queue, onClose, onDismiss }: { q?: QueueSummary; 
           <span className="grow small">{q.failed} didn't install, often because the machine was too busy to start them in time. Trying again is safe.</span>
           <button type="button" className="btn sm" onClick={() => retry()} disabled={!!busy}>{busy === '*' ? <Spinner size={12} /> : <Icon name="refresh" size={13} />}Try {q.failed === 1 ? 'it' : `all ${q.failed}`} again</button>
         </div>}
-        {q.pause && !q.current && <div className="install-now pause">
-          <Icon name="clock" size={14} /><span className="grow">Next app waits: {q.pause}. Slower, but your machine keeps up.</span>
-        </div>}
+        {q.pause && !q.current && <PauseBox q={q} />}
         {q.current && <div className="install-now">
           <Spinner size={13} /><span className="grow">Now: <b>{q.current.name}</b> <span className="muted">· app {q.position} of {q.total}</span></span>
         </div>}
@@ -230,4 +235,70 @@ function AppIcon({ slug, name }: { slug: string; name: string }) {
   const [ok, setOk] = useState(true)
   const src = bundledIcon(slug)
   return <span className="install-icon">{src && ok ? <img src={src} alt="" onError={() => setOk(false)} /> : shortName(name)[0]}</span>
+}
+
+function useNow(on: boolean) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!on) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [on])
+  return now
+}
+
+const gb = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`
+const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function mmss(ms: number) { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
+
+const HEAD: Record<PauseInfo['kind'], string> = {
+  breather: 'Short pause between apps',
+  cpu: 'Waiting for the processor',
+  disk: 'Waiting for the disk',
+  memory: 'Waiting for free memory',
+}
+
+/** What the wait is about, in plain words. */
+export function pauseSentence(p: PauseInfo, now: number): string {
+  const latest = ` The next app starts by ${clock(p.deadline)} at the latest.`
+  switch (p.kind) {
+    case 'breather': return `Your machine is on the small side (${p.cores} cores, ${gb(p.total_mb)} memory), so each new app gets a few seconds to settle before the next one starts. Next app in ${mmss(Date.parse(p.next) - now)}.`
+    case 'cpu': return `The processor is ${Math.round(p.cpu)}% busy right now. Starting another app on top would slow everything down, so the next one starts once it's below ${p.max_cpu}%. Apps that just started (an office suite, a photo library) often keep it busy for a few minutes.` + latest
+    case 'disk': return `The machine spends ${Math.round(p.disk)}% of its time waiting on its disk. Memory cards, like a Raspberry Pi's, are slow; the next app starts once that's below ${p.max_disk}%.` + latest
+    case 'memory': return `Only ${gb(p.free_mb)} of ${gb(p.total_mb)} memory is free. Another app needs room, so the next one starts once at least ${p.min_free_mb} MB is free. If this keeps happening, this machine may have more apps than it can run comfortably.` + latest
+  }
+}
+
+/** The pause, a sentence, and (on "Why?") the numbers behind it. Hover shows the sentence too. */
+export function PauseBox({ q, compact }: { q: QueueSummary; compact?: boolean }) {
+  const p = q.pauseInfo
+  const [open, setOpen] = useState(false)
+  const now = useNow(!!p)
+  if (!p) return <div className="install-now pause"><Icon name="clock" size={14} /><span className="grow">Next app waits: {q.pause}.</span></div>
+  const sentence = pauseSentence(p, now)
+  const row = (label: string, value: string, goal: string, ok: boolean | null) => (
+    <tr><th>{label}</th><td>{value}</td><td className={ok === null ? 'muted' : ok ? 'ok' : 'wait'}>{goal}</td></tr>
+  )
+  return (
+    <div className={`install-pause${compact ? ' compact' : ''}`} title={sentence}>
+      <div className="install-pause-head">
+        <Icon name="clock" size={14} />
+        <b className="grow">{HEAD[p.kind]}</b>
+        <button type="button" className="link-btn small" onClick={() => setOpen(o => !o)} aria-expanded={open}>{open ? 'Hide' : 'Why?'}</button>
+      </div>
+      <p>{sentence}</p>
+      {open && <div className="install-pause-why">
+        <p>Pocket installs apps one at a time and checks the machine between them, so a small computer like a Raspberry Pi doesn't get overloaded. Nothing is stuck; this only makes the installs slower.</p>
+        <table>
+          <tbody>
+            {p.cpu >= 0 && row('Processor in use', `${Math.round(p.cpu)}%`, `goes on below ${p.max_cpu}%`, p.cpu <= p.max_cpu)}
+            {p.disk >= 0 && row('Waiting on the disk', `${Math.round(p.disk)}%`, `below ${p.max_disk}%`, p.disk <= p.max_disk)}
+            {p.total_mb > 0 && row('Free memory', `${gb(p.free_mb)} of ${gb(p.total_mb)}`, `at least ${p.min_free_mb} MB`, p.free_mb >= p.min_free_mb)}
+            {row('Waiting since', `${clock(p.since)} (${mmss(now - Date.parse(p.since))})`, p.kind === 'breather' ? `next app in ${mmss(Date.parse(p.next) - now)}` : `starts anyway at ${clock(p.deadline)}`, null)}
+          </tbody>
+        </table>
+        <p className="muted">Measured every 15 seconds. Pausing between apps happens on machines with 4 cores or fewer, or 4 GB of memory or less.</p>
+      </div>}
+    </div>
+  )
 }

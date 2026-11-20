@@ -7,7 +7,7 @@ import { useApp } from '../lib/app-context'
 import { Card, Confirm, Dot, Empty, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
 import { Icon } from '../components/icons'
 import { InstallModal, RemoveModal } from '../components/Installer'
-import { QueueBar, aboutLeft, summarize, useInstallProgress } from '../components/InstallProgress'
+import { PauseBox, QueueBar, aboutLeft, summarize, useInstallProgress } from '../components/InstallProgress'
 
 interface Arriving { state: 'downloading' | 'switching' | 'starting'; message: string; apps: string[]; running: number; total: number }
 
@@ -69,11 +69,11 @@ export default function Apps() {
           <Icon name="download" size={15} />
           <div className="grow">
             <b>Installing your apps: {queue.done} of {queue.total} ready.</b>{' '}
-            {queue.pause && !queue.current ? <>Next app waits: {queue.pause}. </> : null}
             {queue.current ? <>Now {queue.current.name} (app {queue.position} of {queue.total}){queue.left !== undefined ? `, ${aboutLeft(queue.left)}` : ''}. </> : null}
             {queue.failed > 0 && <>{queue.failed} didn't install. </>}
             They appear here as they start.
             <div className="mt-s"><QueueBar q={queue} /></div>
+            {queue.pause && !queue.current && <div className="mt-s"><PauseBox q={queue} compact /></div>}
           </div>
           <button type="button" className="btn sm" onClick={openProgress}>Show all</button>
         </div>
