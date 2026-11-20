@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -350,5 +351,25 @@ func TestBuildPlanHelpers(t *testing.T) {
 		RegistrationKey: "k", AdminEmail: "me@example.org", NextPort: ports(8300), Now: time.Now()})
 	if err == nil || !strings.Contains(err.Error(), "only built from source") {
 		t.Fatalf("local-only helper: err = %v", err)
+	}
+}
+
+// Named volumes give one calm note for all of them, not one warning each.
+func TestDataDirsVolumesNote(t *testing.T) {
+	wd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wd, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	compose := "services:\n  office:\n    volumes:\n      - ./data:/data\n  onlyoffice:\n    volumes:\n      - onlyoffice_data:/a\n      - onlyoffice_logs:/b\n      - onlyoffice_data:/c\n"
+	f := filepath.Join(wd, "docker-compose.yml")
+	if err := os.WriteFile(f, []byte(compose), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dirs, notes := dataDirs([]string{f}, wd)
+	if len(dirs) != 1 || dirs[0] != "data" {
+		t.Fatalf("dirs = %v", dirs)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "onlyoffice_data, onlyoffice_logs") || !strings.Contains(notes[0], "stay as they are") {
+		t.Fatalf("notes = %q", notes)
 	}
 }
