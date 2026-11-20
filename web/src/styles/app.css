@@ -163,6 +163,18 @@
 .install-bar { display: flex; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 20%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); overflow: hidden; }
 .install-bar > span { background: var(--accent); transition: width .4s var(--ease); }
 .install-bar > span.failed { background: var(--danger); }
+.install-bar > span.busy { min-width: 6px; background: repeating-linear-gradient(-45deg, var(--accent) 0 5px, color-mix(in srgb, var(--accent) 55%, transparent) 5px 10px); background-size: 14px 14px; animation: install-busy 1s linear infinite; }
+@keyframes install-busy { to { background-position: 14px 0; } }
+.install-bar-wrap { position: relative; cursor: help; outline: none; padding: 4px 0; margin: -4px 0; }
+.install-bar-wrap:focus-visible .install-bar { box-shadow: 0 0 0 2px var(--accent-ring); }
+.install-key { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 260px; max-width: min(360px, 90vw); display: grid; gap: 5px; padding: 10px 12px; border-radius: 10px; background: var(--raised); box-shadow: var(--shadow-lg); border: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); cursor: default; }
+.install-key b { color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.install-key span { display: flex; align-items: center; gap: 8px; }
+.install-key em { margin-left: auto; font-style: normal; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; padding-left: 12px; }
+.install-key i { flex: none; width: 12px; height: 8px; border-radius: 3px; background: var(--accent); }
+.install-key i.failed { background: var(--danger); }
+.install-key i.busy { background: repeating-linear-gradient(-45deg, var(--accent) 0 3px, color-mix(in srgb, var(--accent) 55%, transparent) 3px 6px); }
+.install-key i.waiting { background: color-mix(in srgb, var(--accent) 20%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
 .install-now { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
 .install-list { list-style: none; margin: 0; padding: 0; max-height: min(320px, 45vh); overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; position: relative; }
 .install-list li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; font-size: 13px; }
@@ -201,3 +213,10 @@
 .install-pause-why td.ok { color: var(--success); }
 .install-pause-why td.wait { color: var(--warning); font-weight: 600; }
 .install-pause-why p.muted { font-size: 12px; }
+.install-why-btn { display: inline-flex; align-items: center; gap: 3px; }
+.install-why-btn .icon { transition: transform .22s var(--ease); }
+.install-why-btn.open .icon { transform: rotate(180deg); }
+.install-pause-why { margin-top: 2px; }
+.install-key { animation: install-key-in .16s var(--ease); transform-origin: top left; }
+@keyframes install-key-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .install-key, .install-bar > span.busy, .install-why-btn .icon { animation: none; transition: none; } }
