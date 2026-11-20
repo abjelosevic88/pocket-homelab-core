@@ -163,10 +163,20 @@ if [ "$UNINSTALL" = 1 ]; then
 		rmi="--rmi all" vols="-v"
 		[ "$KEEP_DATA" != 1 ] || vols=""
 		# The apps, and the folders of installs that failed (kept for reading in apps/pocket-archive).
+		# One line that counts up, so a long removal (60 apps on a Raspberry Pi take a quarter of an
+		# hour) doesn't look stuck.
+		total=0
+		for d in "$DIR"/apps/*/ "$DIR"/apps/pocket-archive/*/; do [ -f "$d/docker-compose.yml" ] && total=$((total + 1)); done
+		n=0
 		for d in "$DIR"/apps/*/ "$DIR"/apps/pocket-archive/*/; do
 			[ -f "$d/docker-compose.yml" ] || continue
+			n=$((n + 1))
+			printf '\r\033[K  Removing apps and their images: %d of %d (%s)' "$n" "$total" "$(basename "$d")"
 			(cd "$d" && $DOCKER compose down $vols $rmi >/dev/null 2>&1) || true
 		done
+		[ "$total" = 0 ] || printf '\r\033[K'
+		printf '  Removing Pocket Core and the leftover images…'
+
 		[ ! -f "$DIR/docker-compose.yml" ] || (cd "$DIR" && $DOCKER compose --profile proxy --profile tailscale --profile domain down $vols $rmi >/dev/null 2>&1) || true
 		for c in $($DOCKER ps -aq --filter name='^pocket-' 2>/dev/null); do $DOCKER rm -f "$c" >/dev/null 2>&1 || true; done
 		# What compose down leaves: older versions of Pocket's own images (every update keeps the one
@@ -175,6 +185,7 @@ if [ "$UNINSTALL" = 1 ]; then
 			$DOCKER rmi -f "$i" >/dev/null 2>&1 || true
 		done
 		$DOCKER image prune -f >/dev/null 2>&1 || true
+		printf '\r\033[K'
 		ok "Containers and images removed"
 	fi
 	FW_WAS=""
