@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/config"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/crypto"
+	"github.com/abjelosevic88/pocket-homelab-core/internal/logring"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/server"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
 	"github.com/abjelosevic88/pocket-homelab-core/web"
@@ -109,10 +111,11 @@ func newLogger(cfg *config.Config) *slog.Logger {
 		level = slog.LevelInfo
 	}
 	opts := &slog.HandlerOptions{Level: level}
+	out := io.MultiWriter(os.Stdout, logring.Default) // the last lines, for Apps → Pocket Core → Logs
 	if cfg.LogFormat == "json" {
-		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+		return slog.New(slog.NewJSONHandler(out, opts))
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+	return slog.New(slog.NewTextHandler(out, opts))
 }
 
 func mustLoad() (*config.Config, *slog.Logger, *store.Store) {

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -203,6 +204,57 @@ func TestDockerEndToEnd(t *testing.T) {
 	}
 	if err := a.update(ctx, &Job{}, UpdateRequest{Slug: "e2e-habits", URL: res.AppURL}); err == nil || !strings.Contains(err.Error(), "already runs") {
 		t.Fatalf("second update: %v", err)
+	}
+
+	// Restart (through the agent's API, as Core asks), its log and what it weighs (ops.go).
+	startedAt := func() string {
+		out, _ := exec.Command("docker", "inspect", "-f", "{{.State.StartedAt}}", ctrName).Output()
+		return strings.TrimSpace(string(out))
+	}
+	startedBefore := startedAt()
+	h := a.Handler()
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+cfg.Token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := call("POST", "/v1/restart", `{"slug":"e2e-habits","url":"`+res.AppURL+`"}`)
+	var rj Job
+	if json.Unmarshal(rec.Body.Bytes(), &rj); rec.Code != http.StatusAccepted || rj.Kind != "restart" {
+		t.Fatalf("restart: %d %s", rec.Code, rec.Body)
+	}
+	if again := call("POST", "/v1/restart", `{"slug":"e2e-habits","url":"`+res.AppURL+`"}`); again.Code != http.StatusConflict {
+		t.Fatalf("a second restart while the first runs: %d", again.Code)
+	}
+	for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); time.Sleep(time.Second) {
+		json.Unmarshal(call("GET", "/v1/jobs/"+rj.ID, "").Body.Bytes(), &rj)
+		if rj.State != "running" {
+			break
+		}
+	}
+	if rj.State != "done" || startedAt() == startedBefore {
+		t.Fatalf("restart job %+v (started %s → %s)", rj, startedBefore, startedAt())
+	}
+	t.Logf("restart log:\n%s", strings.Join(rj.Log, "\n"))
+	rec = call("GET", "/v1/logs?slug=e2e-habits&lines=5&url="+res.AppURL, "")
+	var lg Logs
+	if json.Unmarshal(rec.Body.Bytes(), &lg); rec.Code != 200 || len(lg.Lines) == 0 || len(lg.Lines) > 5 || !strings.Contains(lg.Source, "compose") {
+		t.Fatalf("logs: %d %s", rec.Code, rec.Body)
+	}
+	t.Logf("logs (%s):\n%s", lg.Source, strings.Join(lg.Lines, "\n"))
+	if rec := call("GET", "/v1/logs?slug=nothere&url=http://127.0.0.1:1", ""); rec.Code != http.StatusConflict {
+		t.Fatalf("logs of an app that isn't here: %d %s", rec.Code, rec.Body)
+	}
+	var rs Resources
+	json.Unmarshal(call("GET", "/v1/resources", "").Body.Bytes(), &rs)
+	found := false
+	for _, u := range rs.Apps {
+		found = found || u.Slug == "e2e-habits" && u.Memory > 0
+	}
+	if rs.Disk == nil || rs.Disk.Total == 0 || !found {
+		t.Fatalf("resources %+v", rs)
 	}
 
 	// Remove: containers gone, folder archived, site gone.

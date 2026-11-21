@@ -109,7 +109,9 @@ See [push.md](push.md).
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | GET | `/overview` | anyone | the home page in one call |
-| GET | `/system` | anyone | version, uptime, counts, config summary |
+| GET | `/system` | anyone | version, uptime, counts, config summary; admins also get `host`: `{cpus, memory: {total_bytes, available_bytes, swap_total_bytes, swap_free_bytes}, load: [1m, 5m, 15m], disks: [{name: data\|apps, path, total_bytes, free_bytes}], apps: [{slug, memory_bytes}]}` (memory and load from the host's `/proc`, so the whole machine even when Core runs in a container; `apps` disk and per-app memory from the installer agent, kept 15 s; any part it can't read is left out) |
+| POST | `/apps/{slug}/restart` | admin | restarts the app through the installer agent → `202` job `{id, kind: "restart", …}`, followed at `GET /installer/jobs/{id}` (done once the app answers Core again; no "app down" event meanwhile). `403` for `core`, `404` without an agent, `409` when the app runs as a program (Pocket AI) or something else is being done to it |
+| GET | `/apps/{slug}/logs?lines=200` | admin | its recent log, oldest first → `{slug, source, lines: [...], truncated}`; `lines` 1–2000 (default 200), at most 1 MB (newest kept). `core` is Core's own log since it last started (kept in memory) |
 | GET/PUT | `/settings` | admin | `{title, box_name, registration_key}` |
 | POST | `/settings/registration-key` | admin | rotate |
 | GET | `/backup` | admin | SQLite copy |

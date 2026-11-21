@@ -28,7 +28,7 @@ import (
 type installJob struct {
 	mu      sync.Mutex
 	ID      string            `json:"id"`
-	Kind    string            `json:"kind"` // install | update | uninstall
+	Kind    string            `json:"kind"` // install | update | uninstall | restart
 	Slug    string            `json:"slug"`
 	Name    string            `json:"name"`
 	State   string            `json:"state"` // running | done | failed
@@ -285,6 +285,9 @@ func (s *Server) startUpgrade(ctx context.Context, a *store.App, by string) (*in
 	if b := s.findBinaryApp(ctx, a.Slug); b != nil && !s.installerCarries(ctx, a.Slug) {
 		return s.startBinaryUpdate(ctx, a, b, by)
 	}
+	if s.jobRunningFor(a.Slug) {
+		return nil, &installer.Error{Status: http.StatusConflict, Msg: "something else is being done to " + a.Name + " right now"}
+	}
 	// The restart is on purpose: no "app down" event meanwhile.
 	s.removing.Store(a.Slug, true)
 	aj, err := s.inst.Update(ctx, installer.UpdateRequest{Slug: a.Slug, URL: a.URL})
@@ -311,6 +314,10 @@ func (s *Server) handleUninstallApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.Slug == "core" {
 		writeErr(w, http.StatusForbidden, "Pocket Core cannot remove itself")
+		return
+	}
+	if s.jobRunningFor(a.Slug) {
+		writeErr(w, http.StatusConflict, "something else is being done to "+a.Name+" right now")
 		return
 	}
 	// Removing an app takes it down on purpose: no "app down" event meanwhile.
@@ -349,7 +356,7 @@ func (s *Server) followInstall(j *installJob) {
 	ctx, cancel := context.WithTimeout(s.ctx, limit)
 	defer cancel()
 	defer s.pruneInstallJobs()
-	if j.Kind == "uninstall" || j.Kind == "update" {
+	if j.Kind == "uninstall" || j.Kind == "update" || j.Kind == "restart" {
 		defer s.removing.Delete(j.Slug)
 	}
 	var aj *installer.Job
@@ -387,6 +394,8 @@ func (s *Server) followInstall(j *installJob) {
 		s.unregister(ctx, j)
 	case "update":
 		s.awaitVersion(ctx, j, aj.Result)
+	case "restart":
+		s.awaitBack(ctx, j) // ops.go
 	default:
 		s.awaitRegistration(ctx, j)
 	}

@@ -57,7 +57,7 @@ type UninstallRequest struct {
 // Job is one install or removal and its running log.
 type Job struct {
 	ID      string     `json:"id"`
-	Kind    string     `json:"kind"` // install | uninstall
+	Kind    string     `json:"kind"` // install | update | uninstall | restart
 	Slug    string     `json:"slug"`
 	State   string     `json:"state"` // running | done | failed
 	Log     []string   `json:"log"`
@@ -231,6 +231,7 @@ func (a *Agent) Handler() http.Handler {
 		}
 		a.start(w, "uninstall", req.Slug, func(ctx context.Context, j *Job) error { return a.uninstall(ctx, j, req) })
 	})
+	a.opsRoutes(mux) // restart, logs, resources (ops.go)
 	mux.HandleFunc("GET /v1/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		j, ok := a.jobs[r.PathValue("id")]
@@ -288,14 +289,33 @@ func (a *Agent) handleCatalog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Agent) start(w http.ResponseWriter, kind, slug string, fn func(context.Context, *Job) error) {
-	if !a.work.TryLock() {
+	a.run(w, kind, slug, true, fn)
+}
+
+// run starts a job. Exclusive jobs (install, update, removal) hold the work lock: one at a time. Any
+// job refuses while another one for the same app still runs (a restart in the middle of an update).
+func (a *Agent) run(w http.ResponseWriter, kind, slug string, exclusive bool, fn func(context.Context, *Job) error) {
+	if exclusive && !a.work.TryLock() {
 		writeErr(w, http.StatusConflict, "another install or removal is still running")
 		return
+	}
+	unlock := func() {
+		if exclusive {
+			a.work.Unlock()
+		}
 	}
 	id := make([]byte, 8)
 	_, _ = rand.Read(id)
 	j := &Job{ID: hex.EncodeToString(id), Kind: kind, Slug: slug, State: "running", Started: time.Now().UTC(), Log: []string{}}
 	a.mu.Lock()
+	for _, other := range a.jobs {
+		if other.Slug == slug && other.State == "running" {
+			a.mu.Unlock()
+			unlock()
+			writeErr(w, http.StatusConflict, "something else is being done to "+displayName(slug)+" right now")
+			return
+		}
+	}
 	for k, old := range a.jobs { // keep a day of history
 		if old.Ended != nil && time.Since(*old.Ended) > 24*time.Hour {
 			delete(a.jobs, k)
@@ -304,9 +324,13 @@ func (a *Agent) start(w http.ResponseWriter, kind, slug string, fn func(context.
 	a.jobs[j.ID] = j
 	snap := *j
 	a.mu.Unlock()
+	limit := 20 * time.Minute
+	if !exclusive {
+		limit = 5 * time.Minute
+	}
 	go func() {
-		defer a.work.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), limit)
 		defer cancel()
 		err := fn(ctx, j)
 		a.mu.Lock()
@@ -505,7 +529,11 @@ func (a *Agent) rollback(ctx context.Context, j *Job, dir string, cause error) e
 }
 
 func (a *Agent) waitHealthy(ctx context.Context, port int) error {
-	deadline := time.Now().Add(a.healthWait)
+	return a.waitHealthyFor(ctx, port, a.healthWait)
+}
+
+func (a *Agent) waitHealthyFor(ctx context.Context, port int, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
 	u := fmt.Sprintf("http://127.0.0.1:%d/healthz", port)
 	var last string
 	for time.Now().Before(deadline) {
@@ -526,7 +554,7 @@ func (a *Agent) waitHealthy(ctx context.Context, port int) error {
 		case <-time.After(2 * time.Second):
 		}
 	}
-	return fmt.Errorf("the app did not answer on port %d within %s (%s)", port, a.healthWait, last)
+	return fmt.Errorf("the app did not answer on port %d within %s (%s)", port, wait, last)
 }
 
 // ---- uninstall ----

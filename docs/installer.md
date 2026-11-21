@@ -298,9 +298,15 @@ The socket is mode 600, so Core's container user must have the agent's uid (1000
 | `POST /api/v1/installer/install {slug}` | `POST /v1/install` | starts a job |
 | `POST /api/v1/apps/{slug}/upgrade` | `POST /v1/update` | starts a job: move to the catalog's newest release |
 | `POST /api/v1/apps/{slug}/uninstall` | `POST /v1/uninstall` | starts a job |
+| `POST /api/v1/apps/{slug}/restart` | `POST /v1/restart {slug, url}` | starts a job: `docker compose restart` of the app's own project (else `docker restart` of its container), then waits for `/healthz` |
+| `GET /api/v1/apps/{slug}/logs?lines=N` | `GET /v1/logs?slug&url&lines` | `{source, lines, truncated}`: `docker compose logs --timestamps --tail N` (≤ 2000 lines, 1 MB) |
+| `GET /api/v1/system` (`host`) | `GET /v1/resources` | the apps folder's disk and memory per app (`docker stats --no-stream`, kept 10 s) |
 | `GET /api/v1/installer/jobs/{id}` | `GET /v1/jobs/{id}` | `state` running/done/failed, `log`, `result` (dir, archive, port, warnings), `open_url` |
 
-One job runs at a time (409 otherwise). `GET /api/v1/auth/status` carries `installer: true` for
+One install, update or removal runs at a time (409 otherwise); a restart runs next to them, but never
+two jobs for the same app. Restart and logs refuse (409) an app no container runs (Pocket AI runs as a
+program: restart it and read its log on the machine). A Pocket Box's installer does the same with
+`systemctl restart pocket-<slug>` and `journalctl -u pocket-<slug>`. `GET /api/v1/auth/status` carries `installer: true` for
 admins when an agent is configured. Jobs live in memory for a day.
 
 Testing: `go test ./internal/installer/ ./internal/appstore/` covers the compose rewrite, Caddyfile

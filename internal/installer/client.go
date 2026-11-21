@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -108,4 +110,22 @@ func (c *Client) Job(ctx context.Context, id string) (*Job, error) {
 func (c *Client) Update(ctx context.Context, req UpdateRequest) (*Job, error) {
 	var j Job
 	return &j, c.do(ctx, http.MethodPost, "/v1/update", req, &j)
+}
+
+func (c *Client) Restart(ctx context.Context, req RestartRequest) (*Job, error) {
+	var j Job
+	return &j, c.do(ctx, http.MethodPost, "/v1/restart", req, &j)
+}
+
+// Logs reads an app's recent log lines (at most MaxLogLines).
+func (c *Client) Logs(ctx context.Context, slug, appURL string, lines int) (*Logs, error) {
+	var l Logs
+	q := url.Values{"slug": {slug}, "url": {appURL}, "lines": {strconv.Itoa(lines)}}
+	return &l, c.do(ctx, http.MethodGet, "/v1/logs?"+q.Encode(), nil, &l)
+}
+
+// Resources is what the apps take; an older agent without it answers 404.
+func (c *Client) Resources(ctx context.Context) (*Resources, error) {
+	var r Resources
+	return &r, c.do(ctx, http.MethodGet, "/v1/resources", nil, &r)
 }

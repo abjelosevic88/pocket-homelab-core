@@ -356,6 +356,8 @@ func (s *Server) Router() http.Handler {
 				r.Delete("/apps/{slug}", s.handleDeleteApp)
 				r.Post("/apps/{slug}/uninstall", s.handleUninstallApp)
 				r.Post("/apps/{slug}/upgrade", s.handleUpgradeApp)
+				r.Post("/apps/{slug}/restart", s.handleRestartApp) // ops.go
+				r.Get("/apps/{slug}/logs", s.handleAppLogs)
 				r.Get("/installer", s.handleInstallerCatalog)
 				r.Get("/installer/status", s.handleInstallerStatus)
 				r.Get("/installer/progress", s.handleInstallProgress)
@@ -527,13 +529,17 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	st, _ := s.store.GetSettings(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"version": Version, "go": runtime.Version(), "os": runtime.GOOS + "/" + runtime.GOARCH,
 		"uptime_s": int(time.Since(s.started).Seconds()), "started_at": s.started.UTC().Format(time.RFC3339),
 		"base_url": s.cfg.BaseURL, "issuer": s.cfg.OIDCIssuer, "auth_mode": s.cfg.AuthMode, "data_dir": s.cfg.DataDir,
 		"counts": s.store.Counts(r.Context()), "listeners": s.hub.Live(), "box_name": st.BoxName,
 		"health_interval_s": int(s.cfg.HealthInterval.Seconds()), "event_retention_h": int(s.cfg.EventRetention.Hours()),
-	})
+	}
+	if principalFrom(r.Context()).IsAdmin() {
+		out["host"] = s.hostInfo(r.Context()) // memory, load, disks (ops.go)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleOverview is the home page in one call. Members get a short version:
