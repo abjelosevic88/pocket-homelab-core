@@ -82,17 +82,18 @@ type Server struct {
 	ownerMu   sync.Mutex
 	ownerCred []string // SERVICES_FILE types with owner_credential: admins get the box's key as their own
 
-	pushRelay *push.Relay // Pocket Hub notifications through the Pocket Push relay (push.go)
+	pushRelay *push.Relay  // Pocket Hub notifications through the Pocket Push relay (push.go)
+	alerts    *adminAlerts // the Pocket Core app's admin alerts (push_admin.go)
 }
 
 // New creates a server.
 func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Server {
 	ua := "PocketCore/" + Version + " (+https://github.com/abjelosevic88/pocket-homelab-core)"
 	s := &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(),
-		hub:        events.New(st, log, cfg.WebhookAttempts, ua),
-		http:       &http.Client{Timeout: 8 * time.Second},
-		connHTTP:   &http.Client{Timeout: 30 * time.Second},
-		ctx:        context.Background(),
+		hub:      events.New(st, log, cfg.WebhookAttempts, ua),
+		http:     &http.Client{Timeout: 8 * time.Second},
+		connHTTP: &http.Client{Timeout: 30 * time.Second},
+		ctx:      context.Background(), alerts: newAdminAlerts(),
 		loginLimit: newLimiter(10, 15*time.Minute), pairLimit: newLimiter(10, 15*time.Minute), regLimit: newLimiter(10, 15*time.Minute),
 		hookSeen: newSeenCache(hookDedupeWindow), hookRate: newLimiter(hookRatePerMin, time.Minute),
 		box: newBoxAgent(cfg.BoxAgent), boxAddr: newBoxAgent(cfg.BoxAddress), boxDL: newBoxAgent(cfg.BoxDownloads), inst: installer.NewClient(cfg.InstallerSocket, cfg.InstallerToken)}
@@ -181,6 +182,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	go s.connectorScheduler(ctx)
 	go s.remote.run(ctx)
 	go s.remote.cfSyncer(ctx)
+	go s.pushWatch(ctx)
 	if s.inst != nil {
 		go s.autoUpdater(ctx)
 	}

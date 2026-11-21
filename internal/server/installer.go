@@ -41,6 +41,7 @@ type installJob struct {
 	agentLog []string
 	coreLog  []string
 	ended    time.Time
+	onEnd    func(*installJob) // admin alerts (push_admin.go), once
 }
 
 func (j *installJob) snapshot() map[string]any {
@@ -60,8 +61,13 @@ func (j *installJob) logf(format string, args ...any) {
 
 func (j *installJob) finish(state, errMsg string) {
 	j.mu.Lock()
+	first := j.ended.IsZero()
 	j.State, j.Error, j.ended = state, errMsg, time.Now()
+	end := j.onEnd
 	j.mu.Unlock()
+	if first && end != nil {
+		end(j)
+	}
 }
 
 // installerState says whether one-click installs exist here and why not.
@@ -248,7 +254,7 @@ func (s *Server) startInstall(ctx context.Context, u *store.User, slug, catalogN
 		return nil, err
 	}
 	j := &installJob{ID: aj.ID, Kind: "install", Slug: slug, Name: name, State: "running", Started: time.Now().UTC()}
-	s.installs.Store(j.ID, j)
+	s.trackJob(j)
 	s.log.Info("app install started", "slug", slug, "by", u.Email)
 	go s.followInstall(j)
 	return j, nil
@@ -293,7 +299,7 @@ func (s *Server) startUpgrade(ctx context.Context, a *store.App, by string) (*in
 		return nil, err
 	}
 	j := &installJob{ID: aj.ID, Kind: "update", Slug: a.Slug, Name: a.Name, State: "running", Started: time.Now().UTC()}
-	s.installs.Store(j.ID, j)
+	s.trackJob(j)
 	s.log.Info("app update started", "slug", a.Slug, "by", by)
 	go s.followInstall(j)
 	return j, nil
@@ -322,7 +328,7 @@ func (s *Server) handleUninstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j := &installJob{ID: aj.ID, Kind: "uninstall", Slug: a.Slug, Name: a.Name, State: "running", Started: time.Now().UTC()}
-	s.installs.Store(j.ID, j)
+	s.trackJob(j)
 	if u := userFrom(ctx); u != nil {
 		s.log.Info("app removal started", "slug", a.Slug, "by", u.Email)
 	}

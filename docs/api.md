@@ -94,16 +94,17 @@ See [events.md](events.md). `POST /events`, `GET /events`, `/events/{id}`, `/eve
 | GET | `/pair/profile?format=env` | user/device | the profile again (device tokens get their `pcd_` filled in; users get a preview) |
 | GET | `/devices` · DELETE `/devices/{id}` | user (own) / admin (all) | each device carries `push: {enabled, sound, last_sent_at, last_error}` once it registered for notifications; revoking a device removes its registration |
 
-## Notifications (Pocket Hub)
-See [push.md](push.md).
+## Notifications (Pocket Hub, Pocket Core app)
+See [push.md](push.md). Registrations with the topic `org.bjelke.pocketcore` (the Pocket Core app) get
+Core's admin alerts instead of the apps' messages ([push.md](push.md#the-pocket-core-app)).
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| PUT | `/devices/me/push` | device (`pcd_` only) | `{token, environment, topic, public_key, enabled?, sound?}`: APNs token in hex (64–200) with `development` or `production`, or (Android) the Firebase registration token with `fcm`; a topic from `PUSH_TOPICS`, the install's X25519 public key (standard base64, 32 bytes); `enabled`/`sound` default true → `{registered: true, enabled, sound, relay: "ready" \| "no_relay" \| "no_apple_key" \| "no_google_key"}`. Replaces the device's earlier registration; the same APNs token on another device row is dropped |
-| GET | `/devices/me/push` | device | `{registered, enabled, sound, relay, last_sent_at, last_error}` (+ `environment`, `topic`, `updated_at` when registered) |
+| PUT | `/devices/me/push` | device (`pcd_` only) | `{token, environment, topic, public_key, enabled?, sound?}`: APNs token in hex (64–200) with `development` or `production`, or (Android) the Firebase registration token with `fcm`; a topic from `PUSH_TOPICS`, the install's X25519 public key (standard base64, 32 bytes); `enabled`/`sound` default true; `kinds` (Pocket Core app: which admin alerts, any of `app_down`, `app_up`, `job_failed`, `job_done`, `updates`, `box_offline`; left out = keep the earlier choice, else the defaults: all but `job_done`; unknown kind `400`) → `{registered: true, enabled, sound, kinds, relay: "ready" \| "no_relay" \| "no_apple_key" \| "no_google_key"}`. Replaces the device's earlier registration; the same APNs token on another device row is dropped |
+| GET | `/devices/me/push` | device | `{registered, enabled, sound, relay, last_sent_at, last_error, kinds, admin, offline_watch: "on" \| "starting" \| "off" \| "no_relay" \| "relay_too_old"}` (+ `environment`, `topic`, `updated_at` when registered) |
 | DELETE | `/devices/me/push` | device | `{registered: false}` |
-| POST | `/devices/me/push/test` | device | seals "Notifications work" for this device → `{status: "sent" \| "failed" \| "gone", reason}`; `404` when not registered |
-| POST | `/push/notify` | app (`pca_`) or admin | `{email \| user_id, title, body, url, source, id, sound, thread}` → `{devices, sent, failed, gone, reason}` across the person's enabled registrations. `devices: 0` is not an error. An app may only notify people in its audience (`403 {reason: "not_in_audience"}`); unknown person `404`; no title and no body, or a non-http(s) `url`, `400`. Nothing sent because the relay was unreachable → `502`, over the relay's limit → `503` (same body; retry later). Device tokens are refused (`403`) |
+| POST | `/devices/me/push/test` | device | seals "Notifications work" for this device (Pocket Core app: "Notifications from <box> work.", opening the box) → `{status: "sent" \| "failed" \| "gone", reason}`; `404` when not registered |
+| POST | `/push/notify` | app (`pca_`) or admin | `{email \| user_id, title, body, url, source, id, sound, thread}` → `{devices, sent, failed, gone, reason}` across the person's enabled registrations (not the Pocket Core app's). `devices: 0` is not an error. An app may only notify people in its audience (`403 {reason: "not_in_audience"}`); unknown person `404`; no title and no body, or a non-http(s) `url`, `400`. Nothing sent because the relay was unreachable → `502`, over the relay's limit → `503` (same body; retry later). Device tokens are refused (`403`) |
 
 ## Box
 | Method | Path | Who | Notes |

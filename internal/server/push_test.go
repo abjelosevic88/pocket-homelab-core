@@ -27,6 +27,18 @@ type fakeRelay struct {
 	answer map[string]string // device token → status (default sent)
 	got    []push.Out
 	calls  int
+
+	// /v1/heartbeat: oldRelay answers 404 like a relay before Pocket Push 0.3.0.
+	oldRelay  bool
+	beats     []heartbeatCall
+	stops     int
+	fireNext  bool // answer the next heartbeat "fired"
+	beatError int  // answer heartbeats with this status
+}
+
+type heartbeatCall struct {
+	Deadline int        `json:"deadline"`
+	Messages []push.Out `json:"messages"`
 }
 
 func newFakeRelay(t *testing.T) *fakeRelay {
@@ -70,6 +82,32 @@ func newFakeRelay(t *testing.T) *fakeRelay {
 				}
 			}
 			writeJSON(w, 200, map[string]any{"results": res})
+		case "/v1/heartbeat":
+			if f.oldRelay {
+				w.WriteHeader(404)
+				return
+			}
+			if f.beatError != 0 {
+				w.WriteHeader(f.beatError)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				f.stops++
+				writeJSON(w, 200, map[string]any{"watching": false, "fired": false})
+				return
+			}
+			var hb heartbeatCall
+			if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
+				w.WriteHeader(400)
+				return
+			}
+			f.beats = append(f.beats, hb)
+			out := map[string]any{"watching": true, "due_at": "2026-11-12T12:10:00Z", "fired": f.fireNext}
+			if f.fireNext {
+				out["fired_at"] = "2026-11-12T12:05:00Z"
+				f.fireNext = false
+			}
+			writeJSON(w, 200, out)
 		default:
 			w.WriteHeader(404)
 		}

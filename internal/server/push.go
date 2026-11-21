@@ -42,12 +42,13 @@ func (s *Server) handlePutDevicePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Token       string `json:"token"`
-		Environment string `json:"environment"`
-		Topic       string `json:"topic"`
-		PublicKey   string `json:"public_key"`
-		Enabled     *bool  `json:"enabled"`
-		Sound       *bool  `json:"sound"`
+		Token       string    `json:"token"`
+		Environment string    `json:"environment"`
+		Topic       string    `json:"topic"`
+		PublicKey   string    `json:"public_key"`
+		Enabled     *bool     `json:"enabled"`
+		Sound       *bool     `json:"sound"`
+		Kinds       *[]string `json:"kinds"` // the Pocket Core app's admin alerts; absent = keep
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
@@ -80,14 +81,28 @@ func (s *Server) handlePutDevicePush(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "public_key must be the standard base64 of a 32-byte X25519 key")
 		return
 	}
+	kinds := ""
+	if in.Kinds != nil {
+		var bad string
+		if kinds, bad = encodeKinds(*in.Kinds); bad != "" {
+			writeErr(w, http.StatusBadRequest, "unknown kind "+strconv.Quote(bad)+"; kinds are "+strings.Join(alertKindNames(), ", "))
+			return
+		}
+	} else if old, err := s.store.GetPushRegistration(r.Context(), p.Device.ID); err == nil {
+		kinds = old.Kinds
+	}
 	reg := &store.PushRegistration{DeviceID: p.Device.ID, APNsToken: tok, Environment: in.Environment, Topic: in.Topic,
-		PublicKey: in.PublicKey, Enabled: in.Enabled == nil || *in.Enabled, Sound: in.Sound == nil || *in.Sound}
+		PublicKey: in.PublicKey, Enabled: in.Enabled == nil || *in.Enabled, Sound: in.Sound == nil || *in.Sound, Kinds: kinds}
 	if err := s.store.SavePushRegistration(r.Context(), reg); err != nil {
 		s.fail(w, err, "save push registration")
 		return
 	}
 	s.log.Info("push registered", "device", p.Device.ID, "user", p.User.ID, "topic", in.Topic, "environment", in.Environment, "enabled", reg.Enabled, "token_tail", tail(tok))
-	writeJSON(w, http.StatusOK, map[string]any{"registered": true, "enabled": reg.Enabled, "sound": reg.Sound, "relay": s.pushRelay.StatusFor(r.Context(), reg.Environment)})
+	if in.Topic == push.TopicCoreApp {
+		s.kickWatch() // box offline: start (or stop) the relay's watch without waiting for the next beat
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"registered": true, "enabled": reg.Enabled, "sound": reg.Sound, "kinds": decodeKinds(reg.Kinds),
+		"relay": s.pushRelay.StatusFor(r.Context(), reg.Environment)})
 }
 
 // GET /api/v1/devices/me/push
@@ -99,7 +114,8 @@ func (s *Server) handleGetDevicePush(w http.ResponseWriter, r *http.Request) {
 	reg, err := s.store.GetPushRegistration(r.Context(), p.Device.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		relay := s.pushRelay.StatusFor(r.Context(), pushEnvironmentGuess(p.Device.Platform))
-		writeJSON(w, http.StatusOK, map[string]any{"registered": false, "enabled": false, "sound": false, "relay": relay, "last_sent_at": nil, "last_error": ""})
+		writeJSON(w, http.StatusOK, map[string]any{"registered": false, "enabled": false, "sound": false, "relay": relay, "last_sent_at": nil, "last_error": "",
+			"kinds": decodeKinds(""), "admin": p.User.IsAdmin(), "offline_watch": s.offlineWatch()})
 		return
 	}
 	if err != nil {
@@ -112,7 +128,8 @@ func (s *Server) handleGetDevicePush(w http.ResponseWriter, r *http.Request) {
 		sent = reg.LastSentAt
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"registered": true, "enabled": reg.Enabled, "sound": reg.Sound, "relay": relay,
-		"environment": reg.Environment, "topic": reg.Topic, "last_sent_at": sent, "last_error": reg.LastError, "updated_at": reg.UpdatedAt})
+		"environment": reg.Environment, "topic": reg.Topic, "last_sent_at": sent, "last_error": reg.LastError, "updated_at": reg.UpdatedAt,
+		"kinds": decodeKinds(reg.Kinds), "admin": p.User.IsAdmin(), "offline_watch": s.offlineWatch()})
 }
 
 // DELETE /api/v1/devices/me/push
@@ -125,6 +142,7 @@ func (s *Server) handleDeleteDevicePush(w http.ResponseWriter, r *http.Request) 
 		s.fail(w, err, "delete push registration")
 		return
 	}
+	s.kickWatch()
 	s.log.Info("push unregistered", "device", p.Device.ID, "user", p.User.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"registered": false})
 }
@@ -145,6 +163,11 @@ func (s *Server) handleTestDevicePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := push.Message{Title: "Pocket Hub", Body: "Notifications work", Source: "Pocket Core", ID: "test-" + strconv.FormatInt(time.Now().Unix(), 10), Sound: true, Thread: "pocket-core"}
+	if reg.Topic == push.TopicCoreApp {
+		// The Pocket Core app: in this box's thread, and tapping it opens the box.
+		box := s.boxLabel(r.Context())
+		m.Title, m.Body, m.Thread, m.URL = "Pocket Core", "Notifications from "+box+" work.", s.boxThread(), s.coreAppLink("", reg.DeviceID)
+	}
 	res, _ := s.pushSend(r.Context(), []store.PushRegistration{*reg}, m)
 	out := map[string]any{"status": push.Sent}
 	switch {
@@ -230,7 +253,8 @@ func (s *Server) handlePushNotify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, pushTally{Reason: "this account is disabled"})
 		return
 	}
-	regs, err := s.store.UserPushRegistrations(r.Context(), u.ID)
+	// The Pocket Core app gets Core's own admin alerts (push_admin.go), not the apps' messages.
+	regs, err := s.store.UserPushRegistrations(r.Context(), u.ID, push.TopicCoreApp)
 	if err != nil {
 		s.fail(w, err, "list push registrations")
 		return
@@ -267,8 +291,14 @@ func rawID(raw json.RawMessage) string {
 // pushSend seals m for every registration, sends them through the relay and records the outcome:
 // sent → last_sent_at, gone → the registration is deleted, failed/limited → last_error.
 func (s *Server) pushSend(ctx context.Context, regs []store.PushRegistration, m push.Message) (pushTally, error) {
+	return s.pushSendEach(ctx, regs, func(store.PushRegistration) push.Message { return m }, "")
+}
+
+// pushSendEach is pushSend with a message per registration (a link naming the device) and an
+// optional APNs collapse id.
+func (s *Server) pushSendEach(ctx context.Context, regs []store.PushRegistration, msgFor func(store.PushRegistration) push.Message, collapse string) (pushTally, error) {
 	t := pushTally{Devices: len(regs)}
-	m.At = time.Now().UTC().Format(time.RFC3339)
+	at := time.Now().UTC().Format(time.RFC3339)
 	exp := time.Now().Add(pushExpiry).Unix()
 	outs := make([]push.Out, 0, len(regs))
 	sendable := make([]store.PushRegistration, 0, len(regs))
@@ -278,8 +308,9 @@ func (s *Server) pushSend(ctx context.Context, regs []store.PushRegistration, m 
 		}
 	}
 	for _, reg := range regs {
-		dm := m
-		dm.Sound = m.Sound && reg.Sound
+		dm := msgFor(reg)
+		dm.At = at
+		dm.Sound = dm.Sound && reg.Sound
 		sealed, err := push.SealMessage(reg.PublicKey, dm)
 		if err != nil {
 			t.Failed++
@@ -288,7 +319,7 @@ func (s *Server) pushSend(ctx context.Context, regs []store.PushRegistration, m 
 			continue
 		}
 		outs = append(outs, push.Out{Token: reg.APNsToken, Environment: reg.Environment, Topic: reg.Topic, Sealed: sealed,
-			Sound: dm.Sound, Thread: m.Thread, Expires: exp, Priority: 10})
+			Sound: dm.Sound, Thread: dm.Thread, CollapseID: collapse, Expires: exp, Priority: 10})
 		sendable = append(sendable, reg)
 	}
 	if len(outs) == 0 {

@@ -102,6 +102,7 @@ func (s *Server) runUpdates(ctx context.Context, apply bool) (*updateRun, error)
 	if err != nil {
 		return nil, err
 	}
+	var waiting []waitingUpdate // newer versions not applied in this pass (the admins' digest)
 	have := map[string]*store.App{}
 	for i := range apps {
 		have[apps[i].Slug] = &apps[i]
@@ -125,6 +126,7 @@ func (s *Server) runUpdates(ctx context.Context, apply bool) (*updateRun, error)
 			_ = s.store.SetKV(ctx, "update_announced:"+a.Slug, rel.Version)
 			continue
 		}
+		waiting = append(waiting, waitingUpdate{Slug: a.Slug, Name: a.Name, From: strings.TrimPrefix(a.Version, "v"), To: rel.Version})
 		if s.store.GetKV(ctx, "update_announced:"+a.Slug) == rel.Version {
 			run.Skipped = append(run.Skipped, label)
 			continue
@@ -146,6 +148,7 @@ func (s *Server) runUpdates(ctx context.Context, apply bool) (*updateRun, error)
 		}
 		s.announce(ctx, "core.apps.updates_available", "", "", title, strings.Join(run.Available, "\n"), 3, "package")
 	}
+	s.noteUpdatesWaiting(ctx, waiting)
 	return run, nil
 }
 

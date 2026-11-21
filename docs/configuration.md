@@ -41,7 +41,8 @@ Everything is read from environment variables; every value has a default so a ba
 | `PUSH_RELAY_URL` | `https://push.pockethomelab.com` | The Pocket Push relay that forwards Pocket Hub notifications to Apple; see [push.md](push.md) |
 | `PUSH_RELAY_TOKEN` | none | The relay's `pps_` sender token for this box. Without it (and without `PUSH_NAMES_ACCOUNT`) notifications report `no_relay` |
 | `PUSH_NAMES_ACCOUNT` | none | Path to a Pocket Names account file `{"name","token"}`; with no `PUSH_RELAY_TOKEN`, Core enrolls at the relay with it and keeps the sender token in `DATA_DIR/push-relay.token` |
-| `PUSH_TOPICS` | `org.bjelke.pockethub,org.bjelke.pockethub.mac` | APNs topics (app IDs) a device may register for |
+| `PUSH_TOPICS` | `org.bjelke.pockethub,org.bjelke.pockethub.mac,org.bjelke.pocketcore` | APNs topics (app IDs) a device may register for |
+| `PUSH_OFFLINE_AFTER` | `10m` | box offline: how long the box may be silent before the push relay tells admins' Pocket Core apps (at least `4m`; `off` = no watch) |
 
 ## Auth modes
 
