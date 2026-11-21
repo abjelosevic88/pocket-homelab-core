@@ -165,6 +165,9 @@ func (s *Server) hostInfo(ctx context.Context) map[string]any {
 	if l := readLoadavg("/proc/loadavg"); l != nil {
 		out["load"] = l
 	}
+	if t := readTemperatures("/sys"); len(t) > 0 {
+		out["temperatures"] = t
+	}
 	disks := []map[string]any{}
 	if d, err := installer.DiskSpace(s.cfg.DataDir); err == nil {
 		disks = append(disks, map[string]any{"name": "data", "path": d.Path, "total_bytes": d.Total, "free_bytes": d.Free})
