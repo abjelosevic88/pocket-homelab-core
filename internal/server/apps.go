@@ -390,11 +390,14 @@ func (s *Server) checkAllApps(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	present := map[string]bool{}
 	for i := range apps {
+		present[apps[i].Slug] = true
 		if _, busy := s.removing.Load(apps[i].Slug); !busy {
-			s.checkApp(ctx, &apps[i])
+			s.checkApp(polled(ctx), &apps[i])
 		}
 	}
+	s.forgetApps(ctx, present)
 }
 
 func (s *Server) checkApp(ctx context.Context, a *store.App) {
@@ -425,6 +428,7 @@ func (s *Server) checkApp(ctx context.Context, a *store.App) {
 		_ = s.hub.Publish(context.WithoutCancel(ctx), &store.Event{Topic: "core.app." + status, Source: "core", Subject: "app:" + a.Slug, Payload: mustJSON(map[string]any{"slug": a.Slug, "name": a.Name, "error": msg})})
 	}
 	_ = s.store.SetAppHealth(context.WithoutCancel(ctx), a.ID, status, version, msg)
+	s.noteHealth(context.WithoutCancel(ctx), a, status, msg)
 }
 
 func trimErr(err error) string {

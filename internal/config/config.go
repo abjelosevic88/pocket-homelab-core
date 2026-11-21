@@ -98,10 +98,13 @@ type Config struct {
 	PushRelayToken   string   // PUSH_RELAY_TOKEN: the relay's pps_ sender token
 	PushNamesAccount string   // PUSH_NAMES_ACCOUNT: Pocket Names {"name","token"} JSON to enroll with
 	PushTopics       []string // PUSH_TOPICS: APNs topics a device may register for
+	// PUSH_OFFLINE_AFTER: how long the box may be silent before the relay tells admins' Pocket Core
+	// apps it is offline (default 10m, at least 4m; "off" = don't ask the relay to watch).
+	PushOfflineAfter time.Duration
 }
 
-// DefaultPushTopics are Pocket Hub's App IDs (iPhone/iPad, Mac).
-var DefaultPushTopics = []string{"org.bjelke.pockethub", "org.bjelke.pockethub.mac"}
+// DefaultPushTopics are Pocket Hub's App IDs (iPhone/iPad, Mac) and the Pocket Core app's.
+var DefaultPushTopics = []string{"org.bjelke.pockethub", "org.bjelke.pockethub.mac", "org.bjelke.pocketcore"}
 
 func env(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
@@ -199,6 +202,12 @@ func Load() (*Config, error) {
 		PushRelayToken:   env("PUSH_RELAY_TOKEN", ""),
 		PushNamesAccount: env("PUSH_NAMES_ACCOUNT", ""),
 		PushTopics:       strings.FieldsFunc(env("PUSH_TOPICS", strings.Join(DefaultPushTopics, ",")), func(r rune) bool { return r == ',' || r == ' ' }),
+		PushOfflineAfter: envDuration("PUSH_OFFLINE_AFTER", 10*time.Minute),
+	}
+	if v := strings.ToLower(env("PUSH_OFFLINE_AFTER", "")); v == "off" || v == "0" || v == "false" {
+		c.PushOfflineAfter = 0
+	} else if c.PushOfflineAfter < 4*time.Minute {
+		c.PushOfflineAfter = 4 * time.Minute
 	}
 	if c.MCPTokenHash != "" {
 		b, err := hex.DecodeString(c.MCPTokenHash)

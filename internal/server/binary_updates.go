@@ -190,7 +190,7 @@ func (s *Server) startBinaryUpdate(ctx context.Context, a *store.App, b *appstor
 	var rnd [8]byte
 	_, _ = rand.Read(rnd[:])
 	j := &installJob{ID: "self-" + hex.EncodeToString(rnd[:]), Kind: "update", Slug: a.Slug, Name: a.Name, State: "running", Started: time.Now().UTC()}
-	s.installs.Store(j.ID, j)
+	s.trackJob(j)
 	s.setBinaryUpdate(ctx, a.Slug, &binaryUpdate{Target: b.Version, State: "requested", By: by, Job: j.ID, Requested: time.Now().UTC()})
 	s.log.Info("app self-update requested", "slug", a.Slug, "version", b.Version, "by", by)
 	j.logf("Asked %s to update itself from %s to %s", a.Name, formatVer(a.Version), formatVer(b.Version))

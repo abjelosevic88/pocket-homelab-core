@@ -19,6 +19,9 @@ type PushRegistration struct {
 	UpdatedAt   string `json:"updated_at"`
 	LastSentAt  string `json:"last_sent_at,omitempty"`
 	LastError   string `json:"last_error"`
+	// Kinds is the Pocket Core app's choice of admin alerts: a comma list, "" = the defaults,
+	// "none" = nothing (see server/push_admin.go).
+	Kinds string `json:"kinds"`
 }
 
 // DevicePush is what the Devices list shows about a device's notifications.
@@ -29,13 +32,13 @@ type DevicePush struct {
 	LastError  string `json:"last_error,omitempty"`
 }
 
-const pushCols = `id, device_id, apns_token, environment, topic, public_key, enabled, sound, created_at, updated_at, last_sent_at, last_error`
+const pushCols = `id, device_id, apns_token, environment, topic, public_key, enabled, sound, created_at, updated_at, last_sent_at, last_error, kinds`
 
 func scanPush(sc interface{ Scan(...any) error }) (*PushRegistration, error) {
 	var p PushRegistration
 	var en, snd int
 	var sent sql.NullString
-	if err := sc.Scan(&p.ID, &p.DeviceID, &p.APNsToken, &p.Environment, &p.Topic, &p.PublicKey, &en, &snd, &p.CreatedAt, &p.UpdatedAt, &sent, &p.LastError); err != nil {
+	if err := sc.Scan(&p.ID, &p.DeviceID, &p.APNsToken, &p.Environment, &p.Topic, &p.PublicKey, &en, &snd, &p.CreatedAt, &p.UpdatedAt, &sent, &p.LastError, &p.Kinds); err != nil {
 		return nil, notFound(err)
 	}
 	p.Enabled, p.Sound, p.LastSentAt = en == 1, snd == 1, nullStr(sent)
@@ -54,13 +57,13 @@ func (s *Store) SavePushRegistration(ctx context.Context, p *PushRegistration) e
 		return err
 	}
 	now := Now()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO push_registrations (device_id, apns_token, environment, topic, public_key, enabled, sound, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO push_registrations (device_id, apns_token, environment, topic, public_key, enabled, sound, kinds, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(device_id) DO UPDATE SET
 		  last_error = CASE WHEN push_registrations.apns_token <> excluded.apns_token OR push_registrations.public_key <> excluded.public_key THEN '' ELSE push_registrations.last_error END,
 		  apns_token = excluded.apns_token, environment = excluded.environment, topic = excluded.topic,
-		  public_key = excluded.public_key, enabled = excluded.enabled, sound = excluded.sound, updated_at = excluded.updated_at`,
-		p.DeviceID, p.APNsToken, p.Environment, p.Topic, p.PublicKey, boolInt(p.Enabled), boolInt(p.Sound), now, now); err != nil {
+		  public_key = excluded.public_key, enabled = excluded.enabled, sound = excluded.sound, kinds = excluded.kinds, updated_at = excluded.updated_at`,
+		p.DeviceID, p.APNsToken, p.Environment, p.Topic, p.PublicKey, boolInt(p.Enabled), boolInt(p.Sound), p.Kinds, now, now); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -83,13 +86,36 @@ func (s *Store) DeletePushRegistrationByID(ctx context.Context, id int64) error 
 	return err
 }
 
-// UserPushRegistrations lists a person's enabled registrations (through their devices).
-func (s *Store) UserPushRegistrations(ctx context.Context, userID int64) ([]PushRegistration, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT p.id, p.device_id, p.apns_token, p.environment, p.topic, p.public_key, p.enabled, p.sound, p.created_at, p.updated_at, p.last_sent_at, p.last_error
-		FROM push_registrations p JOIN devices d ON d.id = p.device_id WHERE d.user_id = ? AND p.enabled = 1 ORDER BY p.id`, userID)
+// UserPushRegistrations lists a person's enabled registrations (through their devices), leaving
+// out the topics in except (the Pocket Core app: it gets Core's own admin alerts, not app messages).
+func (s *Store) UserPushRegistrations(ctx context.Context, userID int64, except ...string) ([]PushRegistration, error) {
+	q := `SELECT p.id, p.device_id, p.apns_token, p.environment, p.topic, p.public_key, p.enabled, p.sound, p.created_at, p.updated_at, p.last_sent_at, p.last_error, p.kinds
+		FROM push_registrations p JOIN devices d ON d.id = p.device_id WHERE d.user_id = ? AND p.enabled = 1`
+	args := []any{userID}
+	for _, t := range except {
+		q += ` AND p.topic <> ?`
+		args = append(args, t)
+	}
+	rows, err := s.DB.QueryContext(ctx, q+` ORDER BY p.id`, args...)
 	if err != nil {
 		return nil, err
 	}
+	return scanPushRows(rows)
+}
+
+// AdminPushRegistrations lists the enabled registrations of one topic whose device belongs to an
+// admin who isn't disabled: who gets Core's admin alerts.
+func (s *Store) AdminPushRegistrations(ctx context.Context, topic string) ([]PushRegistration, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT p.id, p.device_id, p.apns_token, p.environment, p.topic, p.public_key, p.enabled, p.sound, p.created_at, p.updated_at, p.last_sent_at, p.last_error, p.kinds
+		FROM push_registrations p JOIN devices d ON d.id = p.device_id JOIN users u ON u.id = d.user_id
+		WHERE p.topic = ? AND p.enabled = 1 AND u.role = 'admin' AND u.disabled = 0 ORDER BY p.id`, topic)
+	if err != nil {
+		return nil, err
+	}
+	return scanPushRows(rows)
+}
+
+func scanPushRows(rows *sql.Rows) ([]PushRegistration, error) {
 	defer rows.Close()
 	out := []PushRegistration{}
 	for rows.Next() {
