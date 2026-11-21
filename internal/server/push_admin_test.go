@@ -361,7 +361,7 @@ func TestBoxOfflineHeartbeat(t *testing.T) {
 		t.Fatal("plaintext in the heartbeat")
 	}
 	m := phone.open(t, out.Sealed)
-	if m.Title != "Home is offline" || !strings.Contains(m.Body, "since 12:00") || !strings.HasPrefix(m.URL, "pocketcore://box?") {
+	if m.Title != "Home is offline" || m.Body != "No word from it for 10 min. It may be switched off, without power or without internet." || !strings.HasPrefix(m.URL, "pocketcore://box?") {
 		t.Fatalf("offline message %+v", m)
 	}
 	var st struct {
@@ -384,7 +384,7 @@ func TestBoxOfflineHeartbeat(t *testing.T) {
 	if len(got) != 1 || got[0].Token != phone.apns || got[0].CollapseID != out.CollapseID {
 		t.Fatalf("back online %+v", got)
 	}
-	if m := phone.open(t, got[0].Sealed); m.Title != "Home is back online" || m.Body != "It was offline for about 40 min, from 12:00." {
+	if m := phone.open(t, got[0].Sealed); m.Title != "Home is back online" || m.Body != "It was offline for about 40 min." {
 		t.Fatalf("back message %+v", m)
 	}
 

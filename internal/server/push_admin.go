@@ -536,7 +536,8 @@ func (s *Server) heartbeatOnce(ctx context.Context, now time.Time) {
 	}
 	box := s.boxLabel(ctx)
 	off := push.Message{Title: box + " is offline",
-		Body:   "No word from it since " + now.Format("15:04") + ". It may be switched off, without power or without internet.",
+		// No clock time: a container's zone is often UTC, not the admin's.
+		Body:   "No word from it for " + about(s.cfg.PushOfflineAfter) + ". It may be switched off, without power or without internet.",
 		Source: alertSourceTag, ID: "offline-" + strconv.FormatInt(now.Unix(), 10), Sound: true, Thread: s.boxThread(), At: now.UTC().Format(time.RFC3339)}
 	outs := make([]push.Out, 0, len(regs))
 	for _, r := range regs {
@@ -583,7 +584,7 @@ func (s *Server) heartbeatOnce(ctx context.Context, now time.Time) {
 	}
 	body := "It's reachable again."
 	if !lastOK.IsZero() && now.After(lastOK) {
-		body = fmt.Sprintf("It was offline for about %s, from %s.", about(now.Sub(lastOK)), lastOK.Local().Format("15:04"))
+		body = fmt.Sprintf("It was offline for about %s.", about(now.Sub(lastOK)))
 	}
 	s.log.Info("box back online after the relay sent its offline notices", "fired_at", res.FiredAt.Format(time.RFC3339))
 	back, _ := s.pushSendEach(ctx, regs, func(r store.PushRegistration) push.Message {

@@ -88,7 +88,7 @@ The Pocket Core app registers like Pocket Hub (same `PUT /devices/me/push`, same
 | `job_failed` | on | an install, update (also the nightly automatic one) or removal failed | "Money didn't update on Home" — the installer's error |
 | `job_done` | off | one finished | "Sky is installed on Home" — "Version 0.6.2 is ready." |
 | `updates` | on | the nightly pass found newer versions it didn't apply: a digest once something new is waiting, at most once a day, between 9:00 and 21:00 box time | "3 updates waiting on Home" — "Notes 0.14.1 → 0.14.2, …" |
-| `box_offline` | on | the box stopped checking in with the relay (below), and back | "Home is offline" / "Home is back online" — "It was offline for about 25 min, from 14:02." |
+| `box_offline` | on | the box stopped checking in with the relay (below), and back | "Home is offline" / "Home is back online" — "It was offline for about 25 min." |
 
 Every alert carries `url` = `pocketcore://box?core=<Core's base URL>&device=<device id>[&app=<slug>]` (the
 app opens that box, and the app's page), `thread` = `box-<16 hex>` (one per box, so the phone groups them)
