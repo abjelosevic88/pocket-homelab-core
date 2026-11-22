@@ -186,7 +186,7 @@ function ServiceForm({ entry, initial, onSubmit, onClose }: { entry: CatalogEntr
   const [pub, setPub] = useState(initial?.public_url || '')
   const [fields, setFields] = useState<Record<string, string>>(initial?.fields || {})
   const [notes, setNotes] = useState(initial?.notes || '')
-  const [audience, setAudience] = useState<Service['audience']>(initial?.audience || 'all')
+  const [audience, setAudience] = useState<Service['audience']>(initial?.audience || entry.audience || 'all')
   const [audUsers, setAudUsers] = useState<number[]>(initial?.audience_users || [])
   const { data: users } = useAsync(() => api.get<User[]>(`${V1}/users`).catch(() => [] as User[]), [])
   const [err, setErr] = useState('')

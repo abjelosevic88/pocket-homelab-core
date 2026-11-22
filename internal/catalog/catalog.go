@@ -28,6 +28,9 @@ type Entry struct {
 	URLKey string  `json:"url_key"`
 	Pocket bool    `json:"pocket"` // a Pocket app: credential is the device token
 	Fields []Field `json:"fields"`
+	// Audience is who a new service of this type goes to unless the admin picks
+	// otherwise: "admins" for ones that can change the server (Docker, DNS).
+	Audience string `json:"audience,omitempty"`
 }
 
 // FullKey returns PREFIX_KEY.
@@ -180,6 +183,20 @@ var entries = []Entry{
 	{Type: "beszel", Name: "Beszel", Prefix: "BESZEL", Group: "Server", Fields: []Field{{Key: "EMAIL", Label: "Email", Help: "a Beszel user's login; alert events come from that user's alerts"}, {Key: "PASSWORD", Label: "Password", Secret: true}, {Key: "GLANCES", Label: "Glances system name"}}},
 	{Type: "adguard", Name: "AdGuard Home", Prefix: "ADGUARD", Group: "Server", Fields: userPass("USERNAME", "PASSWORD")},
 	{Type: "ntfy", Name: "ntfy", Prefix: "NTFY", Group: "Server", Fields: []Field{{Key: "TOPICS", Label: "Topics (comma list)"}}},
+	{Type: "docker", Name: "Docker", Prefix: "DOCKER", Group: "Server", Audience: "admins", Fields: []Field{
+		{Key: "TOKEN", Label: "Bearer token", Secret: true, Help: "Optional. A docker-socket-proxy (CONTAINERS=1, POST=1 for start/stop/restart) or dockerd on TCP; a token only when a reverse proxy in front asks for one"},
+		{Key: "USERNAME", Label: "Username", Help: "Optional: basic auth on that reverse proxy"}, {Key: "PASSWORD", Label: "Password", Secret: true}}},
+	{Type: "dozzle", Name: "Dozzle", Prefix: "DOZZLE", Group: "Server", Fields: []Field{
+		{Key: "USERNAME", Label: "Username", Help: "Only when Dozzle has its own sign-in (--auth-provider simple)"}, {Key: "PASSWORD", Label: "Password", Secret: true}}},
+	{Type: "gotify", Name: "Gotify", Prefix: "GOTIFY", Group: "Server", Fields: token("A client token (Clients → Create client), not an application token")},
+	{Type: "duplicati", Name: "Duplicati", Prefix: "DUPLICATI", Group: "Server", Fields: []Field{{Key: "PASSWORD", Label: "Password", Secret: true, Help: "The web UI password (Duplicati 2.1 or newer)"}}},
+	{Type: "crowdsec", Name: "CrowdSec", Prefix: "CROWDSEC", Group: "Server", Audience: "admins", Fields: []Field{
+		{Key: "API_KEY", Label: "Bouncer API key", Secret: true, Help: "cscli bouncers add pocket-homelab — reads the active decisions"},
+		{Key: "MACHINE_ID", Label: "Machine ID", Help: "Optional: cscli machines add pocket-homelab --password … — adds alerts and unban"},
+		{Key: "PASSWORD", Label: "Machine password", Secret: true}}},
+	{Type: "cloudflare", Name: "Cloudflare", Prefix: "CLOUDFLARE", Group: "Server", Audience: "admins", Fields: []Field{
+		{Key: "API_TOKEN", Label: "API token", Secret: true, Help: "My Profile → API Tokens: Zone:Read, DNS:Edit, and Account → Cloudflare Tunnel:Read for tunnels. A cloud account: leave the URL as https://api.cloudflare.com"},
+		{Key: "ACCOUNT_ID", Label: "Account ID", Help: "Optional: for tunnels when the token sees several accounts"}}},
 	{Type: "ssh", Name: "Services & jobs (SSH, Mac)", Prefix: "SERVICES_SSH", Group: "Server", URLKey: "HOST", Fields: []Field{{Key: "PORT", Label: "Port"}, {Key: "IDENTITY_FILE", Label: "Identity file"}}},
 
 	// ---- Downloads ----
@@ -199,6 +216,10 @@ var entries = []Entry{
 	{Type: "lidarr", Name: "Lidarr", Prefix: "LIDARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "chaptarr", Name: "Chaptarr / Readarr", Prefix: "CHAPTARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "prowlarr", Name: "Prowlarr", Prefix: "PROWLARR", Group: "Media", Fields: apiKey("Settings → General")},
+	{Type: "autobrr", Name: "autobrr", Prefix: "AUTOBRR", Group: "Downloads", Fields: apiKey("Settings → API keys, one scope per part: filters:write, releases:write, irc:write, indexers:read, config:read")},
+	{Type: "cleanuparr", Name: "Cleanuparr", Prefix: "CLEANUPARR", Group: "Downloads", Fields: apiKey("Settings → Account → API Key")},
+	{Type: "profilarr", Name: "Profilarr", Prefix: "PROFILARR", Group: "Media", Fields: apiKey("Profilarr v2: Settings → Security → API keys (read System, Databases, Arr, Jobs; write Databases for Check now)")},
+	{Type: "wizarr", Name: "Wizarr", Prefix: "WIZARR", Group: "Media", Fields: apiKey("Settings → API Keys (shown once)")},
 	{Type: "tmdb", Name: "TMDb", Prefix: "TMDB", Group: "Media", Fields: apiKey("themoviedb.org → Settings → API (the v3 key or the read access token)")},
 	{Type: "bazarr", Name: "Bazarr", Prefix: "BAZARR", Group: "Media", Fields: apiKey("Settings → General")},
 	{Type: "audiobookshelf", Name: "Audiobookshelf", Prefix: "ABS", Group: "Media", Fields: []Field{{Key: "TOKEN", Label: "Token", Secret: true, Help: "Settings → API Keys (an administrator's key; root's to manage the root user)"}, {Key: "USER_ID", Label: "User id (optional)"}}},

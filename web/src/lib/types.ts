@@ -9,7 +9,7 @@ export interface App {
   open_url?: string
 }
 export interface CatalogField { key: string; label: string; secret: boolean; help?: string }
-export interface CatalogEntry { type: string; name: string; prefix: string; group: string; url_key: string; pocket: boolean; fields: CatalogField[] }
+export interface CatalogEntry { type: string; name: string; prefix: string; group: string; url_key: string; pocket: boolean; fields: CatalogField[]; audience?: 'admins' }
 export interface Service {
   id: number; type: string; name: string; url: string; public_url: string; fields: Record<string, string>; app_id?: number
   enabled: boolean; notes: string; created_at: string; updated_at: string; catalog: CatalogEntry
