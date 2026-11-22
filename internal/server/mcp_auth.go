@@ -71,6 +71,10 @@ func (s *Server) mcpAccess(next http.Handler) http.Handler {
 						return
 					}
 					account = mcpAccount{UserID: user.ID, GrantID: secret.GrantID, Scope: binding.scopes()}
+					// Pocket Ask lasts while Pocket AI uses it (30 days unused)
+					if err := s.store.ExtendAskConnection(r.Context(), secret.GrantID, user.ID, secret.ExpiresAt); err != nil {
+						s.log.Warn("extend Pocket Ask connection", "err", err)
+					}
 					client = config.MCPClient{ID: fmt.Sprintf("oauth:%s:user:%d", secret.ClientID, user.ID), Apps: apps}
 				}
 			}

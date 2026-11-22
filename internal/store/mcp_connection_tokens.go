@@ -60,3 +60,38 @@ func (s *Store) purgeMCPTokenClients(ctx context.Context) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM mcp_oauth_clients WHERE kind='token' AND NOT EXISTS(SELECT 1 FROM mcp_oauth_grants g WHERE g.client_id=mcp_oauth_clients.client_id)`)
 	return err
 }
+
+// AskConnectionTTL is how long the Pocket Ask connection lasts unused.
+const AskConnectionTTL = 30 * 24 * time.Hour
+
+// ExtendAskConnection keeps the person's Pocket Ask connection alive while
+// Pocket AI uses it: an access token of the grant in pocket_ask_connections
+// gets AskConnectionTTL from now again (at most once a day). Only a grant
+// that is still valid is extended, so a disconnect, an expired connection or
+// a sign-out everywhere (auth revision) still ends it.
+func (s *Store) ExtendAskConnection(ctx context.Context, grantID string, userID int64, expiresAt string) error {
+	now := time.Now()
+	if expiresAt > Stamp(now.Add(AskConnectionTTL-24*time.Hour)) {
+		return nil
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	until := Stamp(now.Add(AskConnectionTTL))
+	res, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_grants SET expires_at=? WHERE id=? AND user_id=? AND expires_at>? AND expires_at<?
+ AND EXISTS(SELECT 1 FROM pocket_ask_connections a WHERE a.grant_id=mcp_oauth_grants.id AND a.user_id=?)
+ AND EXISTS(SELECT 1 FROM users u WHERE u.id=mcp_oauth_grants.user_id AND u.disabled=0 AND u.auth_revision=mcp_oauth_grants.auth_revision)`,
+		until, grantID, userID, Stamp(now), until, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return nil
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE mcp_oauth_secrets SET expires_at=? WHERE grant_id=? AND user_id=? AND kind='access' AND expires_at>?`, until, grantID, userID, Stamp(now)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

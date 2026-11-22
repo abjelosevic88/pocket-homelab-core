@@ -134,7 +134,7 @@ func (s *Server) handleAskConnect(w http.ResponseWriter, r *http.Request) {
 	u := s.sessionUser(r)
 	old, _ := s.askGrant(r.Context(), u)
 	scope := "status:read apps:read apps:write"
-	grant, token, err := s.store.CreateMCPConnectionToken(r.Context(), u, "Pocket Ask", scope, 30, mcpAuthorization{Resource: s.mcpResource(), Scope: scope})
+	grant, token, err := s.store.CreateMCPConnectionToken(r.Context(), u, "Pocket Ask", scope, int(store.AskConnectionTTL/(24*time.Hour)), mcpAuthorization{Resource: s.mcpResource(), Scope: scope})
 	if err != nil {
 		writeErr(w, 409, "Could not connect Ask. Disconnect an old AI connection and try again.")
 		return
