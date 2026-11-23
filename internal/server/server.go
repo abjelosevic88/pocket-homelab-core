@@ -281,6 +281,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/auth/introspect", s.handleIntrospect)
 			r.Post("/auth/subject", s.handleSubject)
 			r.Post("/links/token", s.handleLinkToken)
+			r.Post("/remote/agent-pair", s.handleRemoteAgentPair)
 			r.Get("/links/status", s.handleLinkStatus)
 			r.Post("/services/credential", s.handleServiceCredential)
 			r.Put("/links/modes", s.handleReportModes)

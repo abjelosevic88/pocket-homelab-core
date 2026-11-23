@@ -85,6 +85,11 @@ func newRemoteRig(t *testing.T) *remoteRig {
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(in)
 	})
+	mux.HandleFunc("/api/v1/agent/", func(w http.ResponseWriter, r *http.Request) {
+		in, code := who(r)
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(in)
+	})
 	mux.HandleFunc("/echo", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		w.Write(b)
@@ -866,4 +871,86 @@ type remoteAppRow struct {
 	Slug          string `json:"slug"`
 	Exposed       bool   `json:"exposed"`
 	DeviceDefault bool   `json:"device_default"`
+}
+
+// An app pairs an agent: its key reaches only the app's /api/v1/agent/ paths,
+// skips the passkey, and cannot open the launcher.
+func TestRemoteAgentPairing(t *testing.T) {
+	rig := newRemoteRig(t)
+	rig.e.do("PUT", "/api/v1/remote/apps/money", "", map[string]any{"passkey": true}, nil)
+
+	// People cannot ask for agent links; only apps can.
+	if c := rig.e.do("POST", "/api/v1/remote/agent-pair", "", map[string]any{"email": "owner@example.com"}, nil); c != 403 {
+		t.Fatalf("a person got an agent link: %d", c)
+	}
+	var out map[string]any
+	if c := rig.e.do("POST", "/api/v1/remote/agent-pair", rig.appToken, map[string]any{"email": "nobody@example.com"}, &out); c != 404 {
+		t.Fatalf("unknown person: %d %v", c, out)
+	}
+	if c := rig.e.do("POST", "/api/v1/remote/agent-pair", rig.appToken, map[string]any{"email": "owner@example.com"}, &out); c != 200 {
+		t.Fatalf("agent link %d %v", c, out)
+	}
+	link := out["url"].(string)
+	if !strings.HasPrefix(link, "https://money.remote.test/#pair=") || !strings.HasSuffix(link, "&agent=1") {
+		t.Fatalf("agent link %q", link)
+	}
+	code, box := fragment(t, link)
+	rig.box = box
+	key := newKey(t)
+	agent, ready := rig.dial(t, "money.remote.test", key, map[string]any{"t": "pair", "code": code, "name": "Work Mac"})
+	if ready["t"] != "ready" || ready["kind"] != "app" {
+		t.Fatalf("agent pairing should skip the passkey: %v", ready)
+	}
+
+	r := agent.do("GET", "/api/v1/agent/hello", nil, nil)
+	if r.status != 200 {
+		t.Fatalf("agent path: %d %s %s", r.status, r.body, r.err)
+	}
+	var in map[string]any
+	json.Unmarshal(r.body, &in)
+	dev, _ := in["device"].(map[string]any)
+	if in["scope"] != "agent" || dev["platform"] != "agent" || !strings.HasPrefix(dev["name"].(string), "Work Mac") {
+		t.Fatalf("introspection of an agent token: %v", in)
+	}
+	for _, p := range []string{"/hello", "/echo", "/api/v1/agent", "/api/v1/agent/../hello", "/api/v1/agent/./x", "/api/v1/agent/%2e%2e/hello", "/api/v1/agentx/y"} {
+		if r := agent.do("GET", p, nil, nil); r.err == "" {
+			t.Fatalf("agent key reached %s: %d", p, r.status)
+		}
+	}
+	id := agent.next
+	agent.next++
+	agent.send(remote.FrameWSOpen, id, []byte(`{"u":"/ws","p":[]}`))
+	for {
+		typ, sid, p := agent.read()
+		if sid != id {
+			continue
+		}
+		if typ != remote.FrameWSClose {
+			t.Fatalf("agent key opened a socket outside its paths: %x %s", typ, p)
+		}
+		break
+	}
+
+	// Reconnecting later: still no passkey prompt, same limits.
+	again, m := rig.dial(t, "money.remote.test", key, map[string]any{"t": "open"})
+	if m["t"] != "ready" {
+		t.Fatalf("agent reconnect: %v", m)
+	}
+	if r := again.do("GET", "/hello", nil, nil); r.err == "" {
+		t.Fatalf("agent key reached /hello after reconnecting")
+	}
+	// The key is for money only: the launcher does not know it.
+	if _, m := rig.dial(t, "pocket.remote.test", key, map[string]any{"t": "open"}); m["t"] != "error" {
+		t.Fatalf("agent key opened the launcher: %v", m)
+	}
+	// A code is used up after one pairing.
+	if _, m := rig.dial(t, "money.remote.test", newKey(t), map[string]any{"t": "pair", "code": code}); m["code"] != "bad_code" {
+		t.Fatalf("code reused: %v", m)
+	}
+
+	// Switched off for the app: no links.
+	rig.e.do("PUT", "/api/v1/remote/apps/money", "", map[string]any{"exposed": false}, nil)
+	if c := rig.e.do("POST", "/api/v1/remote/agent-pair", rig.appToken, map[string]any{"email": "owner@example.com"}, &out); c != 409 || out["code"] != "app_off" {
+		t.Fatalf("app off: %d %v", c, out)
+	}
 }

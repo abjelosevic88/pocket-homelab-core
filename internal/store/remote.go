@@ -38,7 +38,12 @@ type RemoteKey struct {
 	PasskeyPublic string `json:"-"`
 	PasskeyAlg    int    `json:"-"`
 	HasPasskey    bool   `json:"has_passkey"`
+	// Scope is "agent" for a program paired through an app (see RemoteScopeAgent); "" = a person's device.
+	Scope string `json:"scope,omitempty"`
 }
+
+// RemoteScopeAgent marks a key that may only reach the app's /api/v1/agent/ paths.
+const RemoteScopeAgent = "agent"
 
 // RemoteApp is the admin's switches for one app; zero value = not set.
 type RemoteApp struct {
@@ -55,6 +60,8 @@ type RemoteCode struct {
 	App      string
 	// Apps are the switches a new device starts with (nil = app defaults).
 	Apps map[string]bool
+	// Scope is copied onto the key paired with this code ("" or RemoteScopeAgent).
+	Scope string
 }
 
 func (s *Store) ListRemoteApps(ctx context.Context) (map[string]RemoteApp, error) {
@@ -96,8 +103,8 @@ func (s *Store) CreateRemoteCode(ctx context.Context, c RemoteCode, ttl time.Dur
 		}
 		apps = string(b)
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO remote_codes(hash, user_id, device_id, app, apps, expires_at) VALUES(?,?,?,?,?,?)`,
-		crypto.Hash(code), c.UserID, dev, c.App, apps, Stamp(time.Now().Add(ttl)))
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO remote_codes(hash, user_id, device_id, app, apps, scope, expires_at) VALUES(?,?,?,?,?,?,?)`,
+		crypto.Hash(code), c.UserID, dev, c.App, apps, c.Scope, Stamp(time.Now().Add(ttl)))
 	return code, err
 }
 
@@ -112,8 +119,8 @@ func (s *Store) TakeRemoteCode(ctx context.Context, code string) (*RemoteCode, e
 	var c RemoteCode
 	var dev sql.NullInt64
 	var apps string
-	err := s.DB.QueryRowContext(ctx, `DELETE FROM remote_codes WHERE hash=? AND expires_at>? RETURNING user_id, device_id, app, apps`,
-		crypto.Hash(code), Now()).Scan(&c.UserID, &dev, &c.App, &apps)
+	err := s.DB.QueryRowContext(ctx, `DELETE FROM remote_codes WHERE hash=? AND expires_at>? RETURNING user_id, device_id, app, apps, scope`,
+		crypto.Hash(code), Now()).Scan(&c.UserID, &dev, &c.App, &apps, &c.Scope)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -133,7 +140,7 @@ func (s *Store) CreateRemoteDevice(ctx context.Context, userID int64, name strin
 }
 
 // PutRemoteKey pairs a key for (device, app), replacing an older key there.
-func (s *Store) PutRemoteKey(ctx context.Context, deviceID int64, app, publicKey string) (*RemoteKey, error) {
+func (s *Store) PutRemoteKey(ctx context.Context, deviceID int64, app, publicKey, scope string) (*RemoteKey, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -142,7 +149,7 @@ func (s *Store) PutRemoteKey(ctx context.Context, deviceID int64, app, publicKey
 	if _, err := tx.ExecContext(ctx, `DELETE FROM remote_keys WHERE (device_id=? AND app=?) OR public_key=?`, deviceID, app, publicKey); err != nil {
 		return nil, err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO remote_keys(device_id, app, public_key, created_at) VALUES(?,?,?,?)`, deviceID, app, publicKey, Now())
+	res, err := tx.ExecContext(ctx, `INSERT INTO remote_keys(device_id, app, public_key, scope, created_at) VALUES(?,?,?,?,?)`, deviceID, app, publicKey, scope, Now())
 	if err != nil {
 		return nil, err
 	}
@@ -153,11 +160,11 @@ func (s *Store) PutRemoteKey(ctx context.Context, deviceID int64, app, publicKey
 	return s.GetRemoteKey(ctx, id)
 }
 
-const remoteKeyCols = `id, device_id, app, public_key, created_at, last_seen_at, passkey_id, passkey_public, passkey_alg`
+const remoteKeyCols = `id, device_id, app, public_key, created_at, last_seen_at, passkey_id, passkey_public, passkey_alg, scope`
 
 func scanRemoteKey(sc interface{ Scan(...any) error }) (*RemoteKey, error) {
 	var k RemoteKey
-	if err := sc.Scan(&k.ID, &k.DeviceID, &k.App, &k.PublicKey, &k.CreatedAt, &k.LastSeenAt, &k.PasskeyID, &k.PasskeyPublic, &k.PasskeyAlg); err != nil {
+	if err := sc.Scan(&k.ID, &k.DeviceID, &k.App, &k.PublicKey, &k.CreatedAt, &k.LastSeenAt, &k.PasskeyID, &k.PasskeyPublic, &k.PasskeyAlg, &k.Scope); err != nil {
 		return nil, notFound(err)
 	}
 	k.HasPasskey = k.PasskeyID != ""

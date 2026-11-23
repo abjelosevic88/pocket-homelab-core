@@ -8,7 +8,7 @@ import type { User } from '../lib/types'
 import { Select } from '../components/Select'
 
 interface RemoteApp { slug: string; name: string; kind: 'app' | 'service'; direct: string; address: string; exposed: boolean; device_default: boolean; passkey: boolean; sensitive: boolean }
-interface RemoteKey { id: number; app: string; created_at: string; last_seen_at: string; has_passkey: boolean }
+interface RemoteKey { id: number; app: string; created_at: string; last_seen_at: string; has_passkey: boolean; scope?: string }
 interface RemoteDevice { id: number; user_id: number; user_name: string; user_email: string; name: string; created_at: string; last_seen_at: string; last_ip: string; apps: Record<string, boolean>; keys: RemoteKey[] }
 interface RemoteStatus { connected: boolean; since?: string; last_error?: string; sessions: number }
 interface RemoteAdmin {
@@ -223,7 +223,7 @@ function DevicesCard({ devices, apps, admin, portal, onChange, onPair }: { devic
                   const on = d.apps[a.slug] ?? a.device_default
                   const key = d.keys.find(k => k.app === a.slug)
                   return <SettingRow key={a.slug} title={a.name}
-                    help={key ? <>Opened {ago(key.last_seen_at || key.created_at)}{key.has_passkey ? ' · passkey set up' : ''}</> : a.passkey ? 'Asks for a passkey' : undefined}>
+                    help={key ? <>{key.scope === 'agent' ? 'Agent, reaches only its own connection · connected' : 'Opened'} {ago(key.last_seen_at || key.created_at)}{key.has_passkey ? ' · passkey set up' : ''}</> : a.passkey ? 'Asks for a passkey' : undefined}>
                     <Switch size="sm" on={on} disabled={busy === d.id} label={`${a.name} on ${d.name}`} onChange={v => setApp(d, a.slug, v)} />
                   </SettingRow>
                 })}

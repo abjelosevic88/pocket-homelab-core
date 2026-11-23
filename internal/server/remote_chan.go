@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -269,7 +270,9 @@ func (c *remoteChan) run(parent context.Context) {
 		<-c.ctx.Done()
 		return
 	}
-	if acc.App != nil && acc.App.Passkey && !(k.HasPasskey && c.h.passkeyFresh(k.ID)) {
+	// An agent key has no person at the keyboard to ask; it can only reach the
+	// app's agent paths (remoteScopeAllows), which is its protection instead.
+	if acc.App != nil && acc.App.Passkey && k.Scope == "" && !(k.HasPasskey && c.h.passkeyFresh(k.ID)) {
 		if err := c.passkey(ctx, acc); err != nil {
 			c.fail("passkey", err.Error())
 			<-c.ctx.Done()
@@ -291,6 +294,11 @@ func (c *remoteChan) run(parent context.Context) {
 	c.acc = acc
 	c.mu.Unlock()
 	s.store.TouchRemoteKey(ctx, k, c.ip)
+	if k.Scope != "" && acc.App == nil {
+		c.fail("denied", "An agent key cannot open the launcher.")
+		<-c.ctx.Done()
+		return
+	}
 	ready := map[string]any{"t": "ready", "kind": "app", "family": s.familyName(ctx),
 		"user":   map[string]string{"name": acc.User.Name, "email": acc.User.Email},
 		"device": map[string]any{"id": acc.Device.ID, "name": acc.Device.Name},
@@ -373,6 +381,9 @@ func (c *remoteChan) authenticate(ctx context.Context, mode, code, name, pub str
 		return nil, &remoteErr{"bad_code", "This pairing link is used up or expired. Make a new one in Core → Remote access."}
 	}
 	devID := rc.DeviceID
+	if rc.Scope != "" && devID != 0 {
+		return nil, &remoteErr{"bad_code", "This pairing link is not for an agent."}
+	}
 	if devID == 0 {
 		name = strings.TrimSpace(name)
 		if len(name) > 60 {
@@ -392,7 +403,7 @@ func (c *remoteChan) authenticate(ctx context.Context, mode, code, name, pub str
 	} else if d, err := s.store.GetRemoteDevice(ctx, devID); err != nil || d.UserID != rc.UserID {
 		return nil, errRemoteNotFound
 	}
-	k, err := s.store.PutRemoteKey(ctx, devID, c.slug, pub)
+	k, err := s.store.PutRemoteKey(ctx, devID, c.slug, pub, rc.Scope)
 	if err != nil {
 		return nil, err
 	}
@@ -496,6 +507,22 @@ type remoteReq struct {
 	P []string    `json:"p"`
 }
 
+// remoteAgentPath is everything an agent key may ask for: /api/v1/agent/
+// followed by plain path segments (no dots, so no way to climb out of it).
+var remoteAgentPath = regexp.MustCompile(`^/api/v1/agent(/[A-Za-z0-9_-]+)+$`)
+
+// remoteScopeAllows says whether a key with this scope may request u.
+func remoteScopeAllows(scope, u string) bool {
+	if scope == "" {
+		return true
+	}
+	if scope != store.RemoteScopeAgent {
+		return false
+	}
+	path, _, _ := strings.Cut(u, "?")
+	return remoteAgentPath.MatchString(path)
+}
+
 func validRemotePath(u string) bool {
 	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") && !strings.ContainsAny(u, "\r\n\\")
 }
@@ -504,6 +531,10 @@ func (c *remoteChan) startRequest(id uint32, p []byte) {
 	var rq remoteReq
 	if json.Unmarshal(p, &rq) != nil || !validRemotePath(rq.U) || rq.M == "" || strings.ContainsAny(rq.M, " \r\n") {
 		c.frame(remote.FrameResErr, id, []byte("bad request"))
+		return
+	}
+	if k := c.key(); k != nil && !remoteScopeAllows(k.Scope, rq.U) {
+		c.frame(remote.FrameResErr, id, []byte("an agent key only reaches the app's agent paths"))
 		return
 	}
 	sctx, cancel := context.WithCancel(c.ctx)
@@ -748,6 +779,10 @@ func (c *remoteChan) startWS(id uint32, p []byte) {
 	acc := c.access()
 	if json.Unmarshal(p, &rq) != nil || !validRemotePath(rq.U) || acc == nil || acc.App == nil {
 		c.wsClose(id, 1008, "bad request")
+		return
+	}
+	if !remoteScopeAllows(acc.Key.Scope, rq.U) {
+		c.wsClose(id, 1008, "an agent key only reaches the app's agent paths")
 		return
 	}
 	sctx, cancel := context.WithCancel(c.ctx)

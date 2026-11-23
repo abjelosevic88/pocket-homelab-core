@@ -52,6 +52,31 @@ app-side token stops introspecting as active.
 
 A key paired for one app can never open another app.
 
+## Agents
+
+An app can pair a program instead of a browser: Pocket Remote does this for
+**Pocket Remote Agent**, a small app on a computer outside the tailnet that
+connects out through the relay so the computer can be reached from Pocket Remote.
+
+1. The app calls `POST /api/v1/remote/agent-pair` with its own app token and
+   `{"email": "<person>"}`. Core answers `{"url", "address", "expires_at"}`;
+   the link is `https://<app>.remote…/#pair=<code>&box=<box key>&agent=1`,
+   one-time and good for 10 minutes. `409` with `code` `remote_off` or
+   `app_off` says what to switch on first.
+2. The program pairs its own X25519 key with that code, like a browser would,
+   as a new device of that person (the app switched on for it).
+
+An agent key (`scope: "agent"`):
+
+- reaches only `/api/v1/agent/<segment>[/…]` on its app (letters, digits, `-`
+  and `_`); every other request or WebSocket is refused by Core,
+- is not asked for a passkey (there is nobody at the keyboard),
+- cannot open the launcher or any other app.
+
+Introspecting its `pcu_rly_` token answers `"scope": "agent"` and a device
+with `"platform": "agent"`, so the app can tell an agent from a person.
+Removing the device in Core → Remote access cuts the agent off.
+
 ## Protocol
 
 ### Relay

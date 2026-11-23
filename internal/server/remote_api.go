@@ -46,11 +46,15 @@ func (s *Server) introspectRemoteToken(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	u := acc.User
-	writeJSON(w, http.StatusOK, map[string]any{"active": true, "kind": "device", "scope": "", "iss": s.oidc.Issuer,
+	platform := "remote"
+	if acc.Key.Scope != "" {
+		platform = "agent"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"active": true, "kind": "device", "scope": acc.Key.Scope, "iss": s.oidc.Issuer,
 		// Short, so an app's introspection cache notices a switch-off quickly.
 		"expires_at": store.Stamp(time.Now().Add(time.Minute)),
 		"user":       map[string]any{"id": u.ID, "sub": u.Subject, "auth_revision": u.AuthRevision, "email": u.Email, "name": u.Name, "role": u.Role},
-		"device":     map[string]any{"id": acc.Device.ID, "name": acc.Device.Name + " (remote)", "platform": "remote"}})
+		"device":     map[string]any{"id": acc.Device.ID, "name": acc.Device.Name + " (remote)", "platform": platform}})
 }
 
 type remoteAppView struct {
@@ -583,4 +587,57 @@ func derefStr(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// POST /api/v1/remote/agent-pair (an app, for one of its people): a one-time
+// link that pairs a program on someone's computer (Pocket Remote Agent) with
+// this app. The key it makes reaches only the app's /api/v1/agent/ paths,
+// never the launcher or another app, and is not asked for a passkey.
+func (s *Server) handleRemoteAgentPair(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	caller := principalFrom(ctx)
+	if caller == nil || caller.App == nil || caller.User != nil {
+		writeErr(w, http.StatusForbidden, "apps only")
+		return
+	}
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	u, err := s.store.GetUserByEmail(ctx, strings.ToLower(strings.TrimSpace(in.Email)))
+	if err != nil || u.Disabled {
+		writeErr(w, http.StatusNotFound, "no such person in Core")
+		return
+	}
+	rs := s.remoteSettings(ctx)
+	if !rs.Enabled || rs.Pattern == "" {
+		writeJSON(w, http.StatusConflict, map[string]string{"code": "remote_off", "error": "Remote access is switched off in Core. An admin can switch it on in Core → Remote access."})
+		return
+	}
+	slug := caller.App.Slug
+	app, err := s.remoteApp(ctx, slug)
+	if err != nil || !app.Exposed {
+		writeJSON(w, http.StatusConflict, map[string]string{"code": "app_off", "error": "Switch on " + caller.App.Name + " in Core → Remote access first."})
+		return
+	}
+	if !s.appAdmits(ctx, app.AppID, u) {
+		writeErr(w, http.StatusForbidden, "this person may not use the app")
+		return
+	}
+	box, err := s.boxKey(ctx)
+	if err != nil {
+		s.fail(w, err, "box key")
+		return
+	}
+	code, err := s.store.CreateRemoteCode(ctx, store.RemoteCode{UserID: u.ID, App: slug, Apps: map[string]bool{slug: true}, Scope: store.RemoteScopeAgent}, remoteCodeTTL)
+	if err != nil {
+		s.fail(w, err, "pairing code")
+		return
+	}
+	addr := "https://" + rs.host(slug)
+	writeJSON(w, http.StatusOK, map[string]any{"url": addr + "/#pair=" + code + "&box=" + base64.RawURLEncoding.EncodeToString(box.Public) + "&agent=1",
+		"address": addr, "expires_at": store.Stamp(time.Now().Add(remoteCodeTTL))})
 }
