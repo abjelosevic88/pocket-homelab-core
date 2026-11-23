@@ -428,6 +428,29 @@ func TestMCPProjectsLinkPR(t *testing.T) {
 	t.Fatal("pocket_projects_link_pr missing")
 }
 
+// Linking two issues: one POST on the first, the other named in the body; a
+// change (duplicate closes an issue), so it is always asked.
+func TestMCPProjectsRelate(t *testing.T) {
+	for _, op := range mcpAppCatalog {
+		if op.Name != "pocket_projects_relate" {
+			continue
+		}
+		if op.Method != "POST" || op.Path != "/issues/{id}/relations" || op.Kind != "change" {
+			t.Fatalf("relate: %s %s %s", op.Method, op.Path, op.Kind)
+		}
+		data := op.Schema["properties"].(mcpFields)["data"].(map[string]any)
+		fields := data["properties"].(mcpFields)
+		if fields["issue"] == nil || len(fields["type"].(map[string]any)["enum"].([]string)) != 5 {
+			t.Fatalf("relate fields: %v", fields)
+		}
+		if req, _ := data["required"].([]string); strings.Join(req, " ") != "type issue" {
+			t.Fatalf("relate required: %v", data["required"])
+		}
+		return
+	}
+	t.Fatal("pocket_projects_relate missing")
+}
+
 func TestMCPAIScheduleTools(t *testing.T) {
 	var list, update *mcpAppTool
 	for _, op := range mcpAppCatalog {

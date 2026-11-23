@@ -68,7 +68,7 @@ func arraySchema(item any) map[string]any {
 // POSTs that act on or overwrite an existing item are changes, not additions;
 // clients may auto-approve additions per app, so this list errs toward "change".
 var mcpChangePosts = map[string]bool{"printfarm_weigh_spool": true, "tasks_complete": true, "photolab_apply": true, "family_take_run": true, "family_done_chore": true, "errors_update_issue": true, "inventory_adjust": true, "bookshelf_progress": true, "files_save_text": true, "files_upload_link": true,
-	"office_rename": true, "projects_share_note": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
+	"office_rename": true, "projects_share_note": true, "projects_relate": true, "podcasts_favorite": true, "subtitles_nudge": true, "subtitles_pin": true, "home_complete_job": true, "home_plant_done": true, "home_water_plants": true, "pets_complete_care": true, "places_rate_noticed": true, "renewals_renew": true, "wealth_update_value": true,
 	"parcels_add_step": true, "parcels_mark_delivered": true, "parcels_check": true, "wallet_spend_gift_card": true, "weather_add_place": true,
 	"fitness_log_workout": true, "nutrition_log_food": true, "nutrition_add_water": true, "voice_tidy_memo": true, "voice_send_memo": true, "blog_publish": true, "blog_unpublish": true, "blog_reply_comment": true, "forms_open_form": true, "forms_close_form": true, // log_workout also goes to Pocket Health and ticks a habit, log_food and add_water reach Pocket Health too; send_memo creates items in the person's other apps: always ask
 	"sign_remind": true, "sign_void": true, "cameras_review_events": true, // the first two email people who had a link; review_events marks many events at once: always ask
@@ -1417,6 +1417,10 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	linkPR := textFields("url title branch repo").integers("number")
 	linkPR["url"].(map[string]any)["description"] = "The pull request's address, e.g. https://github.com/owner/repo/pull/12."
 	write("projects", "link_pr", "Link a pull request you opened to an issue (numeric id); Pocket Projects then tracks whether it is merged and completes the issue when it is.", "POST", "/issues/{id}/pull-requests", linkPR, "url")
+	relate := textFields("issue").enum("type", "related", "blocks", "blocked_by", "duplicate", "duplicated_by")
+	relate["type"].(map[string]any)["description"] = "How the issue (id) stands to the other one: related, blocks (it blocks the other), blocked_by, duplicate (it duplicates the other, which closes it as Duplicate) or duplicated_by."
+	relate["issue"].(map[string]any)["description"] = "The other issue's identifier, like WEB-14 (same workspace)."
+	write("projects", "relate", "Link two issues so the link shows under both issues' relations: related, blocks/blocked_by or duplicate/duplicated_by. The issue (id) and the other (issue) are named by identifier. Answers with the issue's relations. Links can be removed only in Pocket Projects.", "POST", "/issues/{id}/relations", relate, "type issue")
 	read("projects", "projects", "List projects you can see with status, health, progress, lead, start and target dates.", "/projects", "team_id status q")
 	read("projects", "get_project", "Read a project with milestones, latest status updates, documents, resources and stakeholders.", "/projects/{id}", "")
 	newProject := textFields("name summary content start_date target_date").enum("status", "backlog", "planned", "started", "blocked", "paused", "completed", "canceled").
