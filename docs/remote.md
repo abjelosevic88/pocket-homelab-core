@@ -55,7 +55,7 @@ A key paired for one app can never open another app.
 ## Agents
 
 An app can pair a program instead of a browser: Pocket Remote does this for
-**Pocket Remote Agent**, a small app on a computer outside the tailnet that
+**Pocket Wave**, a small app on a computer outside the tailnet that
 connects out through the relay so the computer can be reached from Pocket Remote.
 
 1. The app calls `POST /api/v1/remote/agent-pair` with its own app token and

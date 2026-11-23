@@ -590,7 +590,7 @@ func derefStr(p *string) string {
 }
 
 // POST /api/v1/remote/agent-pair (an app, for one of its people): a one-time
-// link that pairs a program on someone's computer (Pocket Remote Agent) with
+// link that pairs a program on someone's computer (Pocket Wave) with
 // this app. The key it makes reaches only the app's /api/v1/agent/ paths,
 // never the launcher or another app, and is not asked for a passkey.
 func (s *Server) handleRemoteAgentPair(w http.ResponseWriter, r *http.Request) {
