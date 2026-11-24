@@ -132,7 +132,15 @@ func TestInstallAndRemove(t *testing.T) {
 	var cat struct {
 		Apps []map[string]any `json:"apps"`
 	}
-	if c := e.do("GET", "/api/v1/installer", "", nil, &cat); c != 200 || len(cat.Apps) != 2 || cat.Apps[0]["name"] != "Pocket Habits" {
+	c := e.do("GET", "/api/v1/installer", "", nil, &cat)
+	// The fake agent's two apps; binaries (Pocket AI) come from the live catalog and are not the agent's.
+	containers := cat.Apps[:0:0]
+	for _, a := range cat.Apps {
+		if a["kind"] != "binary" {
+			containers = append(containers, a)
+		}
+	}
+	if c != 200 || len(containers) != 2 || containers[0]["name"] != "Pocket Habits" {
 		t.Fatalf("catalog %d %v", c, cat)
 	}
 
