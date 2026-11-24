@@ -16,6 +16,7 @@ export default function PairModal({ onClose, userId }: { onClose: () => void; us
   const [claimed, setClaimed] = useState<Device | null>(null)
   const [err, setErr] = useState('')
   const [left, setLeft] = useState(0)
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
     setP(null)
     api.post<Pairing>(`${V1}/pair`, { ...(userId ? { user_id: userId } : {}), ...(manage ? { can_manage: true } : {}) }).then(setP).catch(e => setErr((e as Error).message))
@@ -41,16 +42,25 @@ export default function PairModal({ onClose, userId }: { onClose: () => void; us
       {p && !claimed && (
         <div className="grid" style={{ gap: 14, justifyItems: 'center' }}>
           <div className="qr"><img src={p.qr_svg} alt="Pairing QR code" /></div>
-          <div className="row" style={{ gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-            <div className="code-big">{code}</div>
-            <button type="button" className="btn sm" title="Copy the code" onClick={async () => toast(await copyText(code) ? 'Code copied' : 'Could not copy', 'ok')}><Icon name="copy" size={14} />Copy</button>
+          <div className="pair-code">
+            <button type="button" className={`pair-code-chip ${copied ? 'copied' : ''}`} title="Copy the code" aria-label={`Copy the code ${code}`}
+              onClick={async () => {
+                if (await copyText(code)) { setCopied(true); setTimeout(() => setCopied(false), 1500) } else toast('Could not copy', 'err')
+              }}>
+              <span className="code-big">{code}</span>
+              <span className="pair-code-copy"><Icon name={copied ? 'check' : 'copy'} size={16} /></span>
+            </button>
+            <span className="muted small">{copied ? 'Copied' : `Expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`}</span>
           </div>
-          <p className="muted small" style={{ textAlign: 'center', maxWidth: 380 }}>In <b>Pocket Homelab</b> open <i>Settings → Pair with a box</i> and scan, or type the code. Every service on this box lands in the app, credentials go into the Keychain. Code expires in {left}s.</p>
-          {canOffer && <div className="row" style={{ gap: 10, alignItems: 'center', width: '100%' }}>
+          <p className="muted small" style={{ textAlign: 'center', maxWidth: 380, margin: 0 }}>In <b>Pocket Homelab</b> open <i>Settings → Pair with a box</i> and scan, or type the code. Every service on this box lands in the app, credentials go into the Keychain.</p>
+          {canOffer && <label className="pair-option">
+            <span className="grow">
+              <span className="setting-title">Can manage this box</span>
+              <span className="setting-help">Only for the Pocket Core app</span>
+            </span>
             <Switch size="sm" on={manage} onChange={setManage} label="Can manage this box" />
-            <span className="small">Can manage this box <span className="muted">· only for the Pocket Core app</span></span>
-          </div>}
-          <details style={{ width: '100%' }}><summary className="muted small">Manual import instead</summary>
+          </label>}
+          <details className="pair-manual"><summary>Manual import instead</summary>
             <p className="muted small mt-sm">Older client builds import an env file: download it from <b>Services → Download env</b> after signing in on that device, or paste this link into the client:</p>
             <Secret value={p.url} /></details>
         </div>

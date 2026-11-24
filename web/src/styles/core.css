@@ -126,6 +126,22 @@ a.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); te
 .qr { background: #fff; padding: 12px; border-radius: 12px; display: inline-block; border: 1px solid var(--border); }
 .qr img { display: block; width: 240px; height: 240px; }
 .code-big { font-family: var(--mono); font-size: 28px; letter-spacing: .12em; font-weight: 700; text-align: center; }
+/* Pair modal: the code is one tap-to-copy chip, options sit in a quiet card */
+.pair-code { display: grid; justify-items: center; gap: 6px; }
+.pair-code-chip { display: inline-flex; align-items: center; gap: 14px; padding: 8px 8px 8px 20px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+.pair-code-chip:hover { border-color: var(--accent); background: var(--hover); }
+.pair-code-chip .code-big { font-size: 26px; letter-spacing: .1em; }
+.pair-code-copy { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); transition: color .15s; }
+.pair-code-chip:hover .pair-code-copy { color: var(--accent); }
+.pair-code-chip.copied .pair-code-copy { color: var(--success); }
+.pair-option { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.pair-option .grow { display: grid; }
+.pair-manual { width: 100%; }
+.pair-manual summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: 12.5px; color: var(--muted); }
+.pair-manual summary::-webkit-details-marker { display: none; }
+.pair-manual summary::before { content: "▸"; font-size: 10px; transition: transform .15s; }
+.pair-manual[open] summary::before { transform: rotate(90deg); }
+.pair-manual summary:hover { color: var(--accent); }
 .inline-code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
 
 /* two-column pages: a column never grows past its share (long URLs wrap instead) */
