@@ -285,6 +285,7 @@ func runRegistrationKey() {
 func runPair(args []string) {
 	fs := flag.NewFlagSet("pair", flag.ExitOnError)
 	email := fs.String("email", "", "user to pair the device to (default: the first user)")
+	manage := fs.Bool("manage", false, "let the device manage the box (the Pocket Core app; admins only)")
 	_ = fs.Parse(args)
 	cfg, log, st := mustLoad()
 	defer st.Close()
@@ -294,7 +295,11 @@ func runPair(args []string) {
 		log.Error("pair", "err", err)
 		os.Exit(1)
 	}
-	p, err := st.CreatePairing(ctx, u.ID, cfg.PairTTL)
+	if *manage && !u.IsAdmin() {
+		log.Error("pair", "err", "-manage needs an admin account")
+		os.Exit(1)
+	}
+	p, err := st.CreatePairing(ctx, u.ID, cfg.PairTTL, *manage)
 	if err != nil {
 		log.Error("pair", "err", err)
 		os.Exit(1)

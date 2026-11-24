@@ -18,16 +18,19 @@ type Device struct {
 	LastSeenAt  string `json:"last_seen_at,omitempty"`
 	LastIP      string `json:"last_ip"`
 	CreatedAt   string `json:"created_at"`
+	// CanManage lets the device use its owner's admin rights (the Pocket Core
+	// app); other devices act for their owner as a member would.
+	CanManage bool `json:"can_manage"`
 	// Push is the device's Pocket Hub notifications (nil = never turned on); filled by ListDevices.
 	Push *DevicePush `json:"push,omitempty"`
 }
 
-const deviceCols = `id, user_id, name, platform, token_prefix, last_seen_at, last_ip, created_at`
+const deviceCols = `id, user_id, name, platform, token_prefix, last_seen_at, last_ip, created_at, can_manage`
 
 func scanDevice(sc interface{ Scan(...any) error }) (*Device, error) {
 	var d Device
 	var seen sql.NullString
-	if err := sc.Scan(&d.ID, &d.UserID, &d.Name, &d.Platform, &d.TokenPrefix, &seen, &d.LastIP, &d.CreatedAt); err != nil {
+	if err := sc.Scan(&d.ID, &d.UserID, &d.Name, &d.Platform, &d.TokenPrefix, &seen, &d.LastIP, &d.CreatedAt, &d.CanManage); err != nil {
 		return nil, notFound(err)
 	}
 	d.LastSeenAt = nullStr(seen)
@@ -77,8 +80,8 @@ func (s *Store) GetDevice(ctx context.Context, id int64) (*Device, error) {
 // CreateDevice mints a device token and returns the plain secret.
 func (s *Store) CreateDevice(ctx context.Context, d *Device) (string, error) {
 	plain := crypto.Token("pcd_", 32)
-	res, err := s.DB.ExecContext(ctx, `INSERT INTO devices (user_id, name, platform, token_hash, token_prefix) VALUES (?, ?, ?, ?, ?)`,
-		d.UserID, d.Name, d.Platform, crypto.Hash(plain), crypto.Prefix(plain, 10))
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO devices (user_id, name, platform, token_hash, token_prefix, can_manage) VALUES (?, ?, ?, ?, ?, ?)`,
+		d.UserID, d.Name, d.Platform, crypto.Hash(plain), crypto.Prefix(plain, 10), d.CanManage)
 	if err != nil {
 		return "", err
 	}
@@ -99,6 +102,18 @@ func (s *Store) GetDeviceByToken(ctx context.Context, token, ip string) (*Device
 	return d, nil
 }
 
+// SetDeviceManage turns a device's admin rights on or off.
+func (s *Store) SetDeviceManage(ctx context.Context, id int64, on bool) error {
+	res, err := s.DB.ExecContext(ctx, `UPDATE devices SET can_manage = ? WHERE id = ?`, on, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteDevice revokes a device.
 func (s *Store) DeleteDevice(ctx context.Context, id int64) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
@@ -116,13 +131,15 @@ type Pairing struct {
 	ClaimedAt string `json:"claimed_at,omitempty"`
 	DeviceID  int64  `json:"device_id,omitempty"`
 	CreatedAt string `json:"created_at"`
+	CanManage bool   `json:"can_manage"`
 }
 
 // CreatePairing mints a code for the user.
-func (s *Store) CreatePairing(ctx context.Context, userID int64, ttl time.Duration) (*Pairing, error) {
+// canManage = the device may use the user's admin rights (set by an admin only).
+func (s *Store) CreatePairing(ctx context.Context, userID int64, ttl time.Duration, canManage bool) (*Pairing, error) {
 	for i := 0; i < 5; i++ {
 		code := crypto.Code(8)
-		res, err := s.DB.ExecContext(ctx, `INSERT INTO pairings (code, user_id, expires_at) VALUES (?, ?, ?)`, code, userID, Stamp(time.Now().Add(ttl)))
+		res, err := s.DB.ExecContext(ctx, `INSERT INTO pairings (code, user_id, expires_at, can_manage) VALUES (?, ?, ?, ?)`, code, userID, Stamp(time.Now().Add(ttl)), canManage)
 		if err != nil {
 			if conflict(err) == ErrConflict {
 				continue
@@ -130,28 +147,24 @@ func (s *Store) CreatePairing(ctx context.Context, userID int64, ttl time.Durati
 			return nil, err
 		}
 		id, _ := res.LastInsertId()
-		return &Pairing{ID: id, Code: code, UserID: userID, ExpiresAt: Stamp(time.Now().Add(ttl)), CreatedAt: Now()}, nil
+		return &Pairing{ID: id, Code: code, UserID: userID, ExpiresAt: Stamp(time.Now().Add(ttl)), CreatedAt: Now(), CanManage: canManage}, nil
 	}
 	return nil, ErrConflict
 }
 
 // ClaimPairing marks a code used and returns it, or ErrNotFound when the code
-// is unknown, expired or already claimed.
+// is unknown, expired or already claimed. One statement claims it, so two
+// devices racing with the same code cannot both win.
 func (s *Store) ClaimPairing(ctx context.Context, code string, deviceID int64) (*Pairing, error) {
 	var p Pairing
-	var claimed sql.NullString
-	if err := s.DB.QueryRowContext(ctx, `SELECT id, code, user_id, expires_at, claimed_at, created_at FROM pairings WHERE code = ?`, code).Scan(&p.ID, &p.Code, &p.UserID, &p.ExpiresAt, &claimed, &p.CreatedAt); err != nil {
+	if err := s.DB.QueryRowContext(ctx, `UPDATE pairings SET claimed_at = ?, device_id = ? WHERE code = ? AND claimed_at IS NULL
+		RETURNING id, code, user_id, expires_at, created_at, can_manage`, Now(), deviceID, code).Scan(&p.ID, &p.Code, &p.UserID, &p.ExpiresAt, &p.CreatedAt, &p.CanManage); err != nil {
 		return nil, notFound(err)
-	}
-	if claimed.Valid {
-		return nil, ErrNotFound
 	}
 	if t, err := time.Parse(time.RFC3339Nano, p.ExpiresAt); err != nil || t.Before(time.Now()) {
 		return nil, ErrNotFound
 	}
-	if _, err := s.DB.ExecContext(ctx, `UPDATE pairings SET claimed_at = ?, device_id = ? WHERE id = ?`, Now(), deviceID, p.ID); err != nil {
-		return nil, err
-	}
+	p.DeviceID = deviceID
 	return &p, nil
 }
 
@@ -160,7 +173,7 @@ func (s *Store) PeekPairing(ctx context.Context, code string) (*Pairing, error) 
 	var p Pairing
 	var claimed sql.NullString
 	var dev sql.NullInt64
-	if err := s.DB.QueryRowContext(ctx, `SELECT id, code, user_id, expires_at, claimed_at, device_id, created_at FROM pairings WHERE code = ?`, code).Scan(&p.ID, &p.Code, &p.UserID, &p.ExpiresAt, &claimed, &dev, &p.CreatedAt); err != nil {
+	if err := s.DB.QueryRowContext(ctx, `SELECT id, code, user_id, expires_at, claimed_at, device_id, created_at, can_manage FROM pairings WHERE code = ?`, code).Scan(&p.ID, &p.Code, &p.UserID, &p.ExpiresAt, &claimed, &dev, &p.CreatedAt, &p.CanManage); err != nil {
 		return nil, notFound(err)
 	}
 	p.ClaimedAt = nullStr(claimed)

@@ -82,8 +82,10 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		oidcRedirectErr(w, r, redirect, state, "invalid_request", "public clients must use PKCE")
 		return
 	}
-	if challenge != "" && strings.ToUpper(method) == "PLAIN" {
-		challenge = "plain:" + challenge
+	if challenge != "" && method != "" && method != "S256" {
+		// RFC 9700: "plain" protects nothing once the request is seen.
+		oidcRedirectErr(w, r, redirect, state, "invalid_request", "code_challenge_method must be S256")
+		return
 	}
 	u := s.sessionUser(r)
 	if u == nil {
@@ -167,23 +169,18 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 			tokenErr(w, 400, "invalid_grant", "redirect_uri mismatch")
 			return
 		}
-		ch, method := c.CodeChallenge, "S256"
-		if strings.HasPrefix(ch, "plain:") {
-			ch, method = strings.TrimPrefix(ch, "plain:"), "plain"
-		}
-		if !oidc.PKCEOK(ch, method, r.PostFormValue("code_verifier")) {
+		if strings.HasPrefix(c.CodeChallenge, "plain:") || !oidc.PKCEOK(c.CodeChallenge, "S256", r.PostFormValue("code_verifier")) {
 			tokenErr(w, 400, "invalid_grant", "PKCE verification failed")
 			return
 		}
 		userID, scope, nonce = c.UserID, c.Scope, c.Nonce
 	case "refresh_token":
 		rt := r.PostFormValue("refresh_token")
-		t, err := s.store.GetOIDCToken(ctx, rt)
-		if err != nil || t.Kind != "refresh" || t.ClientID != cl.ClientID {
+		t, err := s.store.ConsumeOIDCRefresh(ctx, rt, cl.ClientID)
+		if err != nil {
 			tokenErr(w, 400, "invalid_grant", "refresh token invalid")
 			return
 		}
-		_ = s.store.DeleteOIDCToken(ctx, rt)
 		userID, scope = t.UserID, t.Scope
 	default:
 		tokenErr(w, 400, "unsupported_grant_type", "use authorization_code or refresh_token")

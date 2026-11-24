@@ -4,7 +4,7 @@ import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import type { AppChoice, Device, User } from '../lib/types'
 import { useApp } from '../lib/app-context'
-import { Card, Confirm, Empty, Loading, PageHeader, Segmented, SettingRow, errMsg, useAsync, useToast } from '../components/ui'
+import { Card, Confirm, Empty, Loading, PageHeader, Segmented, SettingRow, Switch, errMsg, useAsync, useToast } from '../components/ui'
 import PairModal from '../components/PairModal'
 import { Icon } from '../components/icons'
 
@@ -16,6 +16,11 @@ export default function Devices() {
   const { data: users } = useAsync(() => admin ? api.get<User[]>(`${V1}/users`) : Promise.resolve([] as User[]), [admin])
   const [pair, setPair] = useState<number | 0 | null>(sp.get('pair') ? 0 : null)
   const [del, setDel] = useState<Device | null>(null)
+  const { toast } = useToast()
+  const setManage = async (d: Device, on: boolean) => {
+    try { await api.put(`${V1}/devices/${d.id}`, { can_manage: on }); reload() }
+    catch (e) { toast(errMsg(e), 'err') }
+  }
   // a pairing started from the sidebar or the palette
   useEffect(() => { window.addEventListener('pc:paired', reload); return () => window.removeEventListener('pc:paired', reload) }, [reload])
   if (loading && !data) return <Loading />
@@ -27,10 +32,12 @@ export default function Devices() {
         actions={<><button type="button" className="btn primary" onClick={() => setPair(0)}><Icon name="qr" size={15} />Pair a device</button></>} />
       {list.length === 0 ? <Card><Empty icon="smartphone" title="No devices paired">Tap “Pair a device”, scan the code with Pocket Homelab, done.</Empty></Card> :
         <Card flush><table className="table">
-          <thead><tr><th>Device</th>{admin && <th>User</th>}<th>Token</th><th>Last seen</th><th>Paired</th><th></th></tr></thead>
+          <thead><tr><th>Device</th>{admin && <th>User</th>}{admin && <th title="Can use its owner's admin rights. Only the Pocket Core app needs this.">Manages box</th>}<th>Token</th><th>Last seen</th><th>Paired</th><th></th></tr></thead>
           <tbody>{list.map(d => <tr key={d.id}>
             <td><b>{d.name}</b> <span className="muted small">{d.platform}</span><div style={{ marginTop: 3 }}><PushBadge push={d.push} /></div></td>
             {admin && <td>{who(d.user_id)?.name || who(d.user_id)?.email || d.user_id}</td>}
+            {admin && <td><Switch size="sm" on={!!d.can_manage} label={`${d.name} can manage this box`} disabled={!d.can_manage && who(d.user_id)?.role !== 'admin'}
+              title={who(d.user_id)?.role !== 'admin' ? 'Only an admin’s device can manage the box' : 'Only the Pocket Core app needs this'} onChange={on => setManage(d, on)} /></td>}
             <td className="mono small">{d.token_prefix}…</td>
             <td className="muted small" title={when(d.last_seen_at)}>{ago(d.last_seen_at)}{d.last_ip && <div>{d.last_ip}</div>}</td>
             <td className="muted small">{when(d.created_at)}</td>

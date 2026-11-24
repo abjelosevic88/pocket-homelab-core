@@ -10,7 +10,8 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       # The URL phones and apps reach Core at. Also the OIDC issuer.
       BASE_URL: ${BASE_URL:-http://localhost:8080}
-      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+      # Empty = secure cookies exactly when BASE_URL is https.
+      SECURE_COOKIES: ${SECURE_COOKIES:-}
       # First admin (only used while the database has no users):
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

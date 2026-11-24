@@ -471,13 +471,16 @@ Every call is a no-op error when `CORE_URL` is empty, so the same binary runs on
 
 Core holds every credential on the box, so a few choices are deliberate:
 
-- Service credentials are AES-GCM encrypted with `DATA_DIR/secret.key`; every token Core issues is stored as a SHA-256 hash. Back up the key with the database and keep `DATA_DIR` at mode 0700. Point `SECRET_PATH` somewhere else if you want the key on different storage.
+- Service credentials are AES-GCM encrypted with `DATA_DIR/secret.key`; every token Core issues is stored as a SHA-256 hash. Keep `DATA_DIR` at mode 0700. Whoever has the key and the database can read every stored credential, so point `SECRET_PATH` at other storage and back the two up apart.
+- Admin rights stay with the people and devices meant to have them: an OIDC access token an app received acts on Core as its user would, never as an admin; a paired device is an admin only when *Can manage this box* was chosen while pairing (the Pocket Core app), and a web session it opens carries the same limit.
+- Authorization codes, refresh tokens and pairing codes are consumed in one database statement, so a replay racing the real request finds nothing. PKCE accepts S256 only.
+- `X-Forwarded-*` headers count only from `TRUSTED_PROXIES` (loopback and private networks by default), so a caller reaching Core's port directly can't pick its own address or claim https.
 - Sign-in, pairing claims and app registration lock an IP (and, for sign-in, the account) for 15 minutes after 10 failures. Pairing codes are single-use and expire in 10 minutes.
 - Session cookies are `HttpOnly`, `SameSite=Lax`, `Secure` behind HTTPS, and state-changing cookie requests must come from Core's own origin. Bearer tokens are exempt because a cross-site form cannot attach one.
 - There is no consent screen: one box, one household. Do not point strangers' relying parties at it.
 - Core is meant to sit on a LAN or tailnet. If you expose it to the internet, put it behind HTTPS and keep `BASE_URL` on that name.
 
-Report anything you find privately before opening an issue.
+Report anything you find privately before opening an issue: see [SECURITY.md](SECURITY.md).
 
 ## Docs
 

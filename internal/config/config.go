@@ -7,6 +7,7 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -55,6 +56,10 @@ type Config struct {
 	LogLevel   string
 	LogFormat  string // text | json
 	TrustProxy bool
+	// TrustedProxies are the peers whose X-Forwarded-* headers count
+	// (TRUSTED_PROXIES, CIDRs or addresses; default loopback and private
+	// networks, where a box's reverse proxy sits).
+	TrustedProxies []netip.Prefix
 
 	AuthMode             string // local | proxy | none
 	AuthProxyHeader      string
@@ -113,6 +118,23 @@ func env(key, def string) string {
 	return def
 }
 
+// DefaultTrustedProxies: a reverse proxy in front of Core runs on the same
+// machine (loopback, Docker networks) or the home network.
+const DefaultTrustedProxies = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+
+// parsePrefixes reads "10.0.0.0/8, 192.168.1.5" into prefixes; bad entries are skipped.
+func parsePrefixes(v string) []netip.Prefix {
+	var out []netip.Prefix
+	for _, f := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if p, err := netip.ParsePrefix(f); err == nil {
+			out = append(out, p.Masked())
+		} else if a, err := netip.ParseAddr(f); err == nil {
+			out = append(out, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
+		}
+	}
+	return out
+}
+
 func envBool(key string, def bool) bool {
 	switch strings.ToLower(env(key, "")) {
 	case "1", "true", "yes", "on":
@@ -165,15 +187,17 @@ func Load() (*Config, error) {
 		LogLevel:         strings.ToLower(env("LOG_LEVEL", "info")),
 		LogFormat:        strings.ToLower(env("LOG_FORMAT", "text")),
 		TrustProxy:       envBool("TRUST_PROXY", true),
+		TrustedProxies:   parsePrefixes(env("TRUSTED_PROXIES", DefaultTrustedProxies)),
 
 		AuthMode:             strings.ToLower(env("AUTH_MODE", "local")),
 		AuthProxyHeader:      env("AUTH_PROXY_HEADER", "Remote-User"),
 		AuthProxyEmailHeader: env("AUTH_PROXY_EMAIL_HEADER", "Remote-Email"),
 		SessionTTL:           envDuration("SESSION_TTL", 720*time.Hour),
-		SecureCookies:        envBool("SECURE_COOKIES", false),
-		AdminEmail:           strings.ToLower(env("ADMIN_EMAIL", "")),
-		AdminPassword:        env("ADMIN_PASSWORD", ""),
-		AdminName:            env("ADMIN_NAME", "Admin"),
+		// Secure session cookies whenever Core is served over https.
+		SecureCookies: envBool("SECURE_COOKIES", strings.HasPrefix(strings.ToLower(env("BASE_URL", "")), "https://")),
+		AdminEmail:    strings.ToLower(env("ADMIN_EMAIL", "")),
+		AdminPassword: env("ADMIN_PASSWORD", ""),
+		AdminName:     env("ADMIN_NAME", "Admin"),
 
 		RegistrationKey: env("REGISTRATION_KEY", ""),
 

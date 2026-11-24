@@ -11,7 +11,8 @@ import (
 // in: the apps' "Sign in with Pocket Core" finds this session at /oidc/authorize instead of the
 // login page (where a passkey cannot work inside an app's web view). A device token already acts
 // for its owner across the API, so this grants nothing the token cannot already do; revoking the
-// device stops new sessions, and signing out ends the one made here like any other.
+// device stops new sessions, and signing out ends the one made here like any other. A device
+// that may not manage the box opens a session that may not either.
 //
 // POST /api/v1/auth/device/web-session (device token) →
 // {cookie, session, secure, expires_at, domain, base_url}
@@ -21,7 +22,7 @@ func (s *Server) handleDeviceWebSession(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusForbidden, "paired devices only")
 		return
 	}
-	id, err := s.store.CreateSession(r.Context(), p.User.ID, s.cfg.SessionTTL)
+	id, err := s.store.CreateSessionLimited(r.Context(), p.User.ID, s.cfg.SessionTTL, p.Limited)
 	if err != nil {
 		s.fail(w, err, "create session")
 		return

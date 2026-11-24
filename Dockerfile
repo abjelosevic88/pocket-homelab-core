@@ -8,7 +8,7 @@ COPY web/ ./
 RUN npm run build
 
 # ---------- 2. build the Go binary ----------
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.11-alpine AS build
 ARG TARGETOS TARGETARCH VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./

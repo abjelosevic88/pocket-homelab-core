@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import type { Device, Pairing } from '../lib/types'
-import { Modal, Secret, copyText, useToast } from './ui'
+import { Modal, Secret, Switch, copyText, useToast } from './ui'
+import { useApp } from '../lib/app-context'
 import { Icon } from './icons'
 
 /** Mint a pairing code, show the QR, and wait for the phone to claim it. */
 export default function PairModal({ onClose, userId }: { onClose: () => void; userId?: number }) {
   const { toast } = useToast()
+  const { user } = useApp()
+  // Only the Pocket Core app needs to manage the box; every other device acts as a member would.
+  const canOffer = user?.role === 'admin' && !userId
+  const [manage, setManage] = useState(false)
   const [p, setP] = useState<Pairing | null>(null)
   const [claimed, setClaimed] = useState<Device | null>(null)
   const [err, setErr] = useState('')
   const [left, setLeft] = useState(0)
   useEffect(() => {
-    api.post<Pairing>(`${V1}/pair`, userId ? { user_id: userId } : {}).then(setP).catch(e => setErr((e as Error).message))
-  }, [userId])
+    setP(null)
+    api.post<Pairing>(`${V1}/pair`, { ...(userId ? { user_id: userId } : {}), ...(manage ? { can_manage: true } : {}) }).then(setP).catch(e => setErr((e as Error).message))
+  }, [userId, manage])
   useEffect(() => {
     if (!p || claimed) return
     const tick = () => setLeft(Math.max(0, Math.round((new Date(p.expires_at).getTime() - Date.now()) / 1000)))
@@ -40,6 +46,10 @@ export default function PairModal({ onClose, userId }: { onClose: () => void; us
             <button type="button" className="btn sm" title="Copy the code" onClick={async () => toast(await copyText(code) ? 'Code copied' : 'Could not copy', 'ok')}><Icon name="copy" size={14} />Copy</button>
           </div>
           <p className="muted small" style={{ textAlign: 'center', maxWidth: 380 }}>In <b>Pocket Homelab</b> open <i>Settings → Pair with a box</i> and scan, or type the code. Every service on this box lands in the app, credentials go into the Keychain. Code expires in {left}s.</p>
+          {canOffer && <div className="row" style={{ gap: 10, alignItems: 'center', width: '100%' }}>
+            <Switch size="sm" on={manage} onChange={setManage} label="Can manage this box" />
+            <span className="small">Can manage this box <span className="muted">· only for the Pocket Core app</span></span>
+          </div>}
           <details style={{ width: '100%' }}><summary className="muted small">Manual import instead</summary>
             <p className="muted small mt-sm">Older client builds import an env file: download it from <b>Services → Download env</b> after signing in on that device, or paste this link into the client:</p>
             <Secret value={p.url} /></details>

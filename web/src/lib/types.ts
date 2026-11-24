@@ -18,14 +18,14 @@ export interface Service {
 export interface Credential { service: Service; url: string; fields: Record<string, string>; set: boolean; source?: 'user' | 'connector'; visible: boolean }
 export interface AppChoice { slot: string; title: string; env_key: string; options: { value: string; name: string; type: string }[]; available: Record<string, boolean>; choice: string; effective: string; explicit: boolean }
 export interface DevicePush { enabled: boolean; sound: boolean; last_sent_at?: string; last_error?: string }
-export interface Device { id: number; user_id: number; name: string; platform: string; token_prefix: string; last_seen_at?: string; last_ip: string; created_at: string; push?: DevicePush }
+export interface Device { id: number; user_id: number; name: string; platform: string; token_prefix: string; last_seen_at?: string; last_ip: string; created_at: string; can_manage?: boolean; push?: DevicePush }
 export interface Event { id: number; topic: string; source: string; subject: string; payload: unknown; created_at: string }
 export interface Topic { topic: string; count: number; last: string }
 export interface Webhook { id: number; app_id?: number; name: string; url: string; topics: string; has_secret: boolean; enabled: boolean; created_at: string }
 export interface Delivery { id: number; webhook_id: number; event_id: number; status: string; attempts: number; next_at: string; last_code: number; last_error: string; delivered_at?: string; created_at: string }
 export interface OIDCClient { id: number; client_id: string; has_secret: boolean; name: string; redirect_uris: string[]; app_id?: number; created_at: string }
 export interface APIToken { id: number; user_id: number; name: string; prefix: string; last_used_at?: string; created_at: string }
-export interface Pairing { code: string; expires_at: string; url: string; qr_png: string; qr_svg: string; core_url: string; ttl_s: number }
+export interface Pairing { code: string; expires_at: string; url: string; qr_png: string; qr_svg: string; core_url: string; ttl_s: number; can_manage?: boolean }
 export interface Overview {
   box_name: string; version: string; apps: App[]; apps_up: number; services_total: number; services_enabled: number
   devices: Device[]; recent_events: Event[]; deliveries: Record<string, number>; listeners: number; member?: boolean

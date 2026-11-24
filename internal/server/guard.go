@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -113,4 +115,69 @@ func (s *Server) sameOrigin(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+type viaProxyKey struct{}
+
+// realIP takes the client address and scheme from X-Forwarded-* only when the
+// request came from a proxy Core trusts (TRUST_PROXY on, peer inside
+// TRUSTED_PROXIES). Anyone else reaching Core's port directly could otherwise
+// pick any address (and dodge the per-address login limit) or claim https.
+func (s *Server) realIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.TrustProxy && s.trustedPeer(clientIP(r)) {
+			if ip := s.forwardedClient(r); ip != "" {
+				r.RemoteAddr = ip
+			}
+			r = r.WithContext(context.WithValue(r.Context(), viaProxyKey{}, true))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) trustedPeer(ip string) bool {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	for _, p := range s.cfg.TrustedProxies {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// forwardedClient walks X-Forwarded-For from the right and stops at the first
+// address that is not a trusted proxy: entries left of it were written by the
+// client and prove nothing. X-Real-IP is used when there is no list.
+func (s *Server) forwardedClient(r *http.Request) string {
+	var hops []string
+	for _, h := range r.Header.Values("X-Forwarded-For") {
+		for _, f := range strings.Split(h, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				hops = append(hops, f)
+			}
+		}
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		a, err := netip.ParseAddr(hops[i])
+		if err != nil {
+			return ""
+		}
+		if i == 0 || !s.trustedPeer(a.String()) {
+			return a.Unmap().String()
+		}
+	}
+	if a, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
+		return a.Unmap().String()
+	}
+	return ""
+}
+
+// viaTrustedProxy reports whether realIP accepted this request's forwarded headers.
+func viaTrustedProxy(r *http.Request) bool {
+	v, _ := r.Context().Value(viaProxyKey{}).(bool)
+	return v
 }

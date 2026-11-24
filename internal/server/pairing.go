@@ -30,13 +30,23 @@ func (s *Server) handlePairNew(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		UserID int64 `json:"user_id"`
+		// CanManage: the device may use its owner's admin rights (the Pocket
+		// Core app). Only an admin can ask, and only for an admin's device.
+		CanManage bool `json:"can_manage"`
 	}
 	_ = decode(r, &in)
 	uid := p.User.ID
 	if in.UserID > 0 && p.IsAdmin() {
 		uid = in.UserID
 	}
-	pr, err := s.store.CreatePairing(r.Context(), uid, s.cfg.PairTTL)
+	if in.CanManage {
+		owner, err := s.store.GetUser(r.Context(), uid)
+		if !p.IsAdmin() || err != nil || !owner.IsAdmin() {
+			writeErr(w, http.StatusForbidden, "only an admin's device can manage the box")
+			return
+		}
+	}
+	pr, err := s.store.CreatePairing(r.Context(), uid, s.cfg.PairTTL, in.CanManage)
 	if err != nil {
 		s.fail(w, err, "create pairing")
 		return
@@ -45,7 +55,7 @@ func (s *Server) handlePairNew(w http.ResponseWriter, r *http.Request) {
 		"code": pr.Code, "expires_at": pr.ExpiresAt, "url": s.pairURL(pr.Code),
 		"qr_png":   s.publicBase() + "/api/v1/pair/" + pr.Code + "/qr.png",
 		"qr_svg":   s.publicBase() + "/api/v1/pair/" + pr.Code + "/qr.svg",
-		"core_url": s.publicBase(), "ttl_s": int(s.cfg.PairTTL.Seconds()),
+		"core_url": s.publicBase(), "ttl_s": int(s.cfg.PairTTL.Seconds()), "can_manage": pr.CanManage,
 	})
 }
 
@@ -147,7 +157,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) {
 	if in.Name == "" {
 		in.Name = "Device"
 	}
-	d := &store.Device{UserID: pr.UserID, Name: strings.TrimSpace(in.Name), Platform: strings.ToLower(strings.TrimSpace(in.Platform))}
+	d := &store.Device{UserID: pr.UserID, Name: strings.TrimSpace(in.Name), Platform: strings.ToLower(strings.TrimSpace(in.Platform)), CanManage: pr.CanManage}
 	plain, err := s.store.CreateDevice(r.Context(), d)
 	if err != nil {
 		s.fail(w, err, "create device")
@@ -362,6 +372,36 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.hub.Publish(r.Context(), &store.Event{Topic: "core.device.revoked", Source: "core", Subject: fmt.Sprintf("device:%d", d.ID), Payload: mustJSON(map[string]any{"name": d.Name})})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleUpdateDevice lets an admin say whether a device may manage the box
+// (PUT /devices/{id} {"can_manage": bool}). Only an admin's device can.
+func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
+	d, err := s.store.GetDevice(r.Context(), idParam(r, "id"))
+	if err != nil {
+		s.fail(w, err, "get device")
+		return
+	}
+	var in struct {
+		CanManage *bool `json:"can_manage"`
+	}
+	if err := decode(r, &in); err != nil || in.CanManage == nil {
+		writeErr(w, http.StatusBadRequest, "can_manage required")
+		return
+	}
+	if *in.CanManage {
+		if owner, err := s.store.GetUser(r.Context(), d.UserID); err != nil || !owner.IsAdmin() {
+			writeErr(w, http.StatusBadRequest, "only an admin's device can manage the box")
+			return
+		}
+	}
+	if err := s.store.SetDeviceManage(r.Context(), d.ID, *in.CanManage); err != nil {
+		s.fail(w, err, "update device")
+		return
+	}
+	d.CanManage = *in.CanManage
+	s.log.Info("device manage changed", "device", d.ID, "can_manage", d.CanManage, "by", principalFrom(r.Context()).Label())
+	writeJSON(w, http.StatusOK, d)
 }
 
 // Pocket Homelab already supports the ABS protocol. Export the selected gateway

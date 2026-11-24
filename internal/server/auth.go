@@ -29,11 +29,17 @@ type Principal struct {
 	App    *store.App    `json:"app,omitempty"`
 	Device *store.Device `json:"device,omitempty"`
 	Scope  string        `json:"scope,omitempty"`
+	// Limited callers act for their user but never with the user's admin
+	// rights: OIDC access tokens Core handed to an app, devices not paired to
+	// manage the box, and web sessions such a device opened.
+	Limited bool `json:"limited,omitempty"`
 }
 
 // IsAdmin reports whether the caller may manage the box. Apps are trusted
 // for registry/event work but not for user or service management.
-func (p *Principal) IsAdmin() bool { return p != nil && p.User != nil && p.User.IsAdmin() }
+func (p *Principal) IsAdmin() bool {
+	return p != nil && !p.Limited && p.User != nil && p.User.IsAdmin()
+}
 
 // UserID returns the owning user id (devices belong to a user; apps don't).
 func (p *Principal) UserID() int64 {
@@ -154,17 +160,19 @@ func (s *Server) resolveToken(ctx context.Context, tok, ip string) (*Principal, 
 		if err != nil || u.Disabled {
 			return nil, store.ErrNotFound
 		}
-		return &Principal{Kind: "device", Device: d, User: u}, nil
+		return &Principal{Kind: "device", Device: d, User: u, Limited: !d.CanManage}, nil
 	case strings.HasPrefix(tok, "pco_"):
 		t, err := s.store.GetOIDCToken(ctx, tok)
-		if err != nil {
-			return nil, err
+		if err != nil || t.Kind != "access" {
+			return nil, store.ErrNotFound
 		}
 		u, err := s.store.GetUser(ctx, t.UserID)
 		if err != nil || u.Disabled {
 			return nil, store.ErrNotFound
 		}
-		return &Principal{Kind: "user", User: u, Scope: t.Scope}, nil
+		// An access token was issued to some app for signing in; it reaches
+		// Core as its user would, never with the user's admin rights.
+		return &Principal{Kind: "user", User: u, Scope: t.Scope, Limited: true}, nil
 	default:
 		u, err := s.store.GetUserByAPIToken(ctx, tok)
 		if err != nil {
@@ -208,11 +216,11 @@ func (s *Server) resolve(r *http.Request) (*Principal, error) {
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.store.GetSessionUser(ctx, c.Value)
+	u, limited, err := s.store.GetSession(ctx, c.Value)
 	if err != nil {
 		return nil, err
 	}
-	return &Principal{Kind: "user", User: u}, nil
+	return &Principal{Kind: "user", User: u, Limited: limited}, nil
 }
 
 // sessionUser is the browser user only (for the OIDC authorize page).
@@ -269,6 +277,12 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	var u *store.User
 	if p != nil {
 		u = p.User
+		if p.Limited && u != nil && u.IsAdmin() {
+			// This session can't manage the box, so the page shows what a member sees.
+			c := *u
+			c.Role = "member"
+			u = &c
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"needs_setup": n == 0 && s.cfg.AuthMode == "local", "auth_mode": s.cfg.AuthMode,
@@ -283,20 +297,20 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		// The downloads service exists; whether Watch/Requests/Subtitles are installed is in its GET.
 		"box_downloads": s.boxDL != nil,
 		// One-click install/removal of Pocket apps (admins).
-		"installer": u.IsAdmin() && s.installerState(r.Context()) == "",
+		"installer": p.IsAdmin() && s.installerState(r.Context()) == "",
 		// Settings → Box: the switch exists when there is an agent; locked by INSTALLER_ENABLED=false.
-		"installer_agent":  u.IsAdmin() && s.inst != nil,
-		"installer_locked": u.IsAdmin() && s.inst != nil && !s.cfg.InstallerEnabled,
+		"installer_agent":  p.IsAdmin() && s.inst != nil,
+		"installer_locked": p.IsAdmin() && s.inst != nil && !s.cfg.InstallerEnabled,
 		"box_wizard":       s.box != nil && n > 0 && s.box.wizardPending(r.Context()),
 		// Off a Pocket Box: the admin hasn't picked the apps to start with yet (setup.go).
-		"setup_wizard": n > 0 && u.IsAdmin() && s.setupPending(r.Context()),
+		"setup_wizard": n > 0 && p.IsAdmin() && s.setupPending(r.Context()),
 	})
 }
 
 // cookieWarning explains up front why a sign-in would bounce: a Secure session
 // cookie on a page the browser loaded over plain http is silently dropped.
 func (s *Server) cookieWarning(r *http.Request) string {
-	if s.cfg.AuthMode != "local" || !s.cfg.SecureCookies || requestIsHTTPS(r, s.cfg.TrustProxy) {
+	if s.cfg.AuthMode != "local" || !s.cfg.SecureCookies || requestIsHTTPS(r) {
 		return ""
 	}
 	host := r.Host
@@ -309,11 +323,11 @@ func (s *Server) cookieWarning(r *http.Request) string {
 	return "This page was opened over plain http, but Core is set to SECURE_COOKIES=true, so your browser will not keep the sign-in. Open Core over https, or set SECURE_COOKIES=false and restart it."
 }
 
-func requestIsHTTPS(r *http.Request, trustProxy bool) bool {
+func requestIsHTTPS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	if !trustProxy {
+	if !viaTrustedProxy(r) {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]), "https")

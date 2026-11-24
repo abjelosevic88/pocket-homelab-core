@@ -107,30 +107,43 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 
 // CreateSession opens a browser session.
 func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Duration) (string, error) {
+	return s.CreateSessionLimited(ctx, userID, ttl, false)
+}
+
+// CreateSessionLimited opens a session that, when limited, never carries the
+// user's admin rights (a session a non-managing device opened).
+func (s *Store) CreateSessionLimited(ctx context.Context, userID int64, ttl time.Duration, limited bool) (string, error) {
 	id := crypto.Token("", 32)
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`, id, userID, Stamp(time.Now().Add(ttl)))
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions (id, user_id, expires_at, limited) VALUES (?, ?, ?, ?)`, id, userID, Stamp(time.Now().Add(ttl)), limited)
 	return id, err
 }
 
 // GetSessionUser resolves a session cookie to its user.
 func (s *Store) GetSessionUser(ctx context.Context, id string) (*User, error) {
+	u, _, err := s.GetSession(ctx, id)
+	return u, err
+}
+
+// GetSession resolves a session cookie to its user and whether it is limited.
+func (s *Store) GetSession(ctx context.Context, id string) (*User, bool, error) {
 	var userID int64
 	var exp string
-	if err := s.DB.QueryRowContext(ctx, `SELECT user_id, expires_at FROM sessions WHERE id = ?`, id).Scan(&userID, &exp); err != nil {
-		return nil, notFound(err)
+	var limited bool
+	if err := s.DB.QueryRowContext(ctx, `SELECT user_id, expires_at, limited FROM sessions WHERE id = ?`, id).Scan(&userID, &exp, &limited); err != nil {
+		return nil, false, notFound(err)
 	}
 	if t, err := time.Parse(time.RFC3339Nano, exp); err != nil || t.Before(time.Now()) {
 		_ = s.DeleteSession(ctx, id)
-		return nil, ErrNotFound
+		return nil, false, ErrNotFound
 	}
 	u, err := s.GetUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if u.Disabled {
-		return nil, ErrNotFound
+		return nil, false, ErrNotFound
 	}
-	return u, nil
+	return u, limited, nil
 }
 
 // DeleteSession ends a session.

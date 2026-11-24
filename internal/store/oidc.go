@@ -160,13 +160,13 @@ func (s *Store) CreateOIDCCode(ctx context.Context, c *OIDCCode, ttl time.Durati
 	return err
 }
 
-// ConsumeOIDCCode fetches and deletes a code (single use).
+// ConsumeOIDCCode fetches and deletes a code in one statement, so a code is
+// good for exactly one token exchange even when two arrive at once.
 func (s *Store) ConsumeOIDCCode(ctx context.Context, code string) (*OIDCCode, error) {
 	var c OIDCCode
-	if err := s.DB.QueryRowContext(ctx, `SELECT code, client_id, user_id, redirect_uri, scope, nonce, code_challenge, expires_at FROM oidc_codes WHERE code = ?`, code).Scan(&c.Code, &c.ClientID, &c.UserID, &c.RedirectURI, &c.Scope, &c.Nonce, &c.CodeChallenge, &c.ExpiresAt); err != nil {
+	if err := s.DB.QueryRowContext(ctx, `DELETE FROM oidc_codes WHERE code = ? RETURNING code, client_id, user_id, redirect_uri, scope, nonce, code_challenge, expires_at`, code).Scan(&c.Code, &c.ClientID, &c.UserID, &c.RedirectURI, &c.Scope, &c.Nonce, &c.CodeChallenge, &c.ExpiresAt); err != nil {
 		return nil, notFound(err)
 	}
-	_, _ = s.DB.ExecContext(ctx, `DELETE FROM oidc_codes WHERE code = ?`, code)
 	if t, err := time.Parse(time.RFC3339Nano, c.ExpiresAt); err != nil || t.Before(time.Now()) {
 		return nil, ErrNotFound
 	}
@@ -199,6 +199,20 @@ func (s *Store) CreateOIDCToken(ctx context.Context, t *OIDCToken, ttl time.Dura
 func (s *Store) GetOIDCToken(ctx context.Context, plain string) (*OIDCToken, error) {
 	var t OIDCToken
 	if err := s.DB.QueryRowContext(ctx, `SELECT kind, client_id, user_id, scope, expires_at FROM oidc_tokens WHERE token_hash = ?`, crypto.Hash(plain)).Scan(&t.Kind, &t.ClientID, &t.UserID, &t.Scope, &t.ExpiresAt); err != nil {
+		return nil, notFound(err)
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, t.ExpiresAt); err != nil || ts.Before(time.Now()) {
+		return nil, ErrNotFound
+	}
+	return &t, nil
+}
+
+// ConsumeOIDCRefresh takes a client's refresh token out in one statement
+// (rotation): a token replayed at the same moment finds nothing.
+func (s *Store) ConsumeOIDCRefresh(ctx context.Context, plain, clientID string) (*OIDCToken, error) {
+	var t OIDCToken
+	if err := s.DB.QueryRowContext(ctx, `DELETE FROM oidc_tokens WHERE token_hash = ? AND kind = 'refresh' AND client_id = ? RETURNING kind, client_id, user_id, scope, expires_at`,
+		crypto.Hash(plain), clientID).Scan(&t.Kind, &t.ClientID, &t.UserID, &t.Scope, &t.ExpiresAt); err != nil {
 		return nil, notFound(err)
 	}
 	if ts, err := time.Parse(time.RFC3339Nano, t.ExpiresAt); err != nil || ts.Before(time.Now()) {

@@ -217,9 +217,7 @@ func (s *Server) janitor(ctx context.Context) {
 // Router builds the chi router.
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
-	if s.cfg.TrustProxy {
-		r.Use(middleware.RealIP)
-	}
+	r.Use(s.realIP)
 	r.Use(middleware.RequestID)
 	r.Use(s.logging)
 	r.Use(middleware.Recoverer)
@@ -379,6 +377,8 @@ func (s *Server) Router() http.Handler {
 				r.Put("/services/{id}", s.handleUpdateService)
 				r.Delete("/services/{id}", s.handleDeleteService)
 				r.Post("/services/{id}/test", s.handleTestService)
+
+				r.Put("/devices/{id}", s.handleUpdateDevice)
 
 				r.Get("/users", s.handleListUsers)
 				r.Post("/users", s.handleCreateUser)
