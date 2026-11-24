@@ -78,8 +78,11 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	challenge, method := q.Get("code_challenge"), q.Get("code_challenge_method")
-	if cl.Public() && challenge == "" {
-		oidcRedirectErr(w, r, redirect, state, "invalid_request", "public clients must use PKCE")
+	// PKCE (S256) is required from public clients and from every Pocket app's
+	// client (they all send it); hand-made and connector clients for other
+	// software keep it optional, since some of those programs never send it.
+	if (cl.Public() || cl.AppID > 0) && challenge == "" {
+		oidcRedirectErr(w, r, redirect, state, "invalid_request", "this client must use PKCE (S256)")
 		return
 	}
 	if challenge != "" && method != "" && method != "S256" {

@@ -113,7 +113,7 @@ func (s *Server) handleMCPPairing(w http.ResponseWriter, r *http.Request, action
 		writeJSON(w, 200, map[string]any{"token": token, "url": s.mcpResource(), "connection": grant})
 		return
 	}
-	user := s.sessionUser(r)
+	user := s.fullSessionUser(r)
 	if user == nil || user.Disabled {
 		writeErr(w, 401, "sign in to Core")
 		return

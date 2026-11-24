@@ -23,4 +23,4 @@ Out of scope: apps installed through Core (report to that app's repository), and
 
 ## What CI checks
 
-Every push runs `go vet`, the tests (including replay and privilege tests for tokens and pairing) and `govulncheck` against the Go standard library and modules.
+Every push runs `go vet`, the tests (including replay, privilege and privilege-escalation tests for tokens, devices and pairing), `govulncheck` against the Go standard library and modules, and Trivy on the built image (high and critical issues that have a fix fail the build).

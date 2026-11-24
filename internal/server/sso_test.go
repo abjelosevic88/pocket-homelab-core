@@ -154,7 +154,7 @@ func TestSSOThroughUpstream(t *testing.T) {
 			}
 			return nil
 		}}
-		authz := ts.URL + "/oidc/authorize?client_id=" + reg.OIDC.ClientID + "&redirect_uri=http://rp/cb&response_type=code&scope=openid%20email&state=s1&nonce=n1"
+		authz := ts.URL + "/oidc/authorize?client_id=" + reg.OIDC.ClientID + "&redirect_uri=http://rp/cb&response_type=code&scope=openid%20email&state=s1&nonce=n1&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"
 		res, err := cl.Get(authz)
 		if err != nil {
 			t.Fatal(err)

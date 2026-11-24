@@ -118,6 +118,7 @@ func (s *Server) sameOrigin(next http.Handler) http.Handler {
 }
 
 type viaProxyKey struct{}
+type peerTrustedKey struct{}
 
 // realIP takes the client address and scheme from X-Forwarded-* only when the
 // request came from a proxy Core trusts (TRUST_PROXY on, peer inside
@@ -125,7 +126,11 @@ type viaProxyKey struct{}
 // pick any address (and dodge the per-address login limit) or claim https.
 func (s *Server) realIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.TrustProxy && s.trustedPeer(clientIP(r)) {
+		peer := s.trustedPeer(clientIP(r))
+		if peer {
+			r = r.WithContext(context.WithValue(r.Context(), peerTrustedKey{}, true))
+		}
+		if s.cfg.TrustProxy && peer {
 			if ip := s.forwardedClient(r); ip != "" {
 				r.RemoteAddr = ip
 			}
@@ -174,6 +179,13 @@ func (s *Server) forwardedClient(r *http.Request) string {
 		return a.Unmap().String()
 	}
 	return ""
+}
+
+// fromTrustedPeer reports whether the connection itself came from TRUSTED_PROXIES
+// (whatever TRUST_PROXY says): AUTH_MODE=proxy takes identity headers only from there.
+func fromTrustedPeer(r *http.Request) bool {
+	v, _ := r.Context().Value(peerTrustedKey{}).(bool)
+	return v
 }
 
 // viaTrustedProxy reports whether realIP accepted this request's forwarded headers.

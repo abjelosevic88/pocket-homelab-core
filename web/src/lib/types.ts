@@ -24,7 +24,7 @@ export interface Topic { topic: string; count: number; last: string }
 export interface Webhook { id: number; app_id?: number; name: string; url: string; topics: string; has_secret: boolean; enabled: boolean; created_at: string }
 export interface Delivery { id: number; webhook_id: number; event_id: number; status: string; attempts: number; next_at: string; last_code: number; last_error: string; delivered_at?: string; created_at: string }
 export interface OIDCClient { id: number; client_id: string; has_secret: boolean; name: string; redirect_uris: string[]; app_id?: number; created_at: string }
-export interface APIToken { id: number; user_id: number; name: string; prefix: string; last_used_at?: string; created_at: string }
+export interface APIToken { id: number; user_id: number; name: string; prefix: string; last_used_at?: string; created_at: string; expires_at?: string; can_manage: boolean }
 export interface Pairing { code: string; expires_at: string; url: string; qr_png: string; qr_svg: string; core_url: string; ttl_s: number; can_manage?: boolean }
 export interface Overview {
   box_name: string; version: string; apps: App[]; apps_up: number; services_total: number; services_enabled: number

@@ -294,10 +294,10 @@ func (s *Server) Router() http.Handler {
 			r.Get("/me/choices", s.handleMyChoices)
 			r.Put("/me/choices/{slot}", s.handleSetChoice)
 			r.Get("/me/ai-connections", s.handleMCPConnections)
-			r.Post("/me/ai-connections/token", s.handleMCPConnectionToken)
+			r.With(s.requireUnlimited).Post("/me/ai-connections/token", s.handleMCPConnectionToken)
 			r.Delete("/me/ai-connections/{id}", s.handleMCPDisconnect)
 			r.Get("/me/remote", s.handleMyRemote)
-			r.Post("/me/remote/pair", s.handleRemotePair)
+			r.With(s.requireUnlimited).Post("/me/remote/pair", s.handleRemotePair)
 			r.Delete("/me/remote/pair", s.handleCancelRemotePair)
 			r.Put("/me/remote/devices/{id}", s.handleUpdateRemoteDevice)
 			r.Delete("/me/remote/devices/{id}", s.handleDeleteRemoteDevice)
@@ -334,14 +334,14 @@ func (s *Server) Router() http.Handler {
 				r.Get("/webhooks/{id}/deliveries", s.handleDeliveries)
 			})
 
-			r.Post("/pair", s.handlePairNew)
+			r.With(s.requireUnlimited).Post("/pair", s.handlePairNew)
 			r.Get("/pair/{code}", s.handlePairStatus)
 			r.Get("/pair/profile", s.handleProfile)
 			r.Get("/devices", s.handleListDevices)
 			r.Delete("/devices/{id}", s.handleDeleteDevice)
 
 			r.Get("/tokens", s.handleListTokens)
-			r.Post("/tokens", s.handleCreateToken)
+			r.With(s.requireUnlimited).Post("/tokens", s.handleCreateToken)
 			r.Delete("/tokens/{id}", s.handleDeleteToken)
 
 			r.Group(func(r chi.Router) {

@@ -190,22 +190,38 @@ type APIToken struct {
 	Prefix     string `json:"prefix"`
 	LastUsedAt string `json:"last_used_at,omitempty"`
 	CreatedAt  string `json:"created_at"`
+	ExpiresAt  string `json:"expires_at,omitempty"` // empty = never
+	// CanManage lets the token use its owner's admin rights.
+	CanManage bool `json:"can_manage"`
 }
 
-// CreateAPIToken mints a pcu_ token for a user and returns the plain secret.
+// CreateAPIToken mints a pcu_ token that never expires and carries the
+// owner's full rights (the console and tests); people get CreateAPITokenWith.
 func (s *Store) CreateAPIToken(ctx context.Context, userID int64, name string) (*APIToken, string, error) {
+	return s.CreateAPITokenWith(ctx, userID, name, true, 0)
+}
+
+// CreateAPITokenWith mints a pcu_ token; ttl 0 = never expires.
+func (s *Store) CreateAPITokenWith(ctx context.Context, userID int64, name string, canManage bool, ttl time.Duration) (*APIToken, string, error) {
 	plain := crypto.Token("pcu_", 32)
-	res, err := s.DB.ExecContext(ctx, `INSERT INTO api_tokens (user_id, name, token_hash, prefix) VALUES (?, ?, ?, ?)`, userID, name, crypto.Hash(plain), crypto.Prefix(plain, 10))
+	var exp any
+	t := &APIToken{UserID: userID, Name: name, Prefix: crypto.Prefix(plain, 10), CreatedAt: Now(), CanManage: canManage}
+	if ttl > 0 {
+		t.ExpiresAt = Stamp(time.Now().Add(ttl))
+		exp = t.ExpiresAt
+	}
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO api_tokens (user_id, name, token_hash, prefix, expires_at, can_manage) VALUES (?, ?, ?, ?, ?, ?)`,
+		userID, name, crypto.Hash(plain), t.Prefix, exp, canManage)
 	if err != nil {
 		return nil, "", err
 	}
-	id, _ := res.LastInsertId()
-	return &APIToken{ID: id, UserID: userID, Name: name, Prefix: crypto.Prefix(plain, 10), CreatedAt: Now()}, plain, nil
+	t.ID, _ = res.LastInsertId()
+	return t, plain, nil
 }
 
 // ListAPITokens lists a user's tokens.
 func (s *Store) ListAPITokens(ctx context.Context, userID int64) ([]APIToken, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id, user_id, name, prefix, last_used_at, created_at FROM api_tokens WHERE user_id = ? ORDER BY id`, userID)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, user_id, name, prefix, last_used_at, created_at, expires_at, can_manage FROM api_tokens WHERE user_id = ? ORDER BY id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -213,11 +229,12 @@ func (s *Store) ListAPITokens(ctx context.Context, userID int64) ([]APIToken, er
 	out := []APIToken{}
 	for rows.Next() {
 		var t APIToken
-		var lu sql.NullString
-		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Prefix, &lu, &t.CreatedAt); err != nil {
+		var lu, exp sql.NullString
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Prefix, &lu, &t.CreatedAt, &exp, &t.CanManage); err != nil {
 			return nil, err
 		}
 		t.LastUsedAt = nullStr(lu)
+		t.ExpiresAt = nullStr(exp)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -231,19 +248,33 @@ func (s *Store) DeleteAPIToken(ctx context.Context, userID, id int64) error {
 
 // GetUserByAPIToken resolves a pcu_ token.
 func (s *Store) GetUserByAPIToken(ctx context.Context, token string) (*User, error) {
+	u, _, err := s.ResolveAPIToken(ctx, token)
+	return u, err
+}
+
+// ResolveAPIToken resolves a pcu_ token to its user and whether it may manage
+// the box; an expired token is unknown.
+func (s *Store) ResolveAPIToken(ctx context.Context, token string) (*User, bool, error) {
 	var id, userID int64
-	if err := s.DB.QueryRowContext(ctx, `SELECT id, user_id FROM api_tokens WHERE token_hash = ?`, crypto.Hash(token)).Scan(&id, &userID); err != nil {
-		return nil, notFound(err)
+	var exp sql.NullString
+	var canManage bool
+	if err := s.DB.QueryRowContext(ctx, `SELECT id, user_id, expires_at, can_manage FROM api_tokens WHERE token_hash = ?`, crypto.Hash(token)).Scan(&id, &userID, &exp, &canManage); err != nil {
+		return nil, false, notFound(err)
+	}
+	if exp.Valid && exp.String != "" {
+		if t, err := time.Parse(time.RFC3339Nano, exp.String); err != nil || t.Before(time.Now()) {
+			return nil, false, ErrNotFound
+		}
 	}
 	_, _ = s.DB.ExecContext(ctx, `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, Now(), id)
 	u, err := s.GetUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if u.Disabled {
-		return nil, ErrNotFound
+		return nil, false, ErrNotFound
 	}
-	return u, nil
+	return u, canManage, nil
 }
 
 func (s *Store) GetUserBySubject(ctx context.Context, subject string) (*User, error) {

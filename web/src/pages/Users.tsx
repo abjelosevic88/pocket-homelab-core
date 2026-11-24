@@ -4,7 +4,7 @@ import { api, V1 } from '../lib/api'
 import { ago, when } from '../lib/format'
 import type { APIToken, Credential, User, UserConnector } from '../lib/types'
 import { useApp } from '../lib/app-context'
-import { Avatar, Card, Confirm, Field, Loading, Modal, PageHeader, Secret, useAsync, useToast } from '../components/ui'
+import { Avatar, Card, Confirm, Field, Loading, Modal, PageHeader, Secret, Switch, errMsg, useAsync, useToast } from '../components/ui'
 import { StatusBadge } from '../components/ConnectorPanel'
 import { Select } from '../components/Select'
 import { Icon } from '../components/icons'
@@ -59,16 +59,45 @@ export default function Users() {
 
 export function Tokens() {
   const { toast } = useToast()
+  const { user } = useApp()
+  const admin = user?.role === 'admin'
   const { data, reload } = useAsync(() => api.get<APIToken[]>(`${V1}/tokens`), [])
   const [name, setName] = useState('')
+  const [days, setDays] = useState('365')
+  const [manage, setManage] = useState(false)
+  const [pw, setPw] = useState('')
   const [secret, setSecret] = useState('')
-  const create = async (e: React.FormEvent) => { e.preventDefault(); const r = await api.post<{ secret: string }>(`${V1}/tokens`, { name: name || 'token' }); setSecret(r.secret); setName(''); reload() }
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const r = await api.post<{ secret: string }>(`${V1}/tokens`, { name: name || 'token', expires_days: Number(days), can_manage: manage, current_password: manage ? pw : undefined })
+      setSecret(r.secret); setName(''); setPw(''); setManage(false); reload()
+    } catch (err) { toast(errMsg(err), 'err') }
+  }
+  const expired = (t: APIToken) => !!t.expires_at && new Date(t.expires_at).getTime() < Date.now()
   return (
     <Card title={<><Icon name="key" size={16} />My API tokens</>}>
-      <p className="muted small">They act as you against Core and, through introspection, against every Pocket app.</p>
-      <form onSubmit={create} className="row mt-sm"><input placeholder="Name (e.g. Raycast)" value={name} onChange={e => setName(e.target.value)} style={{ maxWidth: 260 }} /><button className="btn"><Icon name="plus" size={14} />Create</button></form>
+      <p className="muted small">They act as you against Core and, through introspection, against every Pocket app. Only tokens that can manage the box get your admin rights.</p>
+      <form onSubmit={create} className="grid mt-sm" style={{ gap: 8 }}>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <input placeholder="Name (e.g. Raycast)" value={name} onChange={e => setName(e.target.value)} style={{ maxWidth: 260 }} />
+          <div style={{ width: 150 }}><Select ariaLabel="Expires after" value={days} onChange={setDays} options={[{ value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' }, { value: '0', label: 'Never expires' }]} /></div>
+          <button className="btn"><Icon name="plus" size={14} />Create</button>
+        </div>
+        {admin && <div className="row" style={{ gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Switch size="sm" on={manage} onChange={setManage} label="Can manage this box" />
+          <span className="small">Can manage this box <span className="muted">· for scripts that change apps, people or settings</span></span>
+          {manage && <input type="password" autoComplete="current-password" placeholder="Your password" value={pw} onChange={e => setPw(e.target.value)} style={{ maxWidth: 200 }} />}
+        </div>}
+      </form>
       {secret && <div className="mt-sm"><div className="callout success mb-sm">Copy it now — it is shown once.</div><Secret value={secret} /></div>}
-      {(data || []).length > 0 && <table className="table compact mt"><tbody>{(data || []).map(t => <tr key={t.id}><td><b>{t.name}</b></td><td className="mono small">{t.prefix}…</td><td className="muted small">used {ago(t.last_used_at)}</td><td className="right"><button type="button" className="btn sm ghost icon-only danger-text" aria-label={`Revoke ${t.name}`} title="Revoke" onClick={async () => { await api.del(`${V1}/tokens/${t.id}`); reload(); toast('Revoked') }}><Icon name="trash" size={14} /></button></td></tr>)}</tbody></table>}
+      {(data || []).length > 0 && <table className="table compact mt"><tbody>{(data || []).map(t => <tr key={t.id}>
+        <td><b>{t.name}</b>{t.can_manage && <> <span className="badge">manages box</span></>}</td>
+        <td className="mono small">{t.prefix}…</td>
+        <td className="muted small">used {ago(t.last_used_at)}</td>
+        <td className={expired(t) ? 'small danger-text' : 'muted small'} title={t.expires_at ? when(t.expires_at) : undefined}>{!t.expires_at ? 'never expires' : expired(t) ? 'expired' : `expires ${when(t.expires_at)}`}</td>
+        <td className="right"><button type="button" className="btn sm ghost icon-only danger-text" aria-label={`Revoke ${t.name}`} title="Revoke" onClick={async () => { await api.del(`${V1}/tokens/${t.id}`); reload(); toast('Revoked') }}><Icon name="trash" size={14} /></button></td>
+      </tr>)}</tbody></table>}
     </Card>
   )
 }

@@ -260,7 +260,7 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 		s.mcpRedirectErr(w, r, redirect, q.Get("state"), "invalid_scope", "request supported scopes; apps:write also requires apps:read")
 		return
 	}
-	u := s.sessionUser(r)
+	u := s.fullSessionUser(r)
 	if u == nil {
 		http.Redirect(w, r, "/login?next="+url.QueryEscape("/mcp/oauth/authorize?"+q.Encode()), 302)
 		return
@@ -286,7 +286,7 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
-	u := s.sessionUser(r)
+	u := s.fullSessionUser(r)
 	base, _ := url.Parse(s.cfg.BaseURL)
 	if u == nil || u.Disabled {
 		tokenErr(w, 401, "access_denied", "sign in to Core")

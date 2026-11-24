@@ -204,7 +204,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// OIDC: authorize with the browser session, exchange the code, userinfo.
 	cl := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, _ := http.NewRequest("GET", e.srv.URL+"/oidc/authorize?client_id=pocket-habits&redirect_uri=http://rp/cb&response_type=code&scope=openid%20email&state=s1&nonce=n1", nil)
+	req, _ := http.NewRequest("GET", e.srv.URL+"/oidc/authorize?client_id=pocket-habits&redirect_uri=http://rp/cb&response_type=code&scope=openid%20email&state=s1&nonce=n1&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256", nil)
 	for _, c := range e.cj {
 		req.AddCookie(c)
 	}
@@ -217,7 +217,7 @@ func TestEndToEnd(t *testing.T) {
 	if res.StatusCode != 302 || loc.Host != "rp" || loc.Query().Get("code") == "" || loc.Query().Get("state") != "s1" {
 		t.Fatalf("authorize %d %s", res.StatusCode, res.Header.Get("Location"))
 	}
-	form := url.Values{"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")}, "redirect_uri": {"http://rp/cb"}}
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")}, "redirect_uri": {"http://rp/cb"}, "code_verifier": {pkceVerifier}}
 	treq, _ := http.NewRequest("POST", e.srv.URL+"/oidc/token", strings.NewReader(form.Encode()))
 	treq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	treq.SetBasicAuth("pocket-habits", reg.OIDC.ClientSecret)

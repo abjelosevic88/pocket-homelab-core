@@ -20,7 +20,7 @@ func (s *Server) mcpConnectionOrigin(r *http.Request) bool {
 func (s *Server) handleMCPConnectionToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
-	user := s.sessionUser(r)
+	user := s.fullSessionUser(r)
 	if user == nil || user.Disabled {
 		writeErr(w, 401, "sign in to Core")
 		return

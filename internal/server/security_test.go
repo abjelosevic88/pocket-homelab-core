@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/config"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
@@ -43,6 +45,10 @@ func secEnv(t *testing.T) (*env, string) {
 	}
 	return e, reg.OIDC.ClientSecret
 }
+
+// RFC 7636's example pair.
+const pkceVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+const pkceS256 = "&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"
 
 // authorize runs /oidc/authorize with the admin's session and returns the code
 // (or the error the redirect carried).
@@ -80,8 +86,8 @@ func (e *env) token(secret string, form url.Values) (int, map[string]any) {
 // person's own things but never as an admin of Core.
 func TestOIDCAccessTokenIsNotAdmin(t *testing.T) {
 	e, secret := secEnv(t)
-	code, _ := e.authorize("")
-	c, tok := e.token(secret, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"http://rp/cb"}})
+	code, _ := e.authorize(pkceS256)
+	c, tok := e.token(secret, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"http://rp/cb"}, "code_verifier": {pkceVerifier}})
 	if c != 200 {
 		t.Fatalf("token %d %v", c, tok)
 	}
@@ -107,7 +113,7 @@ func TestOIDCAccessTokenIsNotAdmin(t *testing.T) {
 // requests arrive at the same moment.
 func TestOIDCCodeAndRefreshAreSingleUse(t *testing.T) {
 	e, secret := secEnv(t)
-	code, _ := e.authorize("")
+	code, _ := e.authorize(pkceS256)
 	race := func(form url.Values) (ok int, last map[string]any) {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -127,7 +133,7 @@ func TestOIDCCodeAndRefreshAreSingleUse(t *testing.T) {
 		wg.Wait()
 		return ok, last
 	}
-	n, tok := race(url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"http://rp/cb"}})
+	n, tok := race(url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"http://rp/cb"}, "code_verifier": {pkceVerifier}})
 	if n != 1 {
 		t.Fatalf("code exchanged %d times", n)
 	}
@@ -142,8 +148,12 @@ func TestPKCEPlainRefused(t *testing.T) {
 	if _, oerr := e.authorize("&code_challenge=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopq&code_challenge_method=plain"); oerr != "invalid_request" {
 		t.Fatalf("plain PKCE: error %q", oerr)
 	}
-	if code, _ := e.authorize("&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"); code == "" {
+	if code, _ := e.authorize(pkceS256); code == "" {
 		t.Fatal("S256 PKCE refused")
+	}
+	// A Pocket app's client must send PKCE at all.
+	if _, oerr := e.authorize(""); oerr != "invalid_request" {
+		t.Fatalf("Pocket app client without PKCE: error %q", oerr)
 	}
 }
 
@@ -311,5 +321,204 @@ func TestSecureCookiesFollowBaseURL(t *testing.T) {
 	t.Setenv("SECURE_COOKIES", "false")
 	if c, _ := config.Load(); c.SecureCookies {
 		t.Fatal("SECURE_COOKIES=false ignored")
+	}
+}
+
+// No limited credential can trade itself for one without the limit: not a
+// personal token, a pairing code, a remote-access pairing, an AI connection or
+// a password to sign in with afresh.
+func TestLimitedCannotMintCredentials(t *testing.T) {
+	e, secret := secEnv(t)
+	code, _ := e.authorize(pkceS256)
+	_, tok := e.token(secret, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"http://rp/cb"}, "code_verifier": {pkceVerifier}})
+	oidcTok := tok["access_token"].(string)
+
+	var pair struct{ Code string }
+	e.do("POST", "/api/v1/pair", "", nil, &pair)
+	var prof Profile
+	e.do("POST", "/api/v1/pair/claim", "", map[string]string{"code": pair.Code, "name": "Hub"}, &prof)
+	var ws struct{ Session string }
+	e.tokenOnly("POST", "/api/v1/auth/device/web-session", prof.Token, nil, &ws)
+
+	asSession := func(method, path string, body any) int {
+		saved := e.cj
+		e.cj = []*http.Cookie{{Name: sessionCookie, Value: ws.Session}}
+		defer func() { e.cj = saved }()
+		req, _ := http.NewRequest(method, e.srv.URL+path, strings.NewReader(mustJSONString(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", e.srv.URL)
+		req.AddCookie(e.cj[0])
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+
+	mint := []struct {
+		method, path string
+		body         any
+	}{
+		{"POST", "/api/v1/tokens", map[string]string{"name": "escape"}},
+		{"POST", "/api/v1/pair", map[string]any{}},
+		{"POST", "/api/v1/me/remote/pair", map[string]any{}},
+		{"POST", "/api/v1/me/ai-connections/token", map[string]any{}},
+		{"PUT", "/api/v1/auth/me", map[string]string{"password": "newpassword123", "current_password": "password123"}},
+	}
+	for _, m := range mint {
+		for name, tok := range map[string]string{"oidc": oidcTok, "device": prof.Token} {
+			if c := e.tokenOnly(m.method, m.path, tok, m.body, nil); c != 403 {
+				t.Errorf("%s %s with a limited %s token: %d, want 403", m.method, m.path, name, c)
+			}
+		}
+		if c := asSession(m.method, m.path, m.body); c != 403 && c != 401 {
+			t.Errorf("%s %s with a device's web session: %d, want 403", m.method, m.path, c)
+		}
+	}
+	// The admin's own browser still can.
+	if c := e.do("POST", "/api/v1/tokens", "", map[string]string{"name": "mine"}, nil); c != 201 {
+		t.Fatalf("admin session creating a token: %d", c)
+	}
+}
+
+func mustJSONString(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// AUTH_MODE=proxy takes the identity header only from TRUSTED_PROXIES.
+func TestProxyAuthNeedsTrustedPeer(t *testing.T) {
+	s := &Server{cfg: &config.Config{AuthMode: "proxy", AuthProxyHeader: "Remote-User", AuthProxyEmailHeader: "Remote-Email",
+		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}}
+	var trusted bool
+	h := s.realIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { trusted = fromTrustedPeer(r) }))
+	for peer, want := range map[string]bool{"203.0.113.9:1": false, "10.1.2.3:1": true} {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = peer
+		req.Header.Set("Remote-User", "admin")
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		if trusted != want {
+			t.Fatalf("peer %s trusted=%v", peer, trusted)
+		}
+	}
+}
+
+func TestProxyAuthEndToEnd(t *testing.T) {
+	t.Setenv("AUTH_MODE", "proxy")
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.0/8") // the test client is 127.0.0.1: not a proxy
+	e := newEnv(t)
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/v1/auth/me", nil)
+	req.Header.Set("Remote-User", "admin")
+	req.Header.Set("Remote-Email", "admin@b.c")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 401 {
+		t.Fatalf("identity header from an untrusted peer: %d", res.StatusCode)
+	}
+}
+
+// Personal tokens: member-level unless made to manage the box (which asks for
+// the password again), and gone once expired.
+func TestPersonalTokenLimits(t *testing.T) {
+	e, _ := secEnv(t)
+	var plain struct{ Secret string }
+	if c := e.do("POST", "/api/v1/tokens", "", map[string]any{"name": "raycast", "expires_days": 30}, &plain); c != 201 {
+		t.Fatalf("create %d", c)
+	}
+	if c := e.tokenOnly("GET", "/api/v1/users", plain.Secret, nil, nil); c != 403 {
+		t.Fatalf("plain personal token on admin route: %d", c)
+	}
+	if c := e.tokenOnly("GET", "/api/v1/me/services", plain.Secret, nil, nil); c != 200 {
+		t.Fatalf("plain personal token on own services: %d", c)
+	}
+	if c := e.do("POST", "/api/v1/tokens", "", map[string]any{"name": "ops", "can_manage": true, "current_password": "wrong-one"}, nil); c != 403 {
+		t.Fatalf("managing token with a wrong password: %d", c)
+	}
+	var ops struct{ Secret string }
+	if c := e.do("POST", "/api/v1/tokens", "", map[string]any{"name": "ops", "can_manage": true, "current_password": "password123"}, &ops); c != 201 {
+		t.Fatalf("managing token: %d", c)
+	}
+	if c := e.tokenOnly("GET", "/api/v1/users", ops.Secret, nil, nil); c != 200 {
+		t.Fatalf("managing token on admin route: %d", c)
+	}
+	// Expired: unknown.
+	u, _ := e.st.GetUserByEmail(context.Background(), "a@b.c")
+	_, old, _ := e.st.CreateAPITokenWith(context.Background(), u.ID, "old", true, time.Nanosecond)
+	time.Sleep(5 * time.Millisecond)
+	if c := e.tokenOnly("GET", "/api/v1/auth/me", old, nil, nil); c != 401 {
+		t.Fatalf("expired token: %d", c)
+	}
+}
+
+// A sign-in token Core gave other software (a hand-made or connector client)
+// is good for /oidc/userinfo only: not Core's API, not Pocket apps. A Pocket
+// app's sign-in token can't fetch the device profile (service credentials).
+func TestForeignOIDCTokenAudience(t *testing.T) {
+	e, secret := secEnv(t)
+	var made struct {
+		Client       store.OIDCClient `json:"client"`
+		ClientSecret string           `json:"client_secret"`
+	}
+	if c := e.do("POST", "/api/v1/oidc/clients", "", map[string]any{"client_id": "jellyfin", "name": "Jellyfin", "redirect_uris": []string{"http://jf/cb"}}, &made); c != 201 {
+		t.Fatalf("make client %d", c)
+	}
+	cl := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	req, _ := http.NewRequest("GET", e.srv.URL+"/oidc/authorize?client_id=jellyfin&redirect_uri=http://jf/cb&response_type=code&scope=openid%20email&state=s", nil)
+	for _, c := range e.cj {
+		req.AddCookie(c)
+	}
+	res, err := cl.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	loc, _ := url.Parse(res.Header.Get("Location"))
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")}, "redirect_uri": {"http://jf/cb"}}
+	treq, _ := http.NewRequest("POST", e.srv.URL+"/oidc/token", strings.NewReader(form.Encode()))
+	treq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	treq.SetBasicAuth("jellyfin", made.ClientSecret)
+	tres, err := http.DefaultClient.Do(treq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tok map[string]any
+	_ = json.NewDecoder(tres.Body).Decode(&tok)
+	tres.Body.Close()
+	jf, _ := tok["access_token"].(string)
+	if jf == "" {
+		t.Fatalf("token %d %v", tres.StatusCode, tok)
+	}
+	if c := e.tokenOnly("GET", "/oidc/userinfo", jf, nil, nil); c != 200 {
+		t.Fatalf("userinfo: %d", c)
+	}
+	for _, p := range []string{"/api/v1/auth/me", "/api/v1/pair/profile", "/api/v1/me/services"} {
+		if c := e.tokenOnly("GET", p, jf, nil, nil); c != 401 {
+			t.Fatalf("%s with Jellyfin's token: %d", p, c)
+		}
+	}
+	var settings store.Settings
+	e.do("GET", "/api/v1/settings", "", nil, &settings)
+	var reg struct{ Token string }
+	e.do("POST", "/api/v1/apps/register", settings.RegistrationKey, map[string]any{"slug": "notes", "name": "Pocket Notes", "url": e.srv.URL}, &reg)
+	var intro map[string]any
+	e.tokenOnly("POST", "/api/v1/auth/introspect", reg.Token, map[string]string{"token": jf}, &intro)
+	if intro["active"] != false {
+		t.Fatalf("a Pocket app accepted Jellyfin's token: %v", intro)
+	}
+
+	// A Pocket app's own sign-in token: Core API yes, credentials profile no.
+	code, _ := e.authorize(pkceS256)
+	_, ptok := e.token(secret, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"http://rp/cb"}, "code_verifier": {pkceVerifier}})
+	at := ptok["access_token"].(string)
+	if c := e.tokenOnly("GET", "/api/v1/pair/profile", at, nil, nil); c != 403 {
+		t.Fatalf("profile with an app's sign-in token: %d", c)
+	}
+	e.tokenOnly("POST", "/api/v1/auth/introspect", reg.Token, map[string]string{"token": at}, &intro)
+	if intro["active"] != true {
+		t.Fatalf("Pocket app token not accepted by a Pocket app: %v", intro)
 	}
 }

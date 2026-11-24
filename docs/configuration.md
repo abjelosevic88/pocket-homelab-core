@@ -24,7 +24,7 @@ Everything is read from environment variables; every value has a default so a ba
 | `TRUST_PROXY` | `true` | Honour `X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Proto`, but only from a peer in `TRUSTED_PROXIES` |
 | `TRUSTED_PROXIES` | loopback and private networks (`127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7`) | Addresses or CIDRs whose forwarded headers count. Narrow it to your reverse proxy (e.g. its Docker network) if other machines on the LAN can reach Core's port directly. The client address is the right-most `X-Forwarded-For` hop that is not one of these |
 | `AUTH_MODE` | `local` | `local` (built-in accounts), `proxy` (trust `AUTH_PROXY_HEADER`), `none` (single implicit admin, LAN only) |
-| `AUTH_PROXY_HEADER` / `AUTH_PROXY_EMAIL_HEADER` | `Remote-User` / `Remote-Email` | Headers for proxy mode |
+| `AUTH_PROXY_HEADER` / `AUTH_PROXY_EMAIL_HEADER` | `Remote-User` / `Remote-Email` | Headers for proxy mode, believed only from a peer in `TRUSTED_PROXIES` (set that to your auth proxy alone) |
 | `SESSION_TTL` | `720h` | Browser session lifetime |
 | `SECURE_COOKIES` | `true` when `BASE_URL` is `https://`, else `false` | Secure session cookie. On plain http `true` makes every sign-in bounce back to the login page (Core warns at startup and on the login page) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | – | Create the first admin on an empty database (otherwise the UI asks). Ignored afterwards; Core warns when they no longer match. Change a password with `pocket-core reset-password` |
@@ -86,8 +86,8 @@ scopes `openid email profile`).
 | `pcreg_` | nobody permanently: apps present it once | Settings → App registration key |
 | `pca_` | a registered Pocket app | the registration response |
 | `pcd_` | a paired phone or Mac | pairing claim. Acts as its owner, but with admin rights only when the pairing asked for it (*Can manage this box*, for the Pocket Core app; Devices can switch it later) |
-| `pcu_` | a person's script, Raycast, Homepage | Users → My API tokens |
-| `pco_` / `pcr_` | an OIDC relying party | `/oidc/token`. On Core's own API an access token acts as its user would, never with the user's admin rights. Codes and refresh tokens are single-use; PKCE is S256 only (required for public clients) |
+| `pcu_` | a person's script, Raycast, Homepage | Users → My API tokens. Expires after 30 days, 90 days, 1 year or never (chosen when made). Acts as its owner without admin rights unless made with *Can manage this box* (admins; asks for the password again). Tokens from before 0.46.0 keep admin rights |
+| `pco_` / `pcr_` | an OIDC relying party | `/oidc/token`. A Pocket app's access token acts on Core's API as its user would, never with admin rights, and never gets the device profile (service credentials). A token issued to other software (a connector's or hand-made client) is good for `/oidc/userinfo` only: Core's API and Pocket apps' introspection refuse it. Codes and refresh tokens are single-use; PKCE is S256 only and required for public clients and every Pocket app's client |
 | `pcs_` | an OIDC client secret | Settings → Single sign-on |
 | `pcma_` / `pcmr_` | an approved MCP assistant | OAuth access/refresh tokens, isolated from ordinary API credentials |
 | `mcps_` | a confidential MCP OAuth client | Dynamic registration; not a user access token |

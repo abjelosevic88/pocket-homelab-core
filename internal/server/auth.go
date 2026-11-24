@@ -33,6 +33,10 @@ type Principal struct {
 	// rights: OIDC access tokens Core handed to an app, devices not paired to
 	// manage the box, and web sessions such a device opened.
 	Limited bool `json:"limited,omitempty"`
+	// foreignOIDC: an OIDC access token Core issued to software that is not a
+	// Pocket app (a connector's or hand-made client, e.g. Jellyfin). Its only
+	// audience is /oidc/userinfo: not Core's API, not other Pocket apps.
+	foreignOIDC bool
 }
 
 // IsAdmin reports whether the caller may manage the box. Apps are trusted
@@ -93,7 +97,7 @@ func (s *Server) scopeUser(r *http.Request) int64 {
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := s.resolve(r)
-		if err != nil || p == nil {
+		if err != nil || p == nil || p.foreignOIDC {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="pocket-core"`)
 			writeErr(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -107,6 +111,24 @@ func (s *Server) requireAdminOrApp(next http.Handler) http.Handler {
 		p := principalFrom(r.Context())
 		if !p.IsAdmin() && p.App == nil {
 			writeErr(w, http.StatusForbidden, "admins and apps only")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// limitedErr is what a limited caller hears when it tries to mint a credential.
+const limitedErr = "this sign-in can't create new keys, pairings or passwords; do it in Core in a browser where you signed in yourself"
+
+// requireUnlimited guards routes that mint a lasting credential (personal
+// tokens, pairing codes, remote-access keys, AI connections). A limited caller
+// (an app's OIDC token, a device without "Can manage this box", the web session
+// such a device opened) could otherwise trade itself for a token without the
+// limit: no credential may hand out more than it holds.
+func (s *Server) requireUnlimited(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := principalFrom(r.Context()); p == nil || p.Limited {
+			writeErr(w, http.StatusForbidden, limitedErr)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -172,13 +194,14 @@ func (s *Server) resolveToken(ctx context.Context, tok, ip string) (*Principal, 
 		}
 		// An access token was issued to some app for signing in; it reaches
 		// Core as its user would, never with the user's admin rights.
-		return &Principal{Kind: "user", User: u, Scope: t.Scope, Limited: true}, nil
+		cl, err := s.store.GetOIDCClient(ctx, t.ClientID)
+		return &Principal{Kind: "user", User: u, Scope: t.Scope, Limited: true, foreignOIDC: err != nil || cl.AppID == 0}, nil
 	default:
-		u, err := s.store.GetUserByAPIToken(ctx, tok)
+		u, canManage, err := s.store.ResolveAPIToken(ctx, tok)
 		if err != nil {
 			return nil, err
 		}
-		return &Principal{Kind: "user", User: u}, nil
+		return &Principal{Kind: "user", User: u, Limited: !canManage}, nil
 	}
 }
 
@@ -195,6 +218,11 @@ func (s *Server) resolve(r *http.Request) (*Principal, error) {
 		}
 		return &Principal{Kind: "user", User: u}, nil
 	case "proxy":
+		// The identity header is only as good as whoever set it: anyone
+		// reaching Core's port directly could name any user.
+		if !fromTrustedPeer(r) {
+			return nil, http.ErrNoCookie
+		}
 		name := r.Header.Get(s.cfg.AuthProxyHeader)
 		if name == "" {
 			return nil, http.ErrNoCookie
@@ -225,21 +253,36 @@ func (s *Server) resolve(r *http.Request) (*Principal, error) {
 
 // sessionUser is the browser user only (for the OIDC authorize page).
 func (s *Server) sessionUser(r *http.Request) *store.User {
+	u, _ := s.browserUser(r)
+	return u
+}
+
+// fullSessionUser is sessionUser for pages that approve a lasting credential
+// (MCP OAuth consent, AI connection tokens, terminal pairings): a limited
+// session (one a device opened) counts as signed out there.
+func (s *Server) fullSessionUser(r *http.Request) *store.User {
+	if u, limited := s.browserUser(r); !limited {
+		return u
+	}
+	return nil
+}
+
+func (s *Server) browserUser(r *http.Request) (*store.User, bool) {
 	if s.cfg.AuthMode != "local" {
 		if p, err := s.resolve(r); err == nil && p != nil && p.Kind == "user" {
-			return p.User
+			return p.User, p.Limited
 		}
-		return nil
+		return nil, false
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
-		return nil
+		return nil, false
 	}
-	u, err := s.store.GetSessionUser(r.Context(), c.Value)
+	u, limited, err := s.store.GetSession(r.Context(), c.Value)
 	if err != nil {
-		return nil
+		return nil, false
 	}
-	return u
+	return u, limited
 }
 
 func (s *Server) firstOrSystemUser(ctx context.Context, email, name string) (*store.User, error) {
@@ -452,6 +495,12 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		u.Name = in.Name
 	}
 	if in.Password != "" {
+		if principalFrom(r.Context()).Limited {
+			// Else a limited sign-in could set a password (accounts without one
+			// need no current password) and sign in again with full rights.
+			writeErr(w, http.StatusForbidden, limitedErr)
+			return
+		}
 		if len(in.Password) < 8 {
 			writeErr(w, http.StatusBadRequest, "password must be at least 8 characters")
 			return
@@ -530,6 +579,11 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 	p, err := s.resolveToken(r.Context(), in.Token, "")
 	if err != nil || p == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"active": false})
+		return
+	}
+	// A sign-in token Core gave other software is not for Pocket apps.
+	if p.foreignOIDC {
+		writeJSON(w, http.StatusOK, map[string]any{"active": false, "reason": "foreign_client"})
 		return
 	}
 	// An app only accepts people its service's audience includes.
@@ -721,12 +775,32 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		Name string `json:"name"`
+		// CanManage: the token may use the owner's admin rights. Asks for the
+		// password again (accounts that have one), like any lasting admin key should.
+		CanManage       bool   `json:"can_manage"`
+		CurrentPassword string `json:"current_password"`
+		// ExpiresDays: 0 = never; otherwise 1..3650.
+		ExpiresDays int `json:"expires_days"`
 	}
 	_ = decode(r, &in)
 	if in.Name == "" {
 		in.Name = "token"
 	}
-	t, plain, err := s.store.CreateAPIToken(r.Context(), u.ID, in.Name)
+	if in.ExpiresDays < 0 || in.ExpiresDays > 3650 {
+		writeErr(w, http.StatusBadRequest, "expires_days must be 0 (never) to 3650")
+		return
+	}
+	if in.CanManage {
+		if !principalFrom(r.Context()).IsAdmin() {
+			writeErr(w, http.StatusForbidden, "only an admin's token can manage the box")
+			return
+		}
+		if u.PasswordHash != "" && bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.CurrentPassword)) != nil {
+			writeErr(w, http.StatusForbidden, "enter your password to make a token that can manage the box")
+			return
+		}
+	}
+	t, plain, err := s.store.CreateAPITokenWith(r.Context(), u.ID, in.Name, in.CanManage, time.Duration(in.ExpiresDays)*24*time.Hour)
 	if err != nil {
 		s.fail(w, err, "create token")
 		return

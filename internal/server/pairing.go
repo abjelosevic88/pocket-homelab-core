@@ -187,6 +187,12 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "users and devices only")
 		return
 	}
+	// The profile carries the person's service credentials: their own devices
+	// and full sign-ins get it, an app's sign-in token or a limited key doesn't.
+	if p.Device == nil && p.Limited {
+		writeErr(w, http.StatusForbidden, "the device profile is for paired devices and your own sign-in")
+		return
+	}
 	token := ""
 	if p.Device != nil {
 		token = bearer(r)
