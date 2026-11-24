@@ -85,7 +85,7 @@ scopes `openid email profile`).
 |---|---|---|
 | `pcreg_` | nobody permanently: apps present it once | Settings → App registration key |
 | `pca_` | a registered Pocket app | the registration response |
-| `pcd_` | a paired phone or Mac | pairing claim. Acts as its owner, but with admin rights only when the pairing asked for it (*Can manage this box*, for the Pocket Core app; Devices can switch it later) |
+| `pcd_` | a paired phone or Mac | pairing claim. Acts as its owner, but with admin rights only when the pairing asked for it (*Can manage this box*, for the Pocket Core app; Devices can switch it later). Web sessions it opens belong to it: revoking the device or changing that switch ends them. Box alerts go only to devices that can manage the box |
 | `pcu_` | a person's script, Raycast, Homepage | Users → My API tokens. Expires after 30 days, 90 days, 1 year or never (chosen when made). Acts as its owner without admin rights unless made with *Can manage this box* (admins; asks for the password again). Tokens from before 0.46.0 keep admin rights |
 | `pco_` / `pcr_` | an OIDC relying party | `/oidc/token`. A Pocket app's access token acts on Core's API as its user would, never with admin rights, and never gets the device profile (service credentials). A token issued to other software (a connector's or hand-made client) is good for `/oidc/userinfo` only: Core's API and Pocket apps' introspection refuse it. Codes and refresh tokens are single-use; PKCE is S256 only and required for public clients and every Pocket app's client |
 | `pcs_` | an OIDC client secret | Settings → Single sign-on |

@@ -149,10 +149,21 @@ func (h hubInstall) open(t *testing.T, sealed string) push.Message {
 
 func newInstall(t *testing.T, e *env, userID int64, name string) hubInstall {
 	t.Helper()
+	return pairInstall(t, e, userID, name, false)
+}
+
+// newCoreAppInstall is the Pocket Core app: paired with "Can manage this box".
+func newCoreAppInstall(t *testing.T, e *env, name string) hubInstall {
+	t.Helper()
+	return pairInstall(t, e, 0, name, true)
+}
+
+func pairInstall(t *testing.T, e *env, userID int64, name string, manage bool) hubInstall {
+	t.Helper()
 	var pair struct {
 		Code string `json:"code"`
 	}
-	body := map[string]any{}
+	body := map[string]any{"can_manage": manage}
 	if userID > 0 {
 		body["user_id"] = userID
 	}

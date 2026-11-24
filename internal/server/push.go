@@ -115,7 +115,7 @@ func (s *Server) handleGetDevicePush(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrNotFound) {
 		relay := s.pushRelay.StatusFor(r.Context(), pushEnvironmentGuess(p.Device.Platform))
 		writeJSON(w, http.StatusOK, map[string]any{"registered": false, "enabled": false, "sound": false, "relay": relay, "last_sent_at": nil, "last_error": "",
-			"kinds": decodeKinds(""), "admin": p.User.IsAdmin(), "offline_watch": s.offlineWatch()})
+			"kinds": decodeKinds(""), "admin": p.IsAdmin(), "offline_watch": s.offlineWatch()})
 		return
 	}
 	if err != nil {
@@ -129,7 +129,7 @@ func (s *Server) handleGetDevicePush(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"registered": true, "enabled": reg.Enabled, "sound": reg.Sound, "relay": relay,
 		"environment": reg.Environment, "topic": reg.Topic, "last_sent_at": sent, "last_error": reg.LastError, "updated_at": reg.UpdatedAt,
-		"kinds": decodeKinds(reg.Kinds), "admin": p.User.IsAdmin(), "offline_watch": s.offlineWatch()})
+		"kinds": decodeKinds(reg.Kinds), "admin": p.IsAdmin(), "offline_watch": s.offlineWatch()})
 }
 
 // DELETE /api/v1/devices/me/push

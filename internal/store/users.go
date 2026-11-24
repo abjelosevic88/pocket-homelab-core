@@ -111,11 +111,27 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 }
 
 // CreateSessionLimited opens a session that, when limited, never carries the
-// user's admin rights (a session a non-managing device opened).
+// user's admin rights.
 func (s *Store) CreateSessionLimited(ctx context.Context, userID int64, ttl time.Duration, limited bool) (string, error) {
+	return s.CreateDeviceSession(ctx, userID, 0, ttl, limited)
+}
+
+// CreateDeviceSession opens a session on behalf of a paired device (deviceID
+// > 0): it lives only as long as the device and follows its rights.
+func (s *Store) CreateDeviceSession(ctx context.Context, userID, deviceID int64, ttl time.Duration, limited bool) (string, error) {
 	id := crypto.Token("", 32)
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions (id, user_id, expires_at, limited) VALUES (?, ?, ?, ?)`, id, userID, Stamp(time.Now().Add(ttl)), limited)
+	var dev any
+	if deviceID > 0 {
+		dev = deviceID
+	}
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions (id, user_id, expires_at, limited, device_id) VALUES (?, ?, ?, ?, ?)`, id, userID, Stamp(time.Now().Add(ttl)), limited, dev)
 	return id, err
+}
+
+// DeleteDeviceSessions ends every web session a device opened.
+func (s *Store) DeleteDeviceSessions(ctx context.Context, deviceID int64) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE device_id = ?`, deviceID)
+	return err
 }
 
 // GetSessionUser resolves a session cookie to its user.
@@ -129,8 +145,19 @@ func (s *Store) GetSession(ctx context.Context, id string) (*User, bool, error) 
 	var userID int64
 	var exp string
 	var limited bool
-	if err := s.DB.QueryRowContext(ctx, `SELECT user_id, expires_at, limited FROM sessions WHERE id = ?`, id).Scan(&userID, &exp, &limited); err != nil {
+	var dev sql.NullInt64
+	var devManage sql.NullBool
+	if err := s.DB.QueryRowContext(ctx, `SELECT s.user_id, s.expires_at, s.limited, s.device_id, d.can_manage
+		FROM sessions s LEFT JOIN devices d ON d.id = s.device_id WHERE s.id = ?`, id).Scan(&userID, &exp, &limited, &dev, &devManage); err != nil {
 		return nil, false, notFound(err)
+	}
+	if dev.Valid {
+		// A device's session: gone with the device, and never more than it may do.
+		if !devManage.Valid {
+			_ = s.DeleteSession(ctx, id)
+			return nil, false, ErrNotFound
+		}
+		limited = limited || !devManage.Bool
 	}
 	if t, err := time.Parse(time.RFC3339Nano, exp); err != nil || t.Before(time.Now()) {
 		_ = s.DeleteSession(ctx, id)

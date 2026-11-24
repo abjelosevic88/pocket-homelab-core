@@ -22,7 +22,7 @@ func (s *Server) handleDeviceWebSession(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusForbidden, "paired devices only")
 		return
 	}
-	id, err := s.store.CreateSessionLimited(r.Context(), p.User.ID, s.cfg.SessionTTL, p.Limited)
+	id, err := s.store.CreateDeviceSession(r.Context(), p.User.ID, p.Device.ID, s.cfg.SessionTTL, p.Limited)
 	if err != nil {
 		s.fail(w, err, "create session")
 		return

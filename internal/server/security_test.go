@@ -522,3 +522,110 @@ func TestForeignOIDCTokenAudience(t *testing.T) {
 		t.Fatalf("Pocket app token not accepted by a Pocket app: %v", intro)
 	}
 }
+
+// pairDevice pairs a device for the signed-in admin and returns its token and id.
+func (e *env) pairDevice(manage bool) (string, int64) {
+	e.t.Helper()
+	var pair struct{ Code string }
+	if c := e.do("POST", "/api/v1/pair", "", map[string]any{"can_manage": manage}, &pair); c != 201 {
+		e.t.Fatalf("pair %d", c)
+	}
+	var prof Profile
+	if c := e.tokenOnly("POST", "/api/v1/pair/claim", "", map[string]string{"code": pair.Code, "name": "Phone"}, &prof); c != 201 {
+		e.t.Fatalf("claim %d", c)
+	}
+	var me struct {
+		Device store.Device `json:"device"`
+	}
+	e.tokenOnly("GET", "/api/v1/auth/me", prof.Token, nil, &me)
+	return prof.Token, me.Device.ID
+}
+
+func (e *env) withSession(sess, method, path string) int {
+	e.t.Helper()
+	req, _ := http.NewRequest(method, e.srv.URL+path, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: sess})
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	res.Body.Close()
+	return res.StatusCode
+}
+
+// A web session a device opened dies with the device and follows its rights.
+func TestDeviceSessionFollowsDevice(t *testing.T) {
+	e, _ := secEnv(t)
+	tok, id := e.pairDevice(true)
+	newSession := func() string {
+		var ws struct{ Session string }
+		if c := e.tokenOnly("POST", "/api/v1/auth/device/web-session", tok, nil, &ws); c != 201 {
+			t.Fatalf("web session %d", c)
+		}
+		return ws.Session
+	}
+	sess := newSession()
+	if c := e.withSession(sess, "GET", "/api/v1/users"); c != 200 {
+		t.Fatalf("managing device's session on admin route: %d", c)
+	}
+	// Taking the right away ends the session it opened.
+	if c := e.do("PUT", "/api/v1/devices/"+itoa(id), "", map[string]bool{"can_manage": false}, nil); c != 200 {
+		t.Fatalf("switch off %d", c)
+	}
+	if c := e.withSession(sess, "GET", "/api/v1/auth/me"); c != 401 {
+		t.Fatalf("session after the device lost its rights: %d", c)
+	}
+	// A new one is limited; revoking the device ends it too.
+	sess = newSession()
+	if c := e.withSession(sess, "GET", "/api/v1/users"); c != 403 {
+		t.Fatalf("limited device session on admin route: %d", c)
+	}
+	if c := e.do("DELETE", "/api/v1/devices/"+itoa(id), "", nil, nil); c != 204 {
+		t.Fatalf("revoke %d", c)
+	}
+	if c := e.withSession(sess, "GET", "/api/v1/auth/me"); c != 401 {
+		t.Fatalf("session after revoke: %d", c)
+	}
+}
+
+// A limited credential of an admin can't reach other people's remote devices.
+func TestLimitedCannotManageOthersRemoteDevices(t *testing.T) {
+	e, _ := secEnv(t)
+	if c := e.do("POST", "/api/v1/users", "", map[string]string{"email": "m@b.c", "password": "password123"}, nil); c != 201 {
+		t.Fatalf("member %d", c)
+	}
+	m, _ := e.st.GetUserByEmail(context.Background(), "m@b.c")
+	dev, err := e.st.CreateRemoteDevice(context.Background(), m.ID, "member laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub, _ := e.pairDevice(false)
+	for _, method := range []string{"PUT", "DELETE"} {
+		if c := e.tokenOnly(method, "/api/v1/me/remote/devices/"+itoa(dev), hub, map[string]any{"name": "x"}, nil); c != 404 {
+			t.Fatalf("%s another person's remote device with a limited token: %d", method, c)
+		}
+	}
+	if _, err := e.st.GetRemoteDevice(context.Background(), dev); err != nil {
+		t.Fatalf("remote device gone: %v", err)
+	}
+}
+
+// Box alerts for the Pocket Core app go only to devices that may manage the box.
+func TestAdminAlertsOnlyToManagingDevices(t *testing.T) {
+	e, _ := secEnv(t)
+	_, managing := e.pairDevice(true)
+	_, plain := e.pairDevice(false)
+	ctx := context.Background()
+	for _, id := range []int64{managing, plain} {
+		if err := e.st.SavePushRegistration(ctx, &store.PushRegistration{DeviceID: id, APNsToken: "tok" + itoa(id), Environment: "production", Topic: "org.bjelke.pocketcore", Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	regs, err := e.st.AdminPushRegistrations(ctx, "org.bjelke.pocketcore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(regs) != 1 || regs[0].DeviceID != managing {
+		t.Fatalf("admin alerts go to %+v", regs)
+	}
+}

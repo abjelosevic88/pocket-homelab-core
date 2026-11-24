@@ -108,7 +108,7 @@ func (s *Store) UserPushRegistrations(ctx context.Context, userID int64, except 
 func (s *Store) AdminPushRegistrations(ctx context.Context, topic string) ([]PushRegistration, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT p.id, p.device_id, p.apns_token, p.environment, p.topic, p.public_key, p.enabled, p.sound, p.created_at, p.updated_at, p.last_sent_at, p.last_error, p.kinds
 		FROM push_registrations p JOIN devices d ON d.id = p.device_id JOIN users u ON u.id = d.user_id
-		WHERE p.topic = ? AND p.enabled = 1 AND u.role = 'admin' AND u.disabled = 0 ORDER BY p.id`, topic)
+		WHERE p.topic = ? AND p.enabled = 1 AND u.role = 'admin' AND u.disabled = 0 AND d.can_manage = 1 ORDER BY p.id`, topic)
 	if err != nil {
 		return nil, err
 	}

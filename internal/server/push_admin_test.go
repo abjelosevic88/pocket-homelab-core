@@ -52,7 +52,7 @@ func TestCoreAppRegistrationKinds(t *testing.T) {
 	f := newFakeRelay(t)
 	e := pushEnv(t, f.srv.URL, "pps_test")
 	e.s.alerts.manual.Store(true)
-	phone := newInstall(t, e, 0, "iPhone")
+	phone := newCoreAppInstall(t, e, "iPhone")
 
 	var st struct {
 		Registered   bool
@@ -107,7 +107,7 @@ func TestCoreAppDoesNotGetAppMessages(t *testing.T) {
 	e.s.alerts.manual.Store(true)
 	appTok, _ := registerTestApp(t, e, "habits")
 	hub := newInstall(t, e, 0, "Mac")
-	phone := newInstall(t, e, 0, "iPhone")
+	phone := newCoreAppInstall(t, e, "iPhone")
 	e.do("PUT", "/api/v1/devices/me/push", hub.device, hub.body(), nil)
 	e.do("PUT", "/api/v1/devices/me/push", phone.device, coreAppBody(phone), nil)
 	var tally pushTally
@@ -151,8 +151,8 @@ func TestAppDownAndBackUp(t *testing.T) {
 	e.s.alerts.grace = 0
 	e.do("PUT", "/api/v1/settings", "", map[string]any{"box_name": "Home"}, nil)
 	hub := newInstall(t, e, 0, "Mac")
-	phone := newInstall(t, e, 0, "iPhone")
-	quiet := newInstall(t, e, 0, "iPad")
+	phone := newCoreAppInstall(t, e, "iPhone")
+	quiet := newCoreAppInstall(t, e, "iPad")
 	e.do("PUT", "/api/v1/devices/me/push", hub.device, hub.body(), nil)
 	e.do("PUT", "/api/v1/devices/me/push", phone.device, coreAppBody(phone), nil)
 	e.do("PUT", "/api/v1/devices/me/push", quiet.device, coreAppBody(quiet, "job_failed"), nil)
@@ -238,7 +238,7 @@ func TestJobAlerts(t *testing.T) {
 	e := pushEnv(t, f.srv.URL, "pps_test")
 	e.s.alerts.manual.Store(true)
 	e.do("PUT", "/api/v1/settings", "", map[string]any{"box_name": "Home"}, nil)
-	phone := newInstall(t, e, 0, "iPhone")
+	phone := newCoreAppInstall(t, e, "iPhone")
 	e.do("PUT", "/api/v1/devices/me/push", phone.device, coreAppBody(phone), nil)
 
 	j := &installJob{ID: "j1", Kind: "update", Slug: "money", Name: "Pocket Money", State: "running"}
@@ -289,7 +289,7 @@ func TestUpdatesDigest(t *testing.T) {
 	if e.s.sendUpdatesDigest(ctx, day(12, 10)) {
 		t.Fatal("sent with nobody to tell")
 	}
-	phone := newInstall(t, e, 0, "iPhone")
+	phone := newCoreAppInstall(t, e, "iPhone")
 	e.do("PUT", "/api/v1/devices/me/push", phone.device, coreAppBody(phone), nil)
 	if e.s.sendUpdatesDigest(ctx, day(12, 4)) {
 		t.Fatal("sent at 4 in the morning")
@@ -341,8 +341,8 @@ func TestBoxOfflineHeartbeat(t *testing.T) {
 		t.Fatalf("stops %d beats %d watch %s", f.stops, len(f.heartbeats()), e.s.offlineWatch())
 	}
 
-	phone := newInstall(t, e, 0, "iPhone")
-	pad := newInstall(t, e, 0, "iPad")
+	phone := newCoreAppInstall(t, e, "iPhone")
+	pad := newCoreAppInstall(t, e, "iPad")
 	hub := newInstall(t, e, 0, "Mac")
 	e.do("PUT", "/api/v1/devices/me/push", phone.device, coreAppBody(phone), nil)
 	padBody := coreAppBody(pad, "app_down")

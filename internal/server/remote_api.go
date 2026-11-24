@@ -418,7 +418,7 @@ func (s *Server) handleRemotePair(w http.ResponseWriter, r *http.Request) {
 	// switched on, but not for every device (device default off), so only
 	// this device and the ones it is later given to get them.
 	opened := []string{}
-	if me.IsAdmin() {
+	if principalFrom(ctx).IsAdmin() {
 		all, err := s.remoteApps(ctx)
 		if err != nil {
 			s.fail(w, err, "list remote apps")
@@ -467,7 +467,7 @@ func (s *Server) remotePairUser(w http.ResponseWriter, r *http.Request, me *stor
 	if id <= 0 || id == me.ID {
 		return me, true
 	}
-	if !me.IsAdmin() {
+	if !principalFrom(r.Context()).IsAdmin() {
 		writeErr(w, http.StatusForbidden, "only an admin can pair a device for someone else")
 		return nil, false
 	}
@@ -504,9 +504,9 @@ func (s *Server) handleCancelRemotePair(w http.ResponseWriter, r *http.Request) 
 
 // myRemoteDevice loads a device the caller owns (or any, for admins).
 func (s *Server) myRemoteDevice(w http.ResponseWriter, r *http.Request) *store.RemoteDevice {
-	u := userFrom(r.Context())
+	p := principalFrom(r.Context())
 	d, err := s.store.GetRemoteDevice(r.Context(), idParam(r, "id"))
-	if err != nil || u == nil || (d.UserID != u.ID && !u.IsAdmin()) {
+	if err != nil || p == nil || p.User == nil || (d.UserID != p.User.ID && !p.IsAdmin()) {
 		writeErr(w, http.StatusNotFound, "no such device")
 		return nil
 	}

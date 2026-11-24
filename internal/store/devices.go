@@ -102,7 +102,8 @@ func (s *Store) GetDeviceByToken(ctx context.Context, token, ip string) (*Device
 	return d, nil
 }
 
-// SetDeviceManage turns a device's admin rights on or off.
+// SetDeviceManage turns a device's admin rights on or off and ends the web
+// sessions it opened, so none outlives the change.
 func (s *Store) SetDeviceManage(ctx context.Context, id int64, on bool) error {
 	res, err := s.DB.ExecContext(ctx, `UPDATE devices SET can_manage = ? WHERE id = ?`, on, id)
 	if err != nil {
@@ -111,11 +112,15 @@ func (s *Store) SetDeviceManage(ctx context.Context, id int64, on bool) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	_, err = s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE device_id = ?`, id)
+	return err
 }
 
-// DeleteDevice revokes a device.
+// DeleteDevice revokes a device and ends the web sessions it opened.
 func (s *Store) DeleteDevice(ctx context.Context, id int64) error {
+	if _, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE device_id = ?`, id); err != nil {
+		return err
+	}
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
 	return err
 }
