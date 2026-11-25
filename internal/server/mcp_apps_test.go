@@ -1291,6 +1291,25 @@ func TestMCPPhotoLabTools(t *testing.T) {
 	}
 }
 
+func TestMCPPhotosTools(t *testing.T) {
+	tools := map[string]*mcpAppTool{}
+	for _, op := range mcpAppCatalog {
+		if op.App == "photos" {
+			tools[op.Name] = op
+		}
+	}
+	search, get := tools["pocket_photos_search"], tools["pocket_photos_get"]
+	if len(tools) != 2 || search == nil || search.Kind != "read" || search.Path != "/photos" || get == nil || get.Path != "/photos/{id}" {
+		t.Fatalf("photos tools: %d %+v %+v", len(tools), search, get)
+	}
+	if err := search.resolved.Validate(map[string]any{"query": map[string]any{"q": "beach", "limit": 15}}); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if err := get.resolved.Validate(map[string]any{"id": "0b1c2d3e-0000-4000-8000-000000000001"}); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+}
+
 func TestMCPRoomsTools(t *testing.T) {
 	tools := map[string]*mcpAppTool{}
 	for _, op := range mcpAppCatalog {

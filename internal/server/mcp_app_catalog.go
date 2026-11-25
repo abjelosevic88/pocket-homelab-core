@@ -97,6 +97,9 @@ func buildMCPAppCatalog() []*mcpAppTool {
 		req := []string{}
 		for _, p := range mcpPathParams.FindAllStringSubmatch(path, -1) {
 			root[p[1]] = map[string]any{"type": "integer", "minimum": 1, "maximum": int64(9007199254740991)}
+			if app == "photos" && p[1] == "id" {
+				root[p[1]] = map[string]any{"type": "string", "pattern": `^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`, "description": "The photo's asset id."}
+			}
 			if app == "ai" && p[1] == "id" {
 				root[p[1]] = map[string]any{"type": "string", "pattern": `^[a-f0-9-]{36}$`}
 			}
@@ -899,6 +902,8 @@ func buildMCPAppCatalog() []*mcpAppTool {
 	read("jobs", "reports", "Get job-search reports for the last weeks (weeks, default 12): per week applications sent, interviews and answers; the funnel (applied, heard back, interviewed, offer, hired); per source and per work mode how many were sent, answered, led to interviews and offers; why jobs ended; the average days to an answer.", "/reports", "weeks")
 	read("jobs", "search", "Search the person's jobs (roles, companies, contacts, places, notes); each job comes with its label and link.", "/search", "q limit")
 	read("jobs", "day", "Read one day of the job search: applications sent that day, interviews, the timeline lines written (notes, calls, emails, stage moves, offers, hired) with their job, and the next steps due that day.", "/day/{date}", "")
+	read("photos", "search", "Search the person's photo library in Pocket Photos: newest first, or the best matches for a description when q is set (smart search on what is in the photo: \"beach at sunset\", \"dog in the snow\"); favorites=1 for favourites only; type photo (default) or video; limit up to 100 (30). Each: id, title (file name), kind, taken_at, place, width, height, favorite, item_url (opens the photo in Pocket Photos) and thumb_url. To edit one, pass its id to pocket_photolab_add_pictures with source photos.", "/photos", "q favorites type limit")
+	read("photos", "get", "Read one photo from Pocket Photos (id = its asset id from pocket_photos_search or a Pocket Photos link ?photo=<id>): title, taken_at, place, latitude/longitude, camera, description, the people recognised in it, size, favorite, item_url and thumb_url.", "/photos/{id}", "")
 	read("photolab", "summary", "Get Photo Lab at a glance: how many pictures, edited, favourites, own looks and saved copies, the storage used, the latest pictures worked on and the latest copies saved (to the device, Pocket Photos or Pocket Files).", "/home", "")
 	read("photolab", "pictures", "List the pictures in Photo Lab, the person's picture editor. q searches names, original file names and notes; show edited|unedited|favorites|photos|files|upload|collage|copy; sort recent|added|taken|title|size. Each: id, title, width, height, source (photos = from Pocket Photos, with source_ref its asset id), edited, favorite, taken_at, camera, exports, updated_at.", "/images", "q show sort limit offset")
 	read("photolab", "get_picture", "Read one picture: its details and its edit (recipe: crop, turn, sliders, look, effects, text and drawings, frame), its versions count, and item_url to open it in the editor.", "/images/{id}", "")
