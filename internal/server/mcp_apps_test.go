@@ -1299,7 +1299,10 @@ func TestMCPPhotosTools(t *testing.T) {
 		}
 	}
 	search, get := tools["pocket_photos_search"], tools["pocket_photos_get"]
-	if len(tools) != 2 || search == nil || search.Kind != "read" || search.Path != "/photos" || get == nil || get.Path != "/photos/{id}" {
+	if v := tools["pocket_photos_view"]; v == nil || !v.FileResponse || v.Path != "/photos/{id}/picture" {
+		t.Fatalf("photos view: %+v", v)
+	}
+	if len(tools) != 3 || search == nil || search.Kind != "read" || search.Path != "/photos" || get == nil || get.Path != "/photos/{id}" {
 		t.Fatalf("photos tools: %d %+v %+v", len(tools), search, get)
 	}
 	if err := search.resolved.Validate(map[string]any{"query": map[string]any{"q": "beach", "limit": 15}}); err != nil {
