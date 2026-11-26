@@ -118,7 +118,7 @@ func (ad *Address) wantRoute() string {
 	if c := ad.choice(); c != modePocket && c != modeCloudflare {
 		return ""
 	}
-	ip := homeAddress()
+	ip := ad.homeIP()
 	if ip == "" {
 		return ""
 	}

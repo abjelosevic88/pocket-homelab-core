@@ -286,3 +286,29 @@ esac
 		t.Fatalf("name on Tailscale: route %q", st.Route)
 	}
 }
+
+// On a Mac the agent runs in Docker's Linux VM: install.sh writes the Mac's own address as
+// POCKET_HOME_IP, and the name points there instead of at the VM's address.
+func TestHomeIPFromInstall(t *testing.T) {
+	ad, dir := testAddress(t)
+	env := filepath.Join(dir, ".env")
+	for _, c := range []struct{ line, want string }{
+		{"POCKET_HOME_IP=192.168.100.24\n", "192.168.100.24"},
+		{"POCKET_HOME_IP=8.8.8.8\n", homeAddress()},   // not a home-network address: ignored
+		{"POCKET_HOME_IP=not-an-ip\n", homeAddress()}, // nonsense: ignored
+		{"", homeAddress()},
+	} {
+		if err := os.WriteFile(env, []byte("POCKET_HOST=10.0.0.5\n"+c.line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ad.homeIP(); got != c.want {
+			t.Errorf("%q: homeIP = %q, want %q", c.line, got, c.want)
+		}
+	}
+	if err := os.WriteFile(env, []byte("POCKET_HOME_IP=192.168.100.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ad.nameTarget(t.Context()); got != "192.168.100.24" {
+		t.Errorf("nameTarget = %q, want the Mac's address", got)
+	}
+}

@@ -290,7 +290,7 @@ func (ad *Address) plainHost() string {
 	if h := ad.envGet("POCKET_HOST"); h != "" {
 		return h
 	}
-	if ip := homeAddress(); ip != "" {
+	if ip := ad.homeIP(); ip != "" {
 		return ip
 	}
 	return "127.0.0.1"
@@ -328,7 +328,7 @@ func (ad *Address) nameTarget(ctx context.Context) string {
 		return tailnetIPv4(ad.tsStatus(ctx).IPs)
 	}
 	if ad.envGet("POCKET_NAME_ON") != "tailscale" {
-		if ip := homeAddress(); ip != "" {
+		if ip := ad.homeIP(); ip != "" {
 			return ip
 		}
 	}
@@ -344,6 +344,18 @@ func tailnetIPv4(list []string) string {
 		}
 	}
 	return ""
+}
+
+// homeIP is this machine's home-network address: POCKET_HOME_IP from .env when install.sh knows it
+// better than this container can (on a Mac the agent runs in Docker's Linux VM, whose own address
+// phones can't reach), else the address this machine reaches the internet from.
+func (ad *Address) homeIP() string {
+	if v := ad.envGet("POCKET_HOME_IP"); v != "" {
+		if ip, err := netip.ParseAddr(v); err == nil && ip.Is4() && ip.IsPrivate() {
+			return ip.String()
+		}
+	}
+	return homeAddress()
 }
 
 // homeAddress is the IPv4 address this machine reaches the internet from, if it is a home-network
