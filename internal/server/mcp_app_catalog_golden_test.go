@@ -23,8 +23,8 @@ import (
 //
 // before and after, diff the two files, and put the new values here.
 const (
-	mcpAppCatalogGoldenTools  = 724
-	mcpAppCatalogGoldenSHA256 = "60c67f716e2ff0bfd2a1abc347e35fc682c160d90b0f8d20cda99014fd60f544"
+	mcpAppCatalogGoldenTools  = 727
+	mcpAppCatalogGoldenSHA256 = "239c1e5c159c8a6d7b6d98d72de5d87096ea9cc278fec48a1b793fc16c12c54e"
 )
 
 // mcpAppCatalogDump writes the catalog as text, one block per tool in listing

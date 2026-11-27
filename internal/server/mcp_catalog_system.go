@@ -138,7 +138,8 @@ func (b *mcpCatalogBuilder) cameras() {
 func (b *mcpCatalogBuilder) analytics() {
 	// Pocket Analytics: the person's websites and who visits them (no cookies; visitors are a daily hash, never a person).
 	// Ranges: range = today | yesterday | 7d | 30d (default) | month | lastmonth | 12mo | year | all | custom (from/to YYYY-MM-DD);
-	// a filter f = dim:value (country:BA, source:Google, page:/blog/*, device:Phone, goal:<id>). Read-only; visits one by one are not offered.
+	// a filter f = dim:value (country:BA, source:Google, page:/blog/*, device:Phone, goal:<id>). Visits one by one are not offered.
+	// The only changes: adding a goal, a funnel or a note on the chart (each approved per call); nothing is edited or deleted here.
 	b.read("analytics", "summary", "Get Pocket Analytics at a glance: each of the person's websites with visitors today, yesterday, the last 7 days and the 7 before (week, week_before), pages seen this week, the people on it now (live), its top sources and pages; total adds them up.", "/summary", "")
 	b.read("analytics", "sites", "List the person's websites: id, domain, name, whether the script is installed (installed, last_hit), visitors today, in the last 30 days and the 30 before, people on the site now (live).", "/sites", "")
 	b.read("analytics", "stats", "A website's numbers for a time range (id = a site from pocket_analytics_sites): totals (visitors, visits, pageviews, views_per_visit, bounce_rate = % who left after one page, duration = average visit in seconds, events), the same for the period before (previous), and the chart (series by hour/day/week/month, starts in Unix seconds). range as above; f = a filter; interval = hour|day|week|month.", "/sites/{id}/stats", "range from to interval f")
@@ -163,6 +164,14 @@ func (b *mcpCatalogBuilder) analytics() {
 	b.read("analytics", "keywords", "The words people searched on Google before they came to a website (from Google Search Console; two or three days behind): by = query (the words) or page (the pages Google sent them to); rows of words, clicks, impressions (times shown), ctr, position (average place, 1 = first); totals; state = ok | off (no Google key) | no_property | error.", "/sites/{id}/keywords", "by range from to f limit")
 	b.read("analytics", "robots", "The robots that read a website (never counted as visitors): by = name (who), path (what they read) or kind; kind = ai,search,preview,seo,monitor,other (comma list; preview = someone shared a link in a chat); name = one robot. Rows: value, kind, hits (pages read), pages, last. \"Scripts and tools\" includes curl fetching an install script. Filters do not apply.", "/sites/{id}/robots", "by kind name range from to limit")
 	b.read("analytics", "unnamed_robots", "The robots no rule names (\"Other robots\"), by what they call themselves: agent (their User-Agent; \"\" = none), hits, first, last (Unix seconds), path (the last page read).", "/sites/{id}/robots/unnamed", "range from to limit")
+	goalKind := map[string]any{"type": "string", "enum": []string{"page", "event", "robot"}, "description": "page = a page reached (match a path, * for any part: /pricing, /blog/*); event = an event's name (\"Get the app\", \"File Download\"); robot = a page read by robots (curl fetching /install.sh), counted in times, not people."}
+	b.write("analytics", "add_goal", "Add a goal to one of the person's websites (id = the site from pocket_analytics_sites): name, kind and match; robot = one robot's name for a robot goal (\"Scripts and tools\"), empty = any. Read pocket_analytics_site first so the same goal is not added twice. Returns the goal.", "POST", "/sites/{id}/goals",
+		textFields("name match robot").field("kind", goalKind), "name kind match")
+	step := objectSchema(textFields("match label robot").field("kind", goalKind), "kind match")
+	b.write("analytics", "add_funnel", "Add a funnel to one of the person's websites (id = the site): a name and 2 to 8 steps in order, each a page or an event (kind, match, an optional label); only the last step may be a robot step. Read pocket_analytics_site first so the same funnel is not added twice. Returns the funnel.", "POST", "/sites/{id}/funnels",
+		textFields("name").field("steps", arraySchema(step)), "name steps")
+	b.write("analytics", "add_note", "Put a note on a website's chart (id = the site): what happened on a day (day = YYYY-MM-DD, text up to 200 characters), like a redesign, a launch or a tracking change. Returns the note.", "POST", "/sites/{id}/notes",
+		textFields("day text"), "day text")
 }
 
 func (b *mcpCatalogBuilder) camerasWrites() {
