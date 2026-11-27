@@ -29,7 +29,9 @@ export function pairState(g: LinkGroup): 'on' | 'partial' | 'off' | 'bad' {
 export const directCount = (g: LinkGroup) => g.links[0]?.modes?.direct || 0
 
 export const isService = (slug: string) => slug.startsWith('service:')
-export const isRead = (scope: string) => /:read$/.test(scope)
+// Scopes that only look: "<what>:read", the three reading capabilities (docs/capabilities.md) and Pocket Move's copy-out.
+const READ_ONLY = new Set(['pocket:search', 'pocket:day', 'pocket:widget', 'move:export'])
+export const isRead = (scope: string) => /:read$/.test(scope) || READ_ONLY.has(scope)
 /** A pair that may change something in the target, not just look. */
 export const writes = (g: LinkGroup) => g.links.some(l => !isRead(l.scope))
 

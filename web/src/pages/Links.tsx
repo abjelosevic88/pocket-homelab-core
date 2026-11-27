@@ -183,9 +183,9 @@ function PairBox({ g, side, apps, onOpen, flip }: { g: LinkGroup; side: Side; ap
 function RuleRow({ r, flip }: { r: LinkRule; flip: (r: LinkRule, on: boolean) => void }) {
   return (
     <div className={`lk-rule${r.enabled ? '' : ' off'}`}>
-      <div className="grow">
-        <div><b>{r.scope_name}</b> in every app that offers it <span className="muted small">· {r.links_on} of {plural(r.links, 'app')} on</span></div>
-        <div className="muted small">{r.reason ? `${r.reason}. ` : ''}An app you install later starts {r.enabled ? 'on' : 'off'}; each app keeps its own switch below.</div>
+      <div className="grow" title={r.reason || r.scope_description}>
+        <div><b>{r.scope_name}</b> in every app that offers it</div>
+        <div className="muted small">{r.links_on} of {plural(r.links, 'app')} on · an app you install later starts {r.enabled ? 'on' : 'off'}</div>
       </div>
       <Switch on={r.enabled} onChange={on => flip(r, on)} title={r.enabled ? 'On in every app that offers it, new apps included' : 'Off in every app'} />
     </div>
