@@ -180,11 +180,12 @@ function PairBox({ g, side, apps, onOpen, flip }: { g: LinkGroup; side: Side; ap
 }
 
 // "In every app that offers it": one switch for all the links a rule made, and for apps installed later.
-function RuleRow({ r, flip }: { r: LinkRule; flip: (r: LinkRule, on: boolean) => void }) {
+function RuleRow({ r, apps, flip }: { r: LinkRule; apps: App[]; flip: (r: LinkRule, on: boolean) => void }) {
   return (
     <div className={`lk-rule${r.enabled ? '' : ' off'}`}>
+      <Ico slug={r.app_slug} name={r.app_name} apps={apps} />
       <div className="grow" title={r.reason || r.scope_description}>
-        <div><b>{r.scope_name}</b> in every app that offers it</div>
+        <div><b>{short(r.app_name)}</b> · {r.scope_name}</div>
         <div className="muted small">{r.links_on} of {plural(r.links, 'app')} on · an app you install later starts {r.enabled ? 'on' : 'off'}</div>
       </div>
       <Switch on={r.enabled} onChange={on => flip(r, on)} title={r.enabled ? 'On in every app that offers it, new apps included' : 'Off in every app'} />
@@ -192,8 +193,8 @@ function RuleRow({ r, flip }: { r: LinkRule; flip: (r: LinkRule, on: boolean) =>
   )
 }
 
-function SubjectCard({ s, side, apps, rules, open, toggle, onOpen, setAll, flip, flipRule }: {
-  s: Subject; side: Side; apps: App[]; rules: LinkRule[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void; flip: (l: AppLink, on: boolean) => void; flipRule: (r: LinkRule, on: boolean) => void
+function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll, flip }: {
+  s: Subject; side: Side; apps: App[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void; flip: (l: AppLink, on: boolean) => void
 }) {
   const off = s.pairs.filter(g => ['off', 'partial'].includes(pairState(g))).length
   const bad = s.pairs.filter(g => pairState(g) === 'bad').length
@@ -220,7 +221,6 @@ function SubjectCard({ s, side, apps, rules, open, toggle, onOpen, setAll, flip,
       </button>
       <Collapse open={open}>
         <div className="lk-body">
-          {open && rules.length > 0 && <div className="lk-rules">{rules.map(r => <RuleRow key={r.id} r={r} flip={flipRule} />)}</div>}
           {s.sections.map(sec => {
             const allOn = sec.pairs.every(g => g.links.every(l => l.enabled))
             return (
@@ -293,7 +293,7 @@ export default function Links() {
   const pair = picked ? groups.find(g => g.key === picked) : undefined
   const bad = groups.filter(g => pairState(g) === 'bad')
   const pocketCards = shown.filter(s => !s.service), serviceCards = shown.filter(s => s.service)
-  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} rules={side === 'uses' ? (rules || []).filter(r => r.app_slug === s.slug) : []} flipRule={flipRule} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} flip={flip} />
+  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} flip={flip} />
   const ico = (slug: string, name: string) => <Ico slug={slug} name={name} apps={apps || []} />
 
   return (
@@ -304,6 +304,11 @@ export default function Links() {
           <div className="lk-alert">
             <b>{plural(bad.length, "link can't", "links can't")} work right now</b>
             <div className="lk-chips">{bad.map(g => <PairChip key={g.key} g={g} side="uses" both apps={apps || []} onOpen={() => setPicked(g.key)} />)}</div>
+          </div>)}
+        {(rules || []).length > 0 && filter === 'all' && !needle && (
+          <div className="lk-rules">
+            <div className="lk-rules-h"><b>In every app that offers it</b><span className="muted small">One switch for all apps, and for apps you install later. Each app keeps its own switch in the cards below.</span></div>
+            {(rules || []).map(r => <RuleRow key={r.id} r={r} apps={apps || []} flip={flipRule} />)}
           </div>)}
         <div className="toolbar lk-toolbar">
           <Segmented size="sm" value={side} onChange={setSide} options={SIDES} />

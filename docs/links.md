@@ -37,6 +37,7 @@ An app that works across the whole box (Pocket Search finding things in every ap
 
 That is a **rule**. Core keeps an ordinary link for it to each registered app that offers the scope: made when the rule is declared and whenever an app that offers the scope registers, hidden when the app stops offering it (its switches come back if it offers it again). The links behave like any other (tokens, the admin's switch, each person's switch); `rule_id` on a link says which rule made it. A link the app also names itself (`"app": "notes"`) is its own and the rule leaves it alone.
 
+- The Links page lists the rules first, above the cards, under **In every app that offers it**: whose rule, what it does, how many apps are on, and its switch (switching off asks first).
 - The rule has **one switch** (`PUT /link-rules/{id} {"enabled"}`): it sets every link the rule made, and it is how a link to an app installed later starts. After that each link can be switched on its own.
 - A rule in the manifest an app enrolls with is approved; one added by an update starts off, links included, until an admin switches it on.
 - `"*"` is never a target: there is no token for it.
@@ -45,7 +46,7 @@ The scopes meant for this are the [capabilities](capabilities.md) (`pocket:searc
 
 ## The Links page
 
-Admins see every link as one list, a card per app. An app with an "every app" rule shows it first in its opened card: what it does "in every app that offers it", how many of those are on, and the rule's switch (switching off asks first). A closed card says in a line what the app adds up to ("Changes 3 apps · looks at 1 · signs in to 1 service") with the icons of the apps on the other side; opened, it groups them into **Changes things in** (any scope that writes), **Only looks at** (read scopes only) and **Signs in to** (services, with each person's own account). Each link is a box with the other app on top and one switch per scope under it, marked *Can't work* or ↗ *Direct* when so; tap the app's name for the details: why the app asks, usage, how each person connects, key replacement notes. A group with more than one link has **Switch all off / on** (off asks first).
+X A closed card says in a line what the app adds up to ("Changes 3 apps · looks at 1 · signs in to 1 service") with the icons of the apps on the other side; opened, it groups them into **Changes things in** (any scope that writes), **Only looks at** (read scopes only) and **Signs in to** (services, with each person's own account). Each link is a box with the other app on top and one switch per scope under it, marked *Can't work* or ↗ *Direct* when so; tap the app's name for the details: why the app asks, usage, how each person connects, key replacement notes. A group with more than one link has **Switch all off / on** (off asks first).
 
 - **What each app uses / Who reaches each app** turns the cards around: one card per app or service, with the apps that can change it, the apps that can only look, and the scopes it offers that nobody uses yet. Services get their own section.
 - **Search** matches app and service names and scope names; a card whose own name matches keeps all its links.
