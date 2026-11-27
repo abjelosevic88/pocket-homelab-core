@@ -72,7 +72,7 @@ func (s *Server) pocketCapture(r *http.Request, in core.CaptureInput) (*core.Cap
 - `time` and `end` are local wall-clock `HH:MM`; an item without one happened "sometime that day". `amount` is minor units of `currency`.
 - Search: `score` orders matches inside the app (higher first); `0` everywhere = the order given. An empty `q` answers `{"items": []}` without calling the app's function.
 - Day: `summary` empty and no items = nothing happened; the reader shows nothing for the app that day.
-- Capture adds one new item. The same `request_id` again must answer the same and add nothing (`Client.NewOperation`). Return `fmt.Errorf("%w: the list is full", core.ErrCapture)` for a refusal the person can act on.
+- Capture adds one new item. The same `request_id` again must answer the same and add nothing (the app's own mechanism, or the SDK's `NewOperation` / `Replay` / `Save`). Return `fmt.Errorf("%w: the list is full", core.ErrCapture)` for a refusal the person can act on.
 - Limits: 50 search items, 200 day items, 8 widget rows and 4 metrics, lines cut at 300 (200 in a widget) characters.
 
 ## The app that asks
@@ -111,4 +111,6 @@ A rule in the manifest an app enrolls with is approved, like its links; one adde
 ## What a new app no longer needs
 
 - **In Core:** nothing. An app Core has never heard of registers with its name, icon, `category` and env prefix from its manifest (the catalog entry and the bundled icon are only for apps and services that are not installed yet).
-- **In Search, Day, Hub:** nothing, once the app declares the capability. The hand-written adapters in those apps stay for apps that have not moved to the contract yet; an app with the capability is read through the contract only.
+- **In Search, Day, Hub:** nothing, once the app declares the capability. The hand-written adapters in those apps stay for apps that predate the contract:
+  - Search and Hub read an app through the contract as soon as it offers it (and its link is on), and fall back to their own adapter otherwise.
+  - Day keeps its hand-written source for the apps that have one (their cards show more than the common shape can, and old days are stored in that shape); apps without one become sources through the contract.
