@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -185,7 +186,7 @@ var mcpConsentPage = template.Must(template.New("consent").Parse(`<!doctype html
 {{if .Write}}<p><strong>It can read your application content and create or update items in the Pocket apps shared with you.</strong> This includes personal notes, tasks, events and other supported app records. Deletion, sharing controls, sending messages and service administration are excluded.</p>
 {{else if .Read}}<p><strong>It can read your application content</strong> in supported Pocket apps shared with you. It cannot create or change items.</p>
 {{else}}<p>It cannot read notes, tasks or other application content, or change your data.</p>{{end}}
-<p>The connection lasts up to 30 days. You can disconnect it at any time under <a href="/ai-connections">AI connections</a>.</p>
+<p>The connection stays signed in while you use it and ends after {{.Days}} without use. You can disconnect it at any time under <a href="/ai-connections">AI connections</a>.</p>
 <p>Client names are supplied by the application. Approve only if you started this connection.</p>
 {{if .Terminal}}<p><strong>Connecting from a terminal?</strong> Approve and copy the sign-in response back into Claude Code or Codex. This page stays on Core.</p>{{else}}<p>Return address: <code>{{.Redirect}}</code></p>{{end}}
 <form method="post" action="/mcp/oauth/authorize"><input type="hidden" name="request" value="{{.Request}}">
@@ -282,7 +283,7 @@ func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self' "+callback.Scheme+"://"+callback.Host+"; base-uri 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = mcpConsentPage.Execute(w, map[string]any{"Name": c.Name, "Email": u.Email, "Redirect": redirect, "Request": pending, "Read": hasMCPScope(q.Get("scope"), "apps:read"), "Write": hasMCPScope(q.Get("scope"), "apps:write"), "Terminal": mcpTerminalCallback(redirect)})
+	_ = mcpConsentPage.Execute(w, map[string]any{"Name": c.Name, "Email": u.Email, "Redirect": redirect, "Request": pending, "Read": hasMCPScope(q.Get("scope"), "apps:read"), "Write": hasMCPScope(q.Get("scope"), "apps:write"), "Terminal": mcpTerminalCallback(redirect), "Days": daysText(s.store.AIConnectionDays(r.Context()))})
 }
 
 func (s *Server) handleMCPConsent(w http.ResponseWriter, r *http.Request) {
@@ -386,8 +387,16 @@ func (s *Server) handleMCPToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.store.GetMCPSecret(r.Context(), plain, kind, c.ClientID)
+	again := false
+	if err != nil && kind == "refresh" {
+		// The same refresh token a moment later: two sessions of one assistant
+		// refreshing at once, or an answer that never arrived. Not a stolen token.
+		if v, err = s.store.SpentMCPRefresh(r.Context(), plain, c.ClientID); err == nil {
+			again = true
+		}
+	}
 	if err != nil {
-		_ = s.store.RevokeSpentMCPSecret(r.Context(), plain, kind, c.ClientID)
+		s.mcpTokenReused(r, plain, kind, c)
 		tokenErr(w, 400, "invalid_grant", "credential expired, revoked, or already used")
 		return
 	}
@@ -411,11 +420,28 @@ func (s *Server) handleMCPToken(w http.ResponseWriter, r *http.Request) {
 	}
 	access, refresh, err := s.store.ExchangeMCPSecret(r.Context(), plain, v)
 	if err != nil {
-		_ = s.store.RevokeSpentMCPSecret(r.Context(), plain, kind, c.ClientID)
+		s.mcpTokenReused(r, plain, kind, c)
 		tokenErr(w, 400, "invalid_grant", "credential expired, revoked, or already used")
 		return
 	}
+	if again {
+		s.log.Info("mcp refresh token used twice, new tokens issued", "user_id", v.UserID, "client", c.Name, "connection_id", v.GrantID)
+	}
 	writeJSON(w, 200, map[string]any{"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 900, "scope": in.scopes()})
+}
+
+// mcpTokenReused ends the connection of a code or refresh token that was
+// already used (past the refresh grace), and says so in the log: the person
+// has to sign in again, and "why" is otherwise invisible.
+func (s *Server) mcpTokenReused(r *http.Request, plain, kind string, c *store.MCPOAuthClient) {
+	userID, spentAt, err := s.store.RevokeSpentMCPSecret(r.Context(), plain, kind, c.ClientID)
+	if err != nil {
+		s.log.Warn("revoke reused MCP credential", "err", err)
+		return
+	}
+	if userID != 0 {
+		s.log.Warn("mcp connection ended: a used "+kind+" was presented again", "user_id", userID, "client", c.Name, "first_used_at", spentAt)
+	}
 }
 
 func (s *Server) handleMCPRevokeToken(w http.ResponseWriter, r *http.Request) {
@@ -446,7 +472,7 @@ func (s *Server) handleMCPConnections(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "list AI connections")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"enabled": s.cfg.MCPOAuthEnabled, "app_tools_enabled": s.cfg.MCPAppToolsEnabled, "scopes": s.mcpSupportedScopes(), "url": s.mcpResource(), "connections": grants})
+	writeJSON(w, 200, map[string]any{"enabled": s.cfg.MCPOAuthEnabled, "app_tools_enabled": s.cfg.MCPAppToolsEnabled, "scopes": s.mcpSupportedScopes(), "url": s.mcpResource(), "connections": grants, "max_days": s.store.AIConnectionDays(r.Context())})
 }
 
 func (s *Server) handleMCPDisconnect(w http.ResponseWriter, r *http.Request) {
@@ -480,6 +506,24 @@ func (s *Server) mcpRedirectErr(w http.ResponseWriter, r *http.Request, redirect
 	q.Set("iss", s.mcpIssuer())
 	u.RawQuery = q.Encode()
 	oidcRedirectErr(w, r, u.String(), state, code, desc)
+}
+
+// daysText names a connection lifetime the way the settings do.
+func daysText(days int) string {
+	switch days {
+	case 1:
+		return "1 day"
+	case 365:
+		return "1 year"
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+// mcpTokenDays reports whether a connection token may be made for that long:
+// one of the choices, and no longer than this Core's setting.
+func (s *Server) mcpTokenDays(r *http.Request, days int) (max int, ok bool) {
+	max = s.store.AIConnectionDays(r.Context())
+	return max, store.ValidAIConnectionDays(days) && days <= max
 }
 
 func (s *Server) mcpSupportedScopes() []string {

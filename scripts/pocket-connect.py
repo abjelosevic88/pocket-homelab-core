@@ -148,7 +148,7 @@ def main(argv=None):
     parser.add_argument("--name", default="pocket_core", help="MCP name in the assistant config")
     parser.add_argument("--label", help="Connection label displayed in Core")
     parser.add_argument("--access", choices=["status", "read", "write"], default="write")
-    parser.add_argument("--days", type=int, choices=[1, 7, 30], default=30)
+    parser.add_argument("--days", type=int, choices=[1, 7, 30, 90, 365], default=30, help="up to what this Core allows (Settings → Single sign-on → AI assistants)")
     parser.add_argument("--config", type=Path, help="Override the assistant's user config file")
     parser.add_argument("--replace", action="store_true", help="Replace this named connection (old Core grant remains revocable)")
     args = parser.parse_args(argv)

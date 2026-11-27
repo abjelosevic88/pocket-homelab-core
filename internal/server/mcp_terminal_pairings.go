@@ -79,8 +79,9 @@ func (s *Server) handleMCPPairing(w http.ResponseWriter, r *http.Request, action
 			return
 		}
 		in.Name = strings.TrimSpace(in.Name)
-		if in.Name == "" || len(in.Name) > 80 || strings.ContainsAny(in.Name, "\r\n") || !s.mcpValidScopes(in.Scope) || (in.Days != 1 && in.Days != 7 && in.Days != 30) {
-			writeErr(w, 400, "choose a name, supported access scope, and expiry of 1, 7 or 30 days")
+		max, daysOK := s.mcpTokenDays(r, in.Days)
+		if in.Name == "" || len(in.Name) > 80 || strings.ContainsAny(in.Name, "\r\n") || !s.mcpValidScopes(in.Scope) || !daysOK {
+			writeErr(w, 400, "choose a name, supported access scope, and an expiry this Core allows (up to "+daysText(max)+")")
 			return
 		}
 		secret, code, err := s.store.CreateMCPTerminalPairing(r.Context(), in.Name, canonicalMCPScopes(in.Scope), in.Days)

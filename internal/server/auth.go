@@ -847,6 +847,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		AutoUpdateHour *int    `json:"auto_update_hour"`
 		NotifyUpdates  *bool   `json:"notify_updates"`
 		NotifyURL      *string `json:"notify_url"`
+		AIDays         *int    `json:"ai_connection_days"`
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -882,6 +883,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		st.NotifyURL = u
 	}
+	shorter := false
+	if in.AIDays != nil {
+		if !store.ValidAIConnectionDays(*in.AIDays) {
+			writeErr(w, http.StatusBadRequest, "assistants can stay connected for 1, 7, 30, 90 or 365 days")
+			return
+		}
+		shorter = *in.AIDays < st.AIConnectionDays
+		st.AIConnectionDays = *in.AIDays
+	}
 	oldFamily := st.FamilyName
 	if in.FamilyName != nil {
 		// Empty = back to "Pocket".
@@ -893,6 +903,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SaveSettings(r.Context(), st); err != nil {
 		s.fail(w, err, "save settings")
 		return
+	}
+	if shorter {
+		// A shorter time counts for the connections that already exist too.
+		if err := s.store.CapAIConnections(r.Context(), st.AIConnectionDays); err != nil {
+			s.fail(w, err, "shorten AI connections")
+			return
+		}
 	}
 	if st.FamilyName != oldFamily {
 		if apps, err := s.store.ListApps(r.Context()); err == nil {

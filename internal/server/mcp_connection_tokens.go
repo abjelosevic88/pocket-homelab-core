@@ -54,8 +54,8 @@ func (s *Server) handleMCPConnectionToken(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, "approve a supported access scope")
 		return
 	}
-	if in.Days != 1 && in.Days != 7 && in.Days != 30 {
-		writeErr(w, 400, "choose an expiry of 1, 7 or 30 days")
+	if max, ok := s.mcpTokenDays(r, in.Days); !ok {
+		writeErr(w, 400, "choose an expiry this Core allows (up to "+daysText(max)+")")
 		return
 	}
 	scope := canonicalMCPScopes(in.Scope)

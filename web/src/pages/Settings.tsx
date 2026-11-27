@@ -299,6 +299,7 @@ function OIDCClients() {
   return (
     <div className="stack loose">
       <SignInMethods />
+      <AIAssistants />
       <Section title="Clients" icon="shield" sub={<>Point Immich, Nextcloud, Paperless, Audiobookshelf, Kavita, Jellyfin (SSO plugin) or any Pocket app at <code>{issuer}</code> and everyone signs in with their Core account. Pocket apps that ask in their manifest get a client automatically.</>}
         actions={<button type="button" className="btn sm primary" onClick={() => setEdit({ name: '', redirect_uris: '', public: false })}><Icon name="plus" size={14} />Add client</button>}>
         {!data ? <Loading /> : data.length === 0 ? <p className="muted small">No clients yet.</p> : <div className="client-list">{data.map(c => (
@@ -335,6 +336,27 @@ function OIDCClients() {
         <div className="form-actions mt"><button type="button" className="btn primary" onClick={() => setSecret(null)}>Done</button></div></Modal>}
       {del && <Confirm title="Delete client" message={<>Delete <b>{del.name}</b>? Logins through it stop immediately.</>} onConfirm={async () => { await api.del(`${V1}/oidc/clients/${del.id}`); setDel(null); reload() }} onCancel={() => setDel(null)} confirmLabel="Delete" />}
     </div>
+  )
+}
+
+const AI_DAYS = [{ value: '1', label: '1 day' }, { value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' }]
+
+/** How long Claude Code, Codex and other assistants stay signed in on this Core. */
+function AIAssistants() {
+  const { toast } = useToast()
+  const { data: st, reload } = useAsync(() => api.get<S>(`${V1}/settings`), [])
+  const { data: ai } = useAsync(() => api.get<{ enabled: boolean }>(`${V1}/me/ai-connections`), [])
+  if (!st || !ai?.enabled) return null
+  const days = st.ai_connection_days ?? 30
+  const set = async (v: string) => {
+    try { await api.put(`${V1}/settings`, { ai_connection_days: Number(v) }); await reload(); toast('Saved') } catch (e) { toast(errMsg(e), 'err') }
+  }
+  return (
+    <Section title="AI assistants" icon="sparkles" sub="Claude Code, Codex and other assistants people connect to their own account.">
+      <SettingRow title="Stay connected for" help="Counted from the last use, so an assistant in use never has to sign in again. A shorter time also applies to the connections that exist.">
+        <Select value={String(days)} options={AI_DAYS} ariaLabel="Stay connected for" onChange={set} />
+      </SettingRow>
+    </Section>
   )
 }
 

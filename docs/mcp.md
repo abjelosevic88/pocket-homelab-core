@@ -68,8 +68,14 @@ allowlists do not constrain account connections; Core's service sharing does.
 
 **Core → AI connections** (`/ai-connections`) shows connections and a disconnect
 button. Every user can manage only their own connections. Access tokens last
-15 minutes; rotating refresh tokens cannot extend the 30-day connection lifetime.
-Reusing a consumed code or refresh token revokes its connection. Revocation and
+15 minutes and are renewed with rotating refresh tokens. A connection stays
+signed in while it is used and ends after 30 days without use; an admin picks
+another time (1 day, 7, 30, 90 days or 1 year) under **Settings → Single sign-on
+→ AI assistants**, which is also the longest a connection token can be made for.
+A refresh token that was already exchanged is honoured again for five minutes,
+because assistants run several sessions on one saved sign-in and two of them may
+refresh at once. Reusing a consumed code, or a refresh token after those five
+minutes, revokes its connection (Core logs it as `mcp connection ended`). Revocation and
 account disable/authentication-revision changes take effect on the next request;
 already authorized requests may finish. Logging out of the browser alone does
 not disconnect an assistant. Revoked or expired clients must sign in again.

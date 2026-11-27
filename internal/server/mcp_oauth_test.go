@@ -246,10 +246,6 @@ func TestMCPOAuthPKCERefreshAndAccountRevocation(t *testing.T) {
 	if res.StatusCode != 200 {
 		t.Fatalf("refresh: %d %s", res.StatusCode, body)
 	}
-	res, _ = f.request("POST", "/mcp/oauth/token", form.Encode(), "", false)
-	if res.StatusCode != 400 {
-		t.Fatal("replayed refresh accepted")
-	}
 	var rotated struct {
 		Access  string `json:"access_token"`
 		Refresh string `json:"refresh_token"`
@@ -257,7 +253,32 @@ func TestMCPOAuthPKCERefreshAndAccountRevocation(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &rotated); err != nil {
 		t.Fatal(err)
 	}
-	for _, token := range []string{access, rotated.Access} {
+	// The same refresh token a moment later (a second session of the same
+	// assistant) gets tokens of its own and the connection stays.
+	res, body = f.request("POST", "/mcp/oauth/token", form.Encode(), "", false)
+	if res.StatusCode != 200 {
+		t.Fatalf("refresh token used twice within the grace: %d %s", res.StatusCode, body)
+	}
+	var second struct {
+		Access string `json:"access_token"`
+	}
+	if err := json.Unmarshal([]byte(body), &second); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{rotated.Access, second.Access} {
+		if status := f.do("POST", "/mcp", token, nil, nil); status == 401 {
+			t.Fatal("token after a double refresh was rejected")
+		}
+	}
+	// Long after it was used, the old token ends the whole connection.
+	if _, err := f.st.DB.Exec(`UPDATE mcp_oauth_secrets SET spent_at=? WHERE kind='spent_refresh'`, store.Stamp(time.Now().Add(-store.MCPRefreshGrace-time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	res, _ = f.request("POST", "/mcp/oauth/token", form.Encode(), "", false)
+	if res.StatusCode != 400 {
+		t.Fatal("replayed refresh accepted")
+	}
+	for _, token := range []string{access, rotated.Access, second.Access} {
 		if status := f.do("POST", "/mcp", token, nil, nil); status != 401 {
 			t.Fatalf("reused refresh did not revoke connection: %d", status)
 		}
@@ -265,7 +286,91 @@ func TestMCPOAuthPKCERefreshAndAccountRevocation(t *testing.T) {
 	if _, err := f.st.GetMCPSecret(context.Background(), rotated.Refresh, "refresh", f.clientID); err == nil {
 		t.Fatal("rotated refresh survived replay")
 	}
+}
 
+// A refresh moves the connection's end to the Core's chosen lifetime from now;
+// a shorter setting cuts the connections that exist, and bounds new tokens.
+func TestMCPConnectionLifetimeSetting(t *testing.T) {
+	f := newOAuthFixture(t)
+	ctx := context.Background()
+	end := func() time.Time {
+		var v string
+		if err := f.st.DB.QueryRow(`SELECT expires_at FROM mcp_oauth_grants`).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		at, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	near := func(days int) bool {
+		d := time.Until(end()) - time.Duration(days)*24*time.Hour
+		return d > -time.Minute && d < time.Minute
+	}
+	_, refresh := f.exchange(f.code())
+	if !near(30) {
+		t.Fatalf("new connection ends %s, want 30 days", end())
+	}
+	// Nearly run out, then used: the full time again.
+	if _, err := f.st.DB.Exec(`UPDATE mcp_oauth_grants SET expires_at=?`, store.Stamp(time.Now().Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := f.st.GetSettings(ctx)
+	st.AIConnectionDays = 90
+	if err := f.st.SaveSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"client_id": {f.clientID}, "grant_type": {"refresh_token"}, "refresh_token": {refresh}, "resource": {oauthTestOrigin + "/mcp"}}
+	if res, body := f.request("POST", "/mcp/oauth/token", form.Encode(), "", false); res.StatusCode != 200 {
+		t.Fatalf("refresh: %d %s", res.StatusCode, body)
+	}
+	if !near(90) {
+		t.Fatalf("used connection ends %s, want 90 days", end())
+	}
+	if err := f.st.CapAIConnections(ctx, 7); err != nil {
+		t.Fatal(err)
+	}
+	if !near(7) {
+		t.Fatalf("shortened connection ends %s, want 7 days", end())
+	}
+	// Connection tokens can be made no longer than the setting.
+	st.AIConnectionDays = 7
+	if err := f.st.SaveSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	token := func(days int) int {
+		body, _ := json.Marshal(map[string]any{"name": "Remote Codex", "scope": "status:read", "expires_in_days": days, "approved": true})
+		res, _ := f.request("POST", "/api/v1/me/ai-connections/token", string(body), oauthTestOrigin, true)
+		return res.StatusCode
+	}
+	if c := token(30); c != 400 {
+		t.Fatalf("30-day token on a 7-day Core: %d", c)
+	}
+	if c := token(7); c != 201 {
+		t.Fatalf("7-day token on a 7-day Core: %d", c)
+	}
+}
+
+// Admins choose the lifetime from the offered choices only.
+func TestAIConnectionDaysSetting(t *testing.T) {
+	e := newEnv(t)
+	if c := e.do("POST", "/api/v1/auth/setup", "", map[string]string{"email": "a@b.c", "password": "password123", "name": "A", "box_name": "Box"}, nil); c != 200 {
+		t.Fatalf("setup %d", c)
+	}
+	var st store.Settings
+	if c := e.do("GET", "/api/v1/settings", "", nil, &st); c != 200 || st.AIConnectionDays != 30 {
+		t.Fatalf("default: %d %+v", c, st)
+	}
+	if c := e.do("PUT", "/api/v1/settings", "", map[string]any{"ai_connection_days": 14}, nil); c != 400 {
+		t.Fatalf("14 days accepted: %d", c)
+	}
+	if c := e.do("PUT", "/api/v1/settings", "", map[string]any{"ai_connection_days": 365}, &st); c != 200 || st.AIConnectionDays != 365 {
+		t.Fatalf("set a year: %d %+v", c, st)
+	}
+	if got := e.st.AIConnectionDays(context.Background()); got != 365 {
+		t.Fatalf("stored %d", got)
+	}
 }
 
 func TestMCPOAuthDiscoveryAndValidation(t *testing.T) {

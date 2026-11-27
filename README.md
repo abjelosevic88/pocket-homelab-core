@@ -207,7 +207,8 @@ Already added `pocket` with the same access? Run only the login command when you
 need to sign in again. If it reports that `pocket` is unknown, run the add command
 first. Use a current client version supporting `--no-browser`.
 
-Connections follow the user's app permissions, last up to 30 days, and can be
+Connections follow the user's app permissions, stay signed in while used (30 days
+without use by default; Settings → Single sign-on → AI assistants), and can be
 revoked in Core. See [native terminal setup](docs/mcp-apps.md#connect-claude-code-or-codex-recommended)
 for read-only access, existing connections, and troubleshooting.
 
@@ -251,7 +252,8 @@ Other clients need Streamable HTTP and OAuth discovery with dynamic registration
 a cloud client needs network access to the public HTTPS URL.
 
 Open **Core → AI connections** to copy the endpoint, see connections, or disconnect
-one. Connections last up to 30 days; access tokens last 15 minutes and refresh
+one. A connection stays signed in while it is used and ends after 30 days without
+use (an admin can pick 1 day to 1 year); access tokens last 15 minutes and refresh
 automatically in supporting clients. Reconnect when the connection expires.
 Disabling the account, changing its authentication revision, or disconnecting
 revokes access. App sharing and enabled state are checked on every request, so

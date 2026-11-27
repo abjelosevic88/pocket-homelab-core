@@ -6,7 +6,10 @@ import { Icon } from '../components/icons'
 import ConnectAssistant from '../components/ConnectAssistant'
 
 type Connection = { id: string; client_name: string; created_at: string; expires_at: string; scope: string; kind: string }
-type Connections = { enabled: boolean; app_tools_enabled: boolean; url: string; connections: Connection[] }
+type Connections = { enabled: boolean; app_tools_enabled: boolean; url: string; connections: Connection[]; max_days?: number }
+
+const DAYS = [{ value: '1', label: '1 day' }, { value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' }]
+const daysText = (d: number) => DAYS.find(o => o.value === String(d))?.label || `${d} days`
 
 type CreatedToken = { token: string; url: string; connection: Connection }
 
@@ -17,9 +20,11 @@ export default function AIConnections() {
   const [copied, setCopied] = useState(false)
   const [name, setName] = useState('Codex')
   const [scope, setScope] = useState('status:read apps:read apps:write')
-  const [days, setDays] = useState(30)
+  const [picked, setDays] = useState(30)
   const [created, setCreated] = useState<CreatedToken | null>(null)
   const [tokenCopied, setTokenCopied] = useState(false)
+  const max = data?.max_days ?? 30
+  const days = Math.min(picked, max)
   const createToken = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy('create'); setError(''); setTokenCopied(false)
     try {
@@ -57,7 +62,7 @@ export default function AIConnections() {
         <p>Send them this setup page: <a href="/connect" style={{ overflowWrap: 'anywhere' }}>{new URL('/connect', data.url).href}</a>. They sign in with their own account and follow the steps below on their own computer. A remote assistant needs the commands run in its remote terminal.</p>
       </Card>}
       {data.enabled && <p>Every account connection lets your assistant identify you by your Core name, email, account identifiers and role. Ask “Who am I in Pocket?” to check the connected account and its permissions. Application tools use that account to access your data.</p>}
-      {data.enabled && <ConnectAssistant url={data.url} appTools={data.app_tools_enabled} />}
+      {data.enabled && <ConnectAssistant url={data.url} appTools={data.app_tools_enabled} lasts={daysText(max)} />}
       <details>
         <summary>Advanced: manual tokens and other clients</summary>
         <div className="grid mt" style={{ gap: 20 }}>
@@ -69,7 +74,7 @@ export default function AIConnections() {
             { value: 'status:read', label: 'Status checks only' },
             ...(data.app_tools_enabled ? [{ value: 'status:read apps:read', label: 'Read application content' }, { value: 'status:read apps:read apps:write', label: 'Read and create/update items' }] : []),
           ]} /></Field>
-          <Field label="Expires after"><Select ariaLabel="Expires after" value={String(days)} onChange={v => setDays(Number(v))} options={[{ value: '1', label: '1 day' }, { value: '7', label: '7 days' }, { value: '30', label: '30 days' }]} /></Field>
+          <Field label="Expires after"><Select ariaLabel="Expires after" value={String(days)} onChange={v => setDays(Number(v))} options={DAYS.filter(o => Number(o.value) <= max)} /></Field>
           <p>This grants the selected access to your permitted apps, including apps shared with you later. Deletion and service administration are unavailable.</p>
           <button className="btn primary" type="submit" disabled={!!busy}>{busy === 'create' ? 'Creating…' : 'Create token with this access'}</button>
         </form> : <>
@@ -89,14 +94,14 @@ export default function AIConnections() {
           <button type="button" className="btn mt" onClick={copy}>{copied ? 'Copied' : 'Copy URL'}</button>
           <p>{data.app_tools_enabled ? 'Choose status checks, reading application content, or reading and creating/updating items when connecting your assistant. Deletion and service administration are unavailable.' : 'Access includes Core availability and status checks for your permitted Pocket apps. Personal content and changes are excluded.'} Access follows your account permissions, including apps shared with you later.</p>
           {data.app_tools_enabled && <p className="muted">Existing status connections keep their original access. To enable application tools, reconnect and approve application access. In Codex, use <code style={{ overflowWrap: 'anywhere' }}>codex mcp login pocket_account --scopes status:read,apps:read,apps:write</code> after adding this URL.</p>}
-          <p className="muted">Your assistant needs to support remote MCP with OAuth. Connections expire after 30 days; reconnect when prompted.</p>
+          <p className="muted">Your assistant needs to support remote MCP with OAuth. A connection stays signed in while it is used and ends after {daysText(max)} without use.</p>
         </> : <p>Account connections are disabled on this Core. Ask your administrator to enable MCP account sign-in.</p>}
       </Card>
         </div>
       </details>
       <Card title="Your connections">
         {data.connections.length === 0 ? <p>No assistants connected yet.</p> : data.connections.map(c => <div key={c.id} className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}>
-          <div><strong>{c.client_name}</strong><span className="muted small"> · {c.kind === 'token' ? 'Connection token' : 'Browser sign-in'}</span><div className="small">{c.scope?.includes("apps:write") ? "Read and create/update items" : c.scope?.includes("apps:read") ? "Read application content" : "Status checks only"}</div><div className="muted small">Connected {new Date(c.created_at).toLocaleDateString()} · {new Date(c.expires_at) <= new Date() ? 'Expired' : 'Expires'} {new Date(c.expires_at).toLocaleDateString()}</div></div>
+          <div><strong>{c.client_name}</strong><span className="muted small"> · {c.kind === 'token' ? 'Connection token' : 'Browser sign-in'}</span><div className="small">{c.scope?.includes("apps:write") ? "Read and create/update items" : c.scope?.includes("apps:read") ? "Read application content" : "Status checks only"}</div><div className="muted small">Connected {new Date(c.created_at).toLocaleDateString()} · {new Date(c.expires_at) <= new Date() ? 'Expired' : c.kind === 'token' ? 'Expires' : 'Stays connected while used, until'} {new Date(c.expires_at).toLocaleDateString()}</div></div>
           <button type="button" className="btn danger" disabled={!!busy} onClick={() => disconnect(c.id)}>{busy === c.id ? 'Disconnecting…' : 'Disconnect'}</button>
         </div>)}
       </Card>

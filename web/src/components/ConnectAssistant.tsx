@@ -6,7 +6,7 @@ import { Select } from './Select'
 // variable values so unusual self-hosted URLs cannot become shell instructions.
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'"
 
-export default function ConnectAssistant({ url, appTools }: { url: string; appTools: boolean }) {
+export default function ConnectAssistant({ url, appTools, lasts }: { url: string; appTools: boolean; lasts?: string }) {
   const [client, setClient] = useState('claude')
   const [scope, setScope] = useState('status:read apps:read apps:write')
   const [copied, setCopied] = useState('')
@@ -49,7 +49,7 @@ export default function ConnectAssistant({ url, appTools }: { url: string; appTo
     <p>The copied response starts with <code>http://localhost:…/callback?code=…</code>. It is text for your assistant to read; do not open it in your browser. Your browser and terminal can be on different machines.</p>
     <p><strong>4. Check your connected account.</strong></p>
     <p>Your assistant saves its credentials on the machine where it runs. Start a new session, then ask: <em>“Who am I in Pocket? Use pocket_whoami.”</em> Once it shows your own Core account, try <em>“Show my open tasks”</em> or <em>“Check the status of all applications I can access.”</em></p>
-    <p className="muted small">No helper download or Python is needed. Sign-in stays on Core; there is no browser redirect to localhost. Access lasts up to 30 days and can be revoked below.</p>
+    <p className="muted small">No helper download or Python is needed. Sign-in stays on Core; there is no browser redirect to localhost. The sign-in stays while you use it{lasts ? ` and ends after ${lasts} without use` : ''}; you can revoke it below.</p>
     <details className="mt"><summary>Connection help</summary>
       <p className="mt">Use a current {title} version that supports <code>mcp login --no-browser</code>. A Core webpage cannot directly configure a terminal on another machine; your assistant starts sign-in with the commands above.</p>
       <p>If login says <code>pocket</code> is unknown, run the add command first in that same environment. Each person and each assistant installation needs its own configuration. You can choose a different connection name if you use it in both commands.</p>

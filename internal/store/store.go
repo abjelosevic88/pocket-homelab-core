@@ -193,6 +193,10 @@ type Settings struct {
 	AutoUpdateHour int    `json:"auto_update_hour"`
 	NotifyUpdates  bool   `json:"notify_updates"`
 	NotifyURL      string `json:"notify_url"`
+	// AIConnectionDays: how long an assistant (Claude Code, Codex…) stays
+	// signed in to a person's account without being used, and the longest a
+	// connection token may be made for. One of AIConnectionChoices.
+	AIConnectionDays int `json:"ai_connection_days"`
 }
 
 // GetKV reads one raw settings row ("" when missing). For internal
@@ -211,7 +215,7 @@ func (s *Store) SetKV(ctx context.Context, key, value string) error {
 
 // GetSettings loads the settings with defaults.
 func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
-	st := Settings{Title: "Pocket Core", BoxName: "Pocket Box", FamilyName: DefaultFamily, AutoUpdateHour: 4, NotifyUpdates: true}
+	st := Settings{Title: "Pocket Core", BoxName: "Pocket Box", FamilyName: DefaultFamily, AutoUpdateHour: 4, NotifyUpdates: true, AIConnectionDays: DefaultAIConnectionDays}
 	rows, err := s.DB.QueryContext(ctx, `SELECT key, value FROM settings`)
 	if err != nil {
 		return st, err
@@ -251,6 +255,10 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 			st.NotifyUpdates = v != "1"
 		case "notify_url":
 			st.NotifyURL = v
+		case "ai_connection_days":
+			if d, err := strconv.Atoi(v); err == nil && ValidAIConnectionDays(d) {
+				st.AIConnectionDays = d
+			}
 		}
 	}
 	return st, rows.Err()
@@ -269,6 +277,7 @@ func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
 		"auto_update_hour":   fmt.Sprint(st.AutoUpdateHour),
 		"notify_updates_off": fmt.Sprint(boolInt(!st.NotifyUpdates)),
 		"notify_url":         st.NotifyURL,
+		"ai_connection_days": fmt.Sprint(st.AIConnectionDays),
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
