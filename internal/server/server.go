@@ -275,6 +275,9 @@ func (s *Server) Router() http.Handler {
 			r.Get("/devices/me/push", s.handleGetDevicePush)
 			r.Delete("/devices/me/push", s.handleDeleteDevicePush)
 			r.Post("/devices/me/push/test", s.handleTestDevicePush)
+			// Battery levels: a device reports its own, the person's clients read them all (batteries.go).
+			r.Put("/devices/me/battery", s.handlePutDeviceBattery)
+			r.Get("/devices/batteries", s.handleListDeviceBatteries)
 			r.Put("/auth/me", s.handleUpdateMe)
 			r.Post("/auth/introspect", s.handleIntrospect)
 			r.Post("/auth/subject", s.handleSubject)
