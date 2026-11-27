@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -24,18 +25,20 @@ type AppLink struct {
 	LastUsedAt string `json:"last_used_at,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	OptOuts    int    `json:"opt_outs"`
+	// RuleID is the "every app" rule that made the link; 0 = the app named the target itself.
+	RuleID int64 `json:"rule_id,omitempty"`
 
 	customName string
 }
 
 const linkCols = `l.id, l.app_id, a.slug, a.name, a.custom_name, l.target_slug, l.scope, l.reason, l.declared, l.enabled, l.uses, l.last_used_at, l.created_at,
-	(SELECT COUNT(*) FROM app_link_optouts o WHERE o.link_id = l.id)`
+	(SELECT COUNT(*) FROM app_link_optouts o WHERE o.link_id = l.id), l.rule_id`
 
 func scanLink(sc interface{ Scan(...any) error }) (*AppLink, error) {
 	var l AppLink
 	var en int
 	var used sql.NullString
-	if err := sc.Scan(&l.ID, &l.AppID, &l.AppSlug, &l.AppName, &l.customName, &l.TargetSlug, &l.Scope, &l.Reason, &l.Declared, &en, &l.Uses, &used, &l.CreatedAt, &l.OptOuts); err != nil {
+	if err := sc.Scan(&l.ID, &l.AppID, &l.AppSlug, &l.AppName, &l.customName, &l.TargetSlug, &l.Scope, &l.Reason, &l.Declared, &en, &l.Uses, &used, &l.CreatedAt, &l.OptOuts, &l.RuleID); err != nil {
 		return nil, notFound(err)
 	}
 	l.Enabled, l.LastUsedAt = en == 1, nullStr(used)
@@ -92,15 +95,56 @@ func (s *Store) namedLink(ctx context.Context) func(*AppLink, error) (*AppLink, 
 	}
 }
 
-// LinkWant is one (target, scope) an app's manifest asks for.
+// EveryApp as a LinkWant's Target asks for the scope in every app that offers it.
+const EveryApp = "*"
+
+// LinkWant is one (target, scope) an app's manifest asks for. Target EveryApp
+// makes a rule instead of a link.
 type LinkWant struct {
 	Target, Scope, Reason string
+}
+
+// LinkRule is an app asking for one scope in every app that offers it.
+type LinkRule struct {
+	ID        int64  `json:"id"`
+	AppID     int64  `json:"app_id"`
+	AppSlug   string `json:"app_slug"`
+	AppName   string `json:"app_name"`
+	Scope     string `json:"scope"`
+	Reason    string `json:"reason"`
+	Enabled   bool   `json:"enabled"`
+	CreatedAt string `json:"created_at"`
+	// Links are the apps the rule reaches now; LinksOn how many of those are switched on.
+	Links   int `json:"links"`
+	LinksOn int `json:"links_on"`
+}
+
+// manifestOffers reads the scopes an app's stored manifest offers.
+func manifestOffers(manifest string) map[string]bool {
+	var m struct {
+		Offers []struct {
+			Scope string `json:"scope"`
+		} `json:"offers"`
+	}
+	_ = json.Unmarshal([]byte(manifest), &m)
+	out := map[string]bool{}
+	for _, o := range m.Offers {
+		out[o.Scope] = true
+	}
+	return out
 }
 
 // SyncAppLinks makes the app's links match its manifest: new ones are
 // approved only at enrollment; updates require an admin grant. Existing
 // approvals and opt-outs survive removal and re-addition of a declaration.
+//
+// Rules (Target EveryApp) are kept the same way, and in the same transaction
+// the links they stand for are brought up to date in both directions: this
+// app's rules reach every app that offers the scope, and every other app's
+// rules reach this app for what it offers now. A link a rule makes starts as
+// the rule stands; one that exists keeps its own switch.
 func (s *Store) SyncAppLinks(ctx context.Context, appID int64, wants []LinkWant, approveNew ...bool) error {
+	approve := boolInt(len(approveNew) > 0 && approveNew[0])
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -109,11 +153,182 @@ func (s *Store) SyncAppLinks(ctx context.Context, appID int64, wants []LinkWant,
 	if _, err = tx.ExecContext(ctx, `UPDATE app_links SET declared=0 WHERE app_id=?`, appID); err != nil {
 		return err
 	}
+	if _, err = tx.ExecContext(ctx, `UPDATE app_link_rules SET declared=0 WHERE app_id=?`, appID); err != nil {
+		return err
+	}
 	for _, w := range wants {
+		if w.Target == EveryApp {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO app_link_rules(app_id,scope,reason,enabled,declared) VALUES(?,?,?,?,1)
+   ON CONFLICT(app_id,scope) DO UPDATE SET reason=excluded.reason,declared=1`, appID, w.Scope, w.Reason, approve); err != nil {
+				return err
+			}
+			continue
+		}
+		// named by the app itself: the link is its own, whatever rule made it before
 		if _, err = tx.ExecContext(ctx, `INSERT INTO app_links(app_id,target_slug,scope,reason,enabled,declared) VALUES(?,?,?,?,?,1)
-   ON CONFLICT(app_id,target_slug,scope) DO UPDATE SET reason=excluded.reason,declared=1`, appID, w.Target, w.Scope, w.Reason, boolInt(len(approveNew) > 0 && approveNew[0])); err != nil {
+   ON CONFLICT(app_id,target_slug,scope) DO UPDATE SET reason=excluded.reason,declared=1,rule_id=0`, appID, w.Target, w.Scope, w.Reason, approve); err != nil {
 			return err
 		}
+	}
+
+	// who offers what, and this app's slug
+	type offering struct {
+		id     int64
+		slug   string
+		offers map[string]bool
+	}
+	var apps []offering
+	var self offering
+	rows, err := tx.QueryContext(ctx, `SELECT id, slug, manifest FROM apps`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var o offering
+		var m string
+		if err = rows.Scan(&o.id, &o.slug, &m); err != nil {
+			rows.Close()
+			return err
+		}
+		o.offers = manifestOffers(m)
+		if o.id == appID {
+			self = o
+		}
+		apps = append(apps, o)
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	type rule struct {
+		id, appID int64
+		scope     string
+		reason    string
+		enabled   int
+	}
+	var rules []rule
+	rows, err = tx.QueryContext(ctx, `SELECT id, app_id, scope, reason, enabled FROM app_link_rules WHERE declared=1`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r rule
+		if err = rows.Scan(&r.id, &r.appID, &r.scope, &r.reason, &r.enabled); err != nil {
+			rows.Close()
+			return err
+		}
+		rules = append(rules, r)
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	// A link the app named itself (declared, rule_id 0) is left as it is.
+	const upsert = `INSERT INTO app_links(app_id,target_slug,scope,reason,enabled,declared,rule_id) VALUES(?,?,?,?,?,1,?)
+   ON CONFLICT(app_id,target_slug,scope) DO UPDATE SET
+     reason  = CASE WHEN declared=1 AND rule_id=0 THEN reason ELSE excluded.reason END,
+     rule_id = CASE WHEN declared=1 AND rule_id=0 THEN 0 ELSE excluded.rule_id END,
+     declared = 1`
+	for _, r := range rules {
+		if r.appID == appID {
+			for _, t := range apps {
+				if t.id != appID && t.offers[r.scope] {
+					if _, err = tx.ExecContext(ctx, upsert, appID, t.slug, r.scope, r.reason, r.enabled, r.id); err != nil {
+						return err
+					}
+				}
+			}
+		} else if self.slug != "" && self.offers[r.scope] {
+			if _, err = tx.ExecContext(ctx, upsert, r.appID, self.slug, r.scope, r.reason, r.enabled, r.id); err != nil {
+				return err
+			}
+		}
+	}
+	// Links rules made into this app for something it no longer offers go away
+	// (they come back, switches kept, if it offers it again).
+	if self.slug != "" {
+		lrows, err := tx.QueryContext(ctx, `SELECT id, scope FROM app_links WHERE target_slug=? AND rule_id>0 AND declared=1`, self.slug)
+		if err != nil {
+			return err
+		}
+		var gone []int64
+		for lrows.Next() {
+			var id int64
+			var scope string
+			if err = lrows.Scan(&id, &scope); err != nil {
+				lrows.Close()
+				return err
+			}
+			if !self.offers[scope] {
+				gone = append(gone, id)
+			}
+		}
+		if err = lrows.Close(); err != nil {
+			return err
+		}
+		for _, id := range gone {
+			if _, err = tx.ExecContext(ctx, `UPDATE app_links SET declared=0 WHERE id=?`, id); err != nil {
+				return err
+			}
+		}
+	}
+	// ...and so do the links of rules no app declares any more.
+	if _, err = tx.ExecContext(ctx, `UPDATE app_links SET declared=0 WHERE rule_id>0 AND declared=1 AND rule_id NOT IN (SELECT id FROM app_link_rules WHERE declared=1)`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+const ruleCols = `r.id, r.app_id, a.slug, a.name, a.custom_name, r.scope, r.reason, r.enabled, r.created_at,
+	(SELECT COUNT(*) FROM app_links l WHERE l.rule_id = r.id AND l.declared = 1),
+	(SELECT COUNT(*) FROM app_links l WHERE l.rule_id = r.id AND l.declared = 1 AND l.enabled = 1)`
+
+func (s *Store) scanRule(ctx context.Context, sc interface{ Scan(...any) error }) (*LinkRule, error) {
+	var r LinkRule
+	var custom string
+	var en int
+	if err := sc.Scan(&r.ID, &r.AppID, &r.AppSlug, &r.AppName, &custom, &r.Scope, &r.Reason, &en, &r.CreatedAt, &r.Links, &r.LinksOn); err != nil {
+		return nil, notFound(err)
+	}
+	r.Enabled = en == 1
+	r.AppName = DisplayName(r.AppName, custom, s.familyName(ctx))
+	return &r, nil
+}
+
+// ListLinkRules returns every declared rule on the box.
+func (s *Store) ListLinkRules(ctx context.Context) ([]LinkRule, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+ruleCols+` FROM app_link_rules r JOIN apps a ON a.id = r.app_id WHERE r.declared = 1 ORDER BY a.name, r.scope`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []LinkRule{}
+	for rows.Next() {
+		r, err := s.scanRule(ctx, rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+// GetLinkRule loads one rule.
+func (s *Store) GetLinkRule(ctx context.Context, id int64) (*LinkRule, error) {
+	return s.scanRule(ctx, s.DB.QueryRowContext(ctx, `SELECT `+ruleCols+` FROM app_link_rules r JOIN apps a ON a.id = r.app_id WHERE r.id = ?`, id))
+}
+
+// SetLinkRuleEnabled flips a rule and every link it made: one switch for
+// "every app", after which each link can still be switched on its own.
+func (s *Store) SetLinkRuleEnabled(ctx context.Context, id int64, on bool) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE app_link_rules SET enabled = ? WHERE id = ?`, boolInt(on), id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE app_links SET enabled = ? WHERE rule_id = ?`, boolInt(on), id); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

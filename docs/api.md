@@ -41,7 +41,7 @@ See [MCP setup, tools and examples](mcp.md).
 
 ## App links
 
-See [links](links.md): `POST /links/token` and `GET /links/status` (app), `GET /links` · `PUT /links/{id}` (admin), `GET /me/links` · `PUT /me/links/{id}` (person). For a `pcx_` token, `/auth/introspect` answers `{active, kind: "delegated", scope, audience, user, app}` only to the target app.
+See [links](links.md): `POST /links/token` and `GET /links/status` (app), `GET /links` · `PUT /links/{id}` and `GET /link-rules` · `PUT /link-rules/{id}` (admin; a rule is one scope in [every app that offers it](links.md#every-app)), `GET /me/links` · `PUT /me/links/{id}` (person). For a `pcx_` token, `/auth/introspect` answers `{active, kind: "delegated", scope, audience, user, app}` only to the target app.
 
 ## Services & catalog
 | Method | Path | Who | Notes |

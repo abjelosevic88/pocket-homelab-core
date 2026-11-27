@@ -498,7 +498,8 @@ Report anything you find privately before opening an issue: see [SECURITY.md](SE
 | [docs/pairing.md](docs/pairing.md) | the QR flow and the profile format |
 | [docs/push.md](docs/push.md) | notifications to Pocket Hub through the Pocket Push relay |
 | [docs/oidc.md](docs/oidc.md) | endpoints, claims, relying-party recipes |
-| [docs/links.md](docs/links.md) | App links: one Pocket app acting for a person in another (`uses` / `offers`, `pcx_` tokens, per-person switches) |
+| [docs/links.md](docs/links.md) | App links: one Pocket app acting for a person in another (`uses` / `offers`, `pcx_` tokens, per-person switches, "every app" rules) |
+| [docs/capabilities.md](docs/capabilities.md) | Capabilities: an app says it can be searched, tell its day, show a widget or keep a quick line, and Pocket Search, Day and Hub find it on their own |
 | [docs/connectors.md](docs/connectors.md) | Core acting on third-party apps: accounts, sign-in, events (Immich first); how to write one |
 | [docs/api.md](docs/api.md) | the whole REST surface |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | Application tools, permissions, examples and adding adapters |

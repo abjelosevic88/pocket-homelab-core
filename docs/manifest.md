@@ -14,6 +14,7 @@ Content-Type: application/json
   "name": "Pocket Kitchen",
   "description": "Recipes, meal plan, shopping list, pantry.",
   "icon": "/favicon.svg",
+  "category": "Home",
   "version": "1.2.0",
   "url": "http://pocket-kitchen:8080",
   "public_url": "https://kitchen.example.com",
@@ -33,16 +34,21 @@ Content-Type: application/json
 |---|---|---|
 | `slug` | yes | Lowercase id, stable across versions. Topics the app publishes must start with `<slug>.` |
 | `name`, `description`, `icon`, `version` | name | Shown in Core and handed to paired devices. `icon` may be a path under `url`. |
+| `category` | no | The shelf the app sits on in a launcher ("Money", "Home", "Media"…), in the app's own word (at most 40 characters). |
 | `url` | yes | Where Core and sibling apps reach the app (container name, LAN address). Health checks hit `url + health_path`. |
 | `public_url` | no | What a phone opens; defaults to `url`. |
 | `health_path` | no | Default `/healthz`. Core reads `{"status","version"}` from it every `HEALTH_INTERVAL`. |
-| `env_prefix` | no | Key prefix in a device profile (`KITCHEN_URL`, `KITCHEN_API_KEY`). Defaults to the catalog entry for the slug, else the upper-cased slug. |
+| `env_prefix` | no | Key prefix in a device profile (`KITCHEN_URL`, `KITCHEN_API_KEY`). Defaults to the upper-cased slug (`-` → `_`); Core's own catalog only matters for the few apps whose prefix differs from their slug. |
 | `publishes` | no | Informational list of topics. |
 | `subscribes` | no | Webhooks Core should create. `url` may be relative to `url`. Deliveries carry `X-Pocket-Signature: sha256=<hmac>` when `secret` is set. Idempotent on `url`. |
 | `oidc` | no | Ask for an OpenID Connect client `pocket-<slug>`. `public: true` makes a PKCE-only client without a secret. |
 | `services` | no | Third-party services the app reaches for a person through Core: `{type, reason}` (catalog types like `immich`, `maloja`). Core hands out the address and the person's own key; see [links](links.md#service-connections). |
 | `offers` | no | Scopes other apps may use here for a person: `{scope, name, description}`. Shown to admins and people on the Links page. See [links](links.md). |
-| `uses` | no | What this app does in other apps for a person: `{app, scopes, reason}`. Core creates one link per scope, switched on; dropping a use deletes it. |
+| `uses` | no | What this app does in other apps for a person: `{app, scopes, reason}`. Core creates one link per scope, switched on; dropping a use deletes it. `"app": "*"` asks for the scopes in [every app that offers them](links.md#every-app). |
+| `portable` | no | What Pocket Move may copy out and bring in: see [move](move.md). |
+| `search`, `day`, `widget`, `capture` | no | What Pocket Search, Day and Hub may ask the app, each on one fixed route: see [capabilities](capabilities.md). The SDK adds the matching `pocket:*` offers. |
+
+A new app needs **no change in Core**: everything Core shows about it comes from this manifest. Core's built-in catalog and bundled icons are for apps and services that are not installed yet.
 
 ## The response
 

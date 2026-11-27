@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api, V1 } from '../lib/api'
 import { ago, formatVersion, shortName } from '../lib/format'
-import type { App, AppLink } from '../lib/types'
+import type { App, AppLink, LinkRule } from '../lib/types'
 import { AppIcon } from '../components/AppIcon'
 import { Icon } from '../components/icons'
 import { bundledIcon } from '../lib/icons'
@@ -179,8 +179,21 @@ function PairBox({ g, side, apps, onOpen, flip }: { g: LinkGroup; side: Side; ap
   )
 }
 
-function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll, flip }: {
-  s: Subject; side: Side; apps: App[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void; flip: (l: AppLink, on: boolean) => void
+// "In every app that offers it": one switch for all the links a rule made, and for apps installed later.
+function RuleRow({ r, flip }: { r: LinkRule; flip: (r: LinkRule, on: boolean) => void }) {
+  return (
+    <div className={`lk-rule${r.enabled ? '' : ' off'}`}>
+      <div className="grow">
+        <div><b>{r.scope_name}</b> in every app that offers it <span className="muted small">· {r.links_on} of {plural(r.links, 'app')} on</span></div>
+        <div className="muted small">{r.reason ? `${r.reason}. ` : ''}An app you install later starts {r.enabled ? 'on' : 'off'}; each app keeps its own switch below.</div>
+      </div>
+      <Switch on={r.enabled} onChange={on => flip(r, on)} title={r.enabled ? 'On in every app that offers it, new apps included' : 'Off in every app'} />
+    </div>
+  )
+}
+
+function SubjectCard({ s, side, apps, rules, open, toggle, onOpen, setAll, flip, flipRule }: {
+  s: Subject; side: Side; apps: App[]; rules: LinkRule[]; open: boolean; toggle: () => void; onOpen: (g: LinkGroup) => void; setAll: (pairs: LinkGroup[], on: boolean, what: string) => void; flip: (l: AppLink, on: boolean) => void; flipRule: (r: LinkRule, on: boolean) => void
 }) {
   const off = s.pairs.filter(g => ['off', 'partial'].includes(pairState(g))).length
   const bad = s.pairs.filter(g => pairState(g) === 'bad').length
@@ -207,6 +220,7 @@ function SubjectCard({ s, side, apps, open, toggle, onOpen, setAll, flip }: {
       </button>
       <Collapse open={open}>
         <div className="lk-body">
+          {open && rules.length > 0 && <div className="lk-rules">{rules.map(r => <RuleRow key={r.id} r={r} flip={flipRule} />)}</div>}
           {s.sections.map(sec => {
             const allOn = sec.pairs.every(g => g.links.every(l => l.enabled))
             return (
@@ -229,6 +243,8 @@ export default function Links() {
   const { toast } = useToast()
   const { data, loading, reload } = useAsync(() => api.get<AppLink[]>(`${V1}/links`), [])
   const { data: apps } = useAsync(() => api.get<App[]>(`${V1}/apps`), [])
+  const { data: rules, reload: reloadRules } = useAsync(() => api.get<LinkRule[]>(`${V1}/link-rules`).catch(() => [] as LinkRule[]), [])
+  const [ruleOff, setRuleOff] = useState<LinkRule | null>(null)
   const [side, setSideState] = useState<Side>(() => localStorage.getItem('core.links.side') === 'reached' ? 'reached' : 'uses')
   const [filter, setFilter] = useState<Filter>('all')
   const [q, setQ] = useState('')
@@ -248,6 +264,11 @@ export default function Links() {
     reload(); toast(on ? `${plural(todo.length, 'link')} on` : `${plural(todo.length, 'link')} off for everyone`)
   }
   const setAll = (pairs: LinkGroup[], on: boolean, what: string) => on ? switchAll(pairs, true) : setBulk({ pairs, what })
+  const switchRule = async (r: LinkRule, on: boolean) => {
+    await api.put(`${V1}/link-rules/${r.id}`, { enabled: on }); reload(); reloadRules()
+    toast(on ? `${r.scope_name}: on in every app` : `${r.scope_name}: off in every app`)
+  }
+  const flipRule = (r: LinkRule, on: boolean) => on ? switchRule(r, true) : setRuleOff(r)
 
   // A card shows when its own name matches (all its pairs), or only the pairs whose other side or scopes match.
   const needle = q.trim().toLowerCase()
@@ -272,7 +293,7 @@ export default function Links() {
   const pair = picked ? groups.find(g => g.key === picked) : undefined
   const bad = groups.filter(g => pairState(g) === 'bad')
   const pocketCards = shown.filter(s => !s.service), serviceCards = shown.filter(s => s.service)
-  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} flip={flip} />
+  const card = (s: Subject) => <SubjectCard key={s.slug} s={s} side={side} apps={apps || []} rules={side === 'uses' ? (rules || []).filter(r => r.app_slug === s.slug) : []} flipRule={flipRule} open={isOpen(s.slug)} toggle={() => toggle(s.slug)} onOpen={g => setPicked(g.key)} setAll={setAll} flip={flip} />
   const ico = (slug: string, name: string) => <Ico slug={slug} name={name} apps={apps || []} />
 
   return (
@@ -308,6 +329,9 @@ export default function Links() {
         <Modal className="lv-modal" onClose={() => setPicked(null)} title={<span className="lv-modal-title">{ico(pair.app, pair.appName)}{pair.appName}<span className="muted">→</span>{ico(pair.target, pair.targetName)}{pair.targetName}</span>}>
           <LinkPair g={pair} apps={apps || []}>{pair.links.map(l => <ScopeRow key={l.id} l={l} flip={flip} />)}</LinkPair>
         </Modal>)}
+      {ruleOff && <Confirm title="Switch it off in every app?" confirmLabel="Switch off"
+        message={<>{ruleOff.app_name} will no longer be allowed to “{ruleOff.scope_name.toLowerCase()}” in any of the {plural(ruleOff.links, 'app')} that offer it, for everyone on the box, and apps you install later start off too.</>}
+        onCancel={() => setRuleOff(null)} onConfirm={() => { const r = ruleOff; setRuleOff(null); switchRule(r, false) }} />}
       {bulk && <Confirm title="Switch these links off?" confirmLabel="Switch off"
         message={<>This switches off {plural(bulk.pairs.length, 'connection')} ({bulk.what}) for everyone on the box. Features that rely on them stop working until you switch them back on.</>}
         onCancel={() => setBulk(null)} onConfirm={() => { const b = bulk; setBulk(null); switchAll(b.pairs, false) }} />}

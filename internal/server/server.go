@@ -395,6 +395,8 @@ func (s *Server) Router() http.Handler {
 
 				r.Get("/links", s.handleListLinks)
 				r.Put("/links/{id}", s.handleUpdateLink)
+				r.Get("/link-rules", s.handleListLinkRules)
+				r.Put("/link-rules/{id}", s.handleUpdateLinkRule)
 
 				r.Get("/connectors", s.handleListConnectors)
 				r.Get("/services/{id}/connector", s.handleGetConnector)

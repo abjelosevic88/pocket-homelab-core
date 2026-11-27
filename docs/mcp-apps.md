@@ -309,7 +309,7 @@ are held in Core's database; protect backups as you would other user data.
 
 ## Adding or extending an application
 
-Add reviewed operations to `internal/server/mcp_app_catalog.go`, reusing an app's
+Add reviewed operations to the app's function in `internal/server/mcp_catalog_<domain>.go` (a new app: a new function, called from `buildMCPAppCatalog` in `mcp_app_catalog.go`), then update the count and hash in `mcp_app_catalog_golden_test.go` after reading the diff of the dump (`MCP_CATALOG_DUMP=file go test -run Golden`), reusing an app's
 existing user-authenticated API. Define strict JSON fields, required inputs, units,
 update semantics and fixed route parameters. Do not add arbitrary API dispatch.
 For replacement-style APIs, preserve omitted values explicitly or require a

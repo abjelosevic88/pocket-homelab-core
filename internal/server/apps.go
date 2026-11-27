@@ -14,6 +14,7 @@ import (
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/catalog"
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
+	coreSDK "github.com/abjelosevic88/pocket-homelab-core/sdk"
 )
 
 // Manifest is what a Pocket app sends when it registers. See docs/manifest.md.
@@ -22,6 +23,7 @@ type Manifest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Icon        string   `json:"icon,omitempty"`
+	Category    string   `json:"category,omitempty"` // the shelf it sits on in a launcher, in the app's own word
 	Version     string   `json:"version,omitempty"`
 	URL         string   `json:"url"`
 	PublicURL   string   `json:"public_url,omitempty"`
@@ -41,6 +43,10 @@ type Manifest struct {
 	// Services are third-party services the app reaches for a person through Core.
 	Services []ServiceUse `json:"services,omitempty"`
 	Uses     []Use        `json:"uses,omitempty"` // what this app does in other apps for a person
+	// Portable is what Pocket Move may copy out and bring in (docs/move.md); kept as sent.
+	Portable json.RawMessage `json:"portable,omitempty"`
+	// Capabilities: search, day, widget, capture (docs/capabilities.md).
+	coreSDK.Capabilities
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
@@ -85,6 +91,12 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	m.EnvPrefix = strings.ToUpper(m.EnvPrefix)
+	if m.Category = strings.TrimSpace(m.Category); len(m.Category) > 40 {
+		m.Category = ""
+	}
+	if len(m.Portable) > 64<<10 {
+		m.Portable = nil
+	}
 	m.Offers = cleanOffers(m.Offers)
 	wants := append(cleanUses(m.Slug, m.Uses), cleanServiceUses(m.Services)...)
 	raw, _ := json.Marshal(m)
@@ -271,7 +283,16 @@ func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err, "resolve")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"slug": a.Slug, "name": a.Name, "url": a.URL, "public_url": a.EffectivePublicURL(), "status": a.Status, "version": a.Version})
+	writeJSON(w, http.StatusOK, map[string]any{"slug": a.Slug, "name": a.Name, "url": a.URL, "public_url": a.EffectivePublicURL(), "status": a.Status, "version": a.Version, "category": appCategory(a)})
+}
+
+// appCategory is the shelf the app named for itself in its manifest.
+func appCategory(a *store.App) string {
+	var m struct {
+		Category string `json:"category"`
+	}
+	_ = json.Unmarshal(a.Manifest, &m)
+	return m.Category
 }
 
 func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {

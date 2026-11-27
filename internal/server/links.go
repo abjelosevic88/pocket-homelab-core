@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/abjelosevic88/pocket-homelab-core/internal/store"
+	coreSDK "github.com/abjelosevic88/pocket-homelab-core/sdk"
 )
 
 // App links: one Pocket app acting for a person in another. The acting app
@@ -47,6 +48,17 @@ const (
 	linkNotInAudience = "not_in_audience" // the person may not use one of the two apps
 	linkNotDeclared   = "not_declared"    // the acting app never asked for it
 )
+
+// capabilityOffers are the SDK's own words for the pocket:* scopes, for a rule
+// (which has no single target to ask).
+var capabilityOffers = func() map[string]coreSDK.Offer {
+	all := coreSDK.Capabilities{Search: &coreSDK.Searchable{}, Day: &coreSDK.DayFeed{}, Widget: &coreSDK.Widget{}, Capture: &coreSDK.QuickCapture{Kinds: []coreSDK.CaptureKind{{Kind: "x"}}}}
+	out := map[string]coreSDK.Offer{}
+	for _, o := range all.Offers() {
+		out[o.Scope] = o
+	}
+	return out
+}()
 
 var linkStateText = map[string]string{
 	linkOn:            "on",
@@ -92,7 +104,8 @@ func cleanUses(self string, in []Use) []store.LinkWant {
 	seen := map[[2]string]bool{}
 	for _, u := range in {
 		target := strings.ToLower(strings.TrimSpace(u.App))
-		if !slugRe.MatchString(target) || target == self {
+		// "*" = every app that offers the scope (a rule, see store.SyncAppLinks)
+		if target != store.EveryApp && (!slugRe.MatchString(target) || target == self) {
 			continue
 		}
 		for _, sc := range u.Scopes {
@@ -242,6 +255,7 @@ func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	only := strings.ToLower(r.URL.Query().Get("app"))
+	scope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("scope")))
 	links, err := s.store.ListAppLinks(ctx, caller.App.ID)
 	if err != nil {
 		s.fail(w, err, "links")
@@ -250,13 +264,53 @@ func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
 	out := []map[string]any{}
 	for i := range links {
 		l := &links[i]
-		if only != "" && l.TargetSlug != only {
+		if (only != "" && l.TargetSlug != only) || (scope != "" && l.Scope != scope) {
 			continue
 		}
 		st := s.linkState(ctx, l, u)
-		out = append(out, map[string]any{"app": l.TargetSlug, "scope": l.Scope, "state": st, "on": st == linkOn, "detail": linkStateText[st]})
+		row := map[string]any{"app": l.TargetSlug, "scope": l.Scope, "state": st, "on": st == linkOn, "detail": linkStateText[st]}
+		// With ?scope= the caller is finding out who offers something (sdk.Capable): say who each app is.
+		if scope != "" {
+			if t := s.linkTarget(ctx, l.TargetSlug); t != nil {
+				row["target"] = t
+			}
+		}
+		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// linkTarget is what an app that found another through a rule needs to show
+// it and to talk to it: its name, icon, addresses and what its manifest says
+// about its capabilities. Nil for a service or an app that is not registered.
+func (s *Server) linkTarget(ctx context.Context, slug string) map[string]any {
+	if _, ok := serviceType(slug); ok {
+		return nil
+	}
+	a, err := s.store.GetAppBySlug(ctx, slug)
+	if err != nil {
+		return nil
+	}
+	var m Manifest
+	_ = json.Unmarshal(a.Manifest, &m)
+	icon := a.Icon
+	if icon != "" && !strings.HasPrefix(icon, "http://") && !strings.HasPrefix(icon, "https://") {
+		icon = strings.TrimRight(a.EffectivePublicURL(), "/") + "/" + strings.TrimLeft(icon, "/")
+	}
+	t := map[string]any{"name": a.Name, "icon": icon, "url": a.URL, "public_url": a.EffectivePublicURL(), "version": a.Version, "category": m.Category}
+	if m.Search != nil {
+		t["search"] = m.Search
+	}
+	if m.Day != nil {
+		t["day"] = m.Day
+	}
+	if m.Widget != nil {
+		t["widget"] = m.Widget
+	}
+	if m.Capture != nil {
+		t["capture"] = m.Capture
+	}
+	return t
 }
 
 // introspectLinkToken answers for a pcx_ token: only the target app (or an
@@ -308,7 +362,7 @@ func (s *Server) introspectLinkToken(w http.ResponseWriter, r *http.Request, cal
 func (s *Server) linkView(ctx context.Context, l *store.AppLink, u *store.User) map[string]any {
 	v := map[string]any{"id": l.ID, "app_slug": l.AppSlug, "app_name": l.AppName, "target_slug": l.TargetSlug, "target_name": l.TargetSlug,
 		"scope": l.Scope, "scope_name": l.Scope, "scope_description": "", "reason": l.Reason, "enabled": l.Enabled,
-		"uses": l.Uses, "last_used_at": l.LastUsedAt, "opt_outs": l.OptOuts, "target_registered": false, "offered": false}
+		"uses": l.Uses, "last_used_at": l.LastUsedAt, "opt_outs": l.OptOuts, "target_registered": false, "offered": false, "rule_id": l.RuleID}
 	if typ, ok := serviceType(l.TargetSlug); ok {
 		s.serviceLinkView(ctx, v, typ, u)
 	} else if target, err := s.store.GetAppBySlug(ctx, l.TargetSlug); err == nil {
@@ -436,6 +490,55 @@ func (s *Server) handleUpdateLink(w http.ResponseWriter, r *http.Request) {
 	_ = s.hub.Publish(r.Context(), &store.Event{Topic: "core.link.changed", Source: "core", Subject: "app:" + l.AppSlug,
 		Payload: mustJSON(map[string]any{"app": l.AppSlug, "target": l.TargetSlug, "scope": l.Scope, "enabled": l.Enabled})})
 	writeJSON(w, http.StatusOK, s.linkView(r.Context(), l, nil))
+}
+
+// handleListLinkRules is the admin's view of the "every app" rules: an app
+// asking for one scope in every app that offers it.
+func (s *Server) handleListLinkRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := s.store.ListLinkRules(r.Context())
+	if err != nil {
+		s.fail(w, err, "link rules")
+		return
+	}
+	out := make([]map[string]any, 0, len(rules))
+	for i := range rules {
+		out = append(out, s.linkRuleView(&rules[i]))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) linkRuleView(r *store.LinkRule) map[string]any {
+	name, desc := r.Scope, ""
+	if o, ok := capabilityOffers[r.Scope]; ok {
+		name, desc = o.Name, o.Description
+	}
+	return map[string]any{"id": r.ID, "app_slug": r.AppSlug, "app_name": r.AppName, "scope": r.Scope, "scope_name": name, "scope_description": desc,
+		"reason": r.Reason, "enabled": r.Enabled, "links": r.Links, "links_on": r.LinksOn, "created_at": r.CreatedAt}
+}
+
+// handleUpdateLinkRule flips a rule: every link it made follows, and apps
+// installed later start the same way. Each link keeps its own switch after.
+func (s *Server) handleUpdateLinkRule(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decode(r, &in); err != nil || in.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "enabled required")
+		return
+	}
+	rule, err := s.store.GetLinkRule(r.Context(), idParam(r, "id"))
+	if err != nil {
+		s.fail(w, err, "link rule")
+		return
+	}
+	if err := s.store.SetLinkRuleEnabled(r.Context(), rule.ID, *in.Enabled); err != nil {
+		s.fail(w, err, "link rule")
+		return
+	}
+	rule, _ = s.store.GetLinkRule(r.Context(), rule.ID)
+	_ = s.hub.Publish(r.Context(), &store.Event{Topic: "core.link.changed", Source: "core", Subject: "app:" + rule.AppSlug,
+		Payload: mustJSON(map[string]any{"app": rule.AppSlug, "target": store.EveryApp, "scope": rule.Scope, "enabled": rule.Enabled})})
+	writeJSON(w, http.StatusOK, s.linkRuleView(rule))
 }
 
 // handleMyLinks lists the links that can act for the caller, with their own switch.

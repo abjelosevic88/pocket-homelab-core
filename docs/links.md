@@ -27,9 +27,25 @@ The acting app lists what it needs under `uses`; the target lists what it allows
 
 Scopes match `^[a-z0-9][a-z0-9_.:-]{0,60}$`. Core makes one **link** per (app, target, scope). Initial enrollment approves its declared links. Newly requested scopes on later manifest updates start **off** until an admin approves them. Removing a declaration hides the link but preserves approvals and opt-outs for a later re-addition.
 
+## Every app
+
+An app that works across the whole box (Pocket Search finding things in every app, Pocket Day reading each app's day) does not list the apps one by one. It asks for one scope **in every app that offers it**:
+
+```json
+"uses": [{ "app": "*", "scopes": ["pocket:search"], "reason": "Find your things in every app that can be searched" }]
+```
+
+That is a **rule**. Core keeps an ordinary link for it to each registered app that offers the scope: made when the rule is declared and whenever an app that offers the scope registers, hidden when the app stops offering it (its switches come back if it offers it again). The links behave like any other (tokens, the admin's switch, each person's switch); `rule_id` on a link says which rule made it. A link the app also names itself (`"app": "notes"`) is its own and the rule leaves it alone.
+
+- The rule has **one switch** (`PUT /link-rules/{id} {"enabled"}`): it sets every link the rule made, and it is how a link to an app installed later starts. After that each link can be switched on its own.
+- A rule in the manifest an app enrolls with is approved; one added by an update starts off, links included, until an admin switches it on.
+- `"*"` is never a target: there is no token for it.
+
+The scopes meant for this are the [capabilities](capabilities.md) (`pocket:search`, `pocket:day`, `pocket:widget`, `pocket:capture`), but any scope works.
+
 ## The Links page
 
-Admins see every link as one list, a card per app. A closed card says in a line what the app adds up to ("Changes 3 apps · looks at 1 · signs in to 1 service") with the icons of the apps on the other side; opened, it groups them into **Changes things in** (any scope that writes), **Only looks at** (read scopes only) and **Signs in to** (services, with each person's own account). Each link is a box with the other app on top and one switch per scope under it, marked *Can't work* or ↗ *Direct* when so; tap the app's name for the details: why the app asks, usage, how each person connects, key replacement notes. A group with more than one link has **Switch all off / on** (off asks first).
+Admins see every link as one list, a card per app. An app with an "every app" rule shows it first in its opened card: what it does "in every app that offers it", how many of those are on, and the rule's switch (switching off asks first). A closed card says in a line what the app adds up to ("Changes 3 apps · looks at 1 · signs in to 1 service") with the icons of the apps on the other side; opened, it groups them into **Changes things in** (any scope that writes), **Only looks at** (read scopes only) and **Signs in to** (services, with each person's own account). Each link is a box with the other app on top and one switch per scope under it, marked *Can't work* or ↗ *Direct* when so; tap the app's name for the details: why the app asks, usage, how each person connects, key replacement notes. A group with more than one link has **Switch all off / on** (off asks first).
 
 - **What each app uses / Who reaches each app** turns the cards around: one card per app or service, with the apps that can change it, the apps that can only look, and the scopes it offers that nobody uses yet. Services get their own section.
 - **Search** matches app and service names and scope names; a card whose own name matches keeps all its links.
@@ -80,11 +96,12 @@ Core checks the links again at every introspection, and `ActAs` asks Core for a 
 | Method | Path | Who | |
 |---|---|---|---|
 | POST | `/links/token` | app | `{user, app, scope \| scopes}` → `{access_token, token_type, expires_in, scope, app, url, public_url}`; `403 {error, reason, scope}` |
-| GET | `/links/status?user=&app=` | app | the caller's links for that person: `[{app, scope, state, on, detail}]` |
-| GET | `/links` · PUT `/links/{id}` | admin | every link with names, state, `uses`, `last_used_at`, `opt_outs` / `{enabled}` |
+| GET | `/links/status?user=&app=&scope=` | app | the caller's links for that person: `[{app, scope, state, on, detail}]`. With `scope=` only that scope, and each row carries `target`: `{name, icon, url, public_url, version, category, search?, day?, widget?, capture?}` (the target's own words from its manifest; SDK `Capable`) |
+| GET | `/links` · PUT `/links/{id}` | admin | every link with names, state, `uses`, `last_used_at`, `opt_outs`, `rule_id` / `{enabled}` |
+| GET | `/link-rules` · PUT `/link-rules/{id}` | admin | the "every app" rules: `{id, app_slug, app_name, scope, scope_name, scope_description, reason, enabled, links, links_on}` / `{enabled}` (sets the rule and every link it made) |
 | GET | `/me/links` · PUT `/me/links/{id}` | person | links that can act for the caller, with `on_for_me` / `{enabled}` (their own switch) |
 
-Changing the box-wide switch publishes `core.link.changed`.
+Changing the box-wide switch publishes `core.link.changed` (a rule's switch with `target: "*"`).
 
 ## Service connections
 

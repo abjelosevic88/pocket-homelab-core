@@ -94,6 +94,21 @@ export interface AppLink {
   on_for_me?: boolean
   key_rotation?: KeyRotation
   key_replacements?: KeyReplacement[]
+  /** The "every app" rule that made the link; 0 or absent = the app named the target itself. */
+  rule_id?: number
+}
+/** An app asking for one scope in every app that offers it: one switch for all of them, apps installed later included. */
+export interface LinkRule {
+  id: number
+  app_slug: string
+  app_name: string
+  scope: string
+  scope_name: string
+  scope_description: string
+  reason: string
+  enabled: boolean
+  links: number
+  links_on: number
 }
 /** The Pocket Box itself, from its agent (Settings → System, the setup wizard). */
 export interface BoxSystem {

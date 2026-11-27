@@ -90,7 +90,7 @@ No remote image URL, cloud password or Photos session is forwarded to the model.
 
 ## Extending and checking
 
-`internal/server/mcp_app_catalog.go` defines reviewed tools; `sdk/ask-widget.js`
+`internal/server/mcp_catalog_*.go` define the reviewed tools, one file per domain (`mcp_app_catalog.go` holds the builder and their order); `sdk/ask-widget.js`
 defines the reusable launcher; `internal/server/ask.html` is the responsive panel.
 Run `scripts/sync-sdk.py` after SDK changes; it includes embedded assets and updates
 checksums for every app. An application can open Ask programmatically with:
