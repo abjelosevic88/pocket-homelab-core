@@ -6,7 +6,8 @@
 # This file (deploy/install.sh in pocket-homelab-core) is the source: pockethomelab.com/install.sh is
 # a copy of it (public/install.sh in pocket-homelab-web). Change it here, then copy it over.
 #
-# What it does (Linux with Docker; it offers to install Docker if missing):
+# What it does (Linux with Docker, where it offers to install Docker if missing; or a Mac with
+# Docker Desktop, OrbStack or Colima, which it starts when it isn't running):
 #   - writes ~/pocket/docker-compose.yml + .env: Pocket Core, the installer agent (Install / Update /
 #     Remove apps from Core's web page), and Caddy and Tailscale for when they are switched on
 #   - starts them and prints the address of Core's setup page
@@ -72,6 +73,11 @@ ask() { # ask "question" → 0 for yes
 	read -r a </dev/tty || a=n
 	case "$a" in "" | y | Y | yes) return 0 ;; *) return 1 ;; esac
 }
+MAC=0
+[ "$(uname -s)" = Darwin ] && MAC=1
+sedi() { # sedi SCRIPT FILE: sed -i the same on Linux and macOS, keeping the file's owner and mode
+	(umask 077 && sed "$1" "$2" >"$2.new") && cat "$2.new" >"$2" && rm -f "$2.new"
+}
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -96,7 +102,7 @@ while [ $# -gt 0 ]; do
 	--uninstall) UNINSTALL=1; shift ;;
 	--keep-data) KEEP_DATA=1; shift ;;
 	-y | --yes) YES=1; shift ;;
-	-h | --help) sed -n '2,52p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
+	-h | --help) sed -n '2,53p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 done
@@ -110,14 +116,76 @@ case "$TS_KEY" in "" | tskey-*) ;; *) die "--tailscale-key takes a Tailscale aut
 case "$TS_KEY" in *[!A-Za-z0-9_-]*) die "--tailscale-key: that doesn't look like an auth key" ;; esac
 case "$NAME_ON" in "" | home) ;; tailscale) TAILNET=1 NAME_ON="" ;; *) die "--name-on is home or tailscale" ;; esac
 
-[ "$(uname -s)" = Linux ] || die "this installs on Linux (a Pocket Box, a mini PC, a VM or a Raspberry Pi 4/5)."
+[ "$(uname -s)" = Linux ] || [ "$MAC" = 1 ] || die "this installs on Linux (a Pocket Box, a mini PC, a VM or a Raspberry Pi 4/5) or a Mac."
+if [ "$MAC" = 1 ]; then
+	# A Mac: Docker runs in a Linux VM (Docker Desktop, OrbStack, Colima). No VPS there, no systemd.
+	[ "$PRIVATE" = 0 ] && [ -z "$TAILNET" ] || die "--private and --tailnet are for Linux; on a Mac, Pocket is reached on this network (Tailscale can be connected in Core)."
+fi
 case "$(uname -m)" in x86_64 | amd64 | aarch64 | arm64) ;; *) die "Pocket Core runs on 64-bit x86 or ARM, not $(uname -m)." ;; esac
 command -v curl >/dev/null || die "curl is needed."
+SUDO=""
+[ "$(id -u)" = 0 ] || [ "$MAC" = 1 ] || SUDO=sudo # a Mac's Docker runs as you
+DOCKER=docker
+
+# The installer agent's two sockets in $DIR/installer. On a Mac they are made inside Docker's Linux
+# VM, where this Mac can't connect to them: Pocket Core's container (it has curl) asks for us.
+SC=curl ST="" # sudo curl / sudo test while removing Pocket (the folder can be root's by then)
+sock_curl() { # sock_curl SOCKET CURL-ARGS…
+	s=$1
+	shift
+	if [ "$MAC" = 1 ]; then
+		$DOCKER exec pocket-core curl --unix-socket "/run/pocket-installer/$s" "$@"
+	else
+		$SC --unix-socket "$DIR/installer/$s" "$@"
+	fi
+}
+sock_ok() { # sock_ok SOCKET: the agent listens there
+	if [ "$MAC" = 1 ]; then
+		$DOCKER exec pocket-core test -S "/run/pocket-installer/$1" 2>/dev/null
+	else
+		$ST test -S "$DIR/installer/$1"
+	fi
+}
+
+# A Mac: Docker Desktop, OrbStack or Colima; started when it isn't running (it takes a minute).
+if [ "$MAC" = 1 ]; then
+	for d in /Applications/Docker.app/Contents/Resources/bin "$HOME/.orbstack/bin" /opt/homebrew/bin /usr/local/bin; do
+		[ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac
+	done
+	export PATH
+fi
+mac_docker() { # → 0 once Docker answers
+	docker info >/dev/null 2>&1 && return 0
+	how="" ctx=$(docker context show 2>/dev/null || true)
+	case "$ctx" in colima*) how=colima ;; orbstack) how=orbstack ;; desktop-linux) how=desktop ;; esac
+	if [ -z "$how" ]; then
+		if [ -d /Applications/OrbStack.app ]; then how=orbstack
+		elif [ -d /Applications/Docker.app ]; then how=desktop
+		elif command -v colima >/dev/null 2>&1; then how=colima
+		else return 1
+		fi
+	fi
+	case "$how" in
+	colima)
+		say "Starting Colima…"
+		p=default
+		case "$ctx" in colima-*) p=${ctx#colima-} ;; esac
+		colima start "$p" >/tmp/pocket-colima.log 2>&1 || return 1 ;;
+	orbstack) say "Starting OrbStack…"; open -ga OrbStack || return 1 ;;
+	desktop) say "Starting Docker Desktop…"; open -ga Docker || return 1 ;;
+	esac
+	i=0
+	until docker info >/dev/null 2>&1; do
+		i=$((i + 1))
+		[ $i -lt 90 ] || return 1
+		sleep 2
+	done
+}
 
 # ---- --uninstall: everything this script (and Pocket in it) set up, gone again ----
 if [ "$UNINSTALL" = 1 ]; then
-	SUDO=""
-	[ "$(id -u)" = 0 ] || SUDO=sudo
+	SC="$SUDO curl" ST=$SUDO
+	[ "$MAC" = 0 ] || mac_docker || die "Docker isn't running; start it first, so Pocket's containers can be removed."
 	[ -d "$DIR" ] && DIR=$(cd "$DIR" && pwd)
 	if [ ! -f "$DIR/docker-compose.yml" ] && [ ! -f /etc/systemd/system/pocket-private.service ] && [ ! -f /etc/systemd/system/pocket-firewall.service ]; then
 		die "there is no Pocket install in $DIR (another folder? --dir DIR)"
@@ -141,13 +209,12 @@ if [ "$UNINSTALL" = 1 ]; then
 	running() { [ -n "$DOCKER" ] && [ "$($DOCKER inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]; }
 	# The name first: going back to this network's addresses gives a Pocket name back (and takes your
 	# Cloudflare records away). The installer agent does that, so it has to be running.
-	SOCK_A="$DIR/installer/address.sock"
-	if [ -n "$(get POCKET_ADDRESS)" ] && running pocket-core-installer && $SUDO test -S "$SOCK_A"; then
+	if [ -n "$(get POCKET_ADDRESS)" ] && running pocket-core-installer && sock_ok address.sock; then
 		printf '  Giving the address back'
 		# Straight away, without moving the apps back first (they go next anyway); an installer from
 		# before 0.42.14 doesn't know release, so it gets the slower switch back to this network.
-		$SUDO curl -fsS --unix-socket "$SOCK_A" -X POST http://agent/v1/address/release >/dev/null 2>&1 ||
-			$SUDO curl -fsS --unix-socket "$SOCK_A" -X PUT -H 'Content-Type: application/json' --data '{"mode":"plain"}' http://agent/v1/address >/dev/null 2>&1 || true
+		sock_curl address.sock -fsS -X POST http://agent/v1/address/release >/dev/null 2>&1 ||
+			sock_curl address.sock -fsS -X PUT -H 'Content-Type: application/json' --data '{"mode":"plain"}' http://agent/v1/address >/dev/null 2>&1 || true
 		n=0
 		until $DOCKER logs --since 10m pocket-core-installer 2>&1 | grep -q 'gave the Pocket name back\|removed from Cloudflare'; do
 			n=$((n + 1)); [ $n -lt 40 ] || break
@@ -226,8 +293,13 @@ if [ "$UNINSTALL" = 1 ]; then
 fi
 
 # ---- Docker ----
-SUDO=""
-[ "$(id -u)" = 0 ] || SUDO=sudo
+if [ "$MAC" = 1 ]; then
+	command -v docker >/dev/null 2>&1 || [ -d /Applications/Docker.app ] || [ -d /Applications/OrbStack.app ] || die "Pocket runs in Docker, and this Mac has none yet. Install one of these, then run this again:
+  Docker Desktop  https://www.docker.com/products/docker-desktop/
+  OrbStack        https://orbstack.dev
+  Colima          brew install colima docker docker-compose && colima start"
+	mac_docker || die "Docker isn't running and didn't start; start Docker Desktop, OrbStack or Colima, then run this again."
+fi
 engine() { # Docker's engine (not just a docker command) is on this machine
 	command -v dockerd >/dev/null 2>&1 || [ -x /usr/bin/dockerd ] || [ -x /usr/sbin/dockerd ] ||
 		systemctl cat docker.service >/dev/null 2>&1 || docker info >/dev/null 2>&1
@@ -288,8 +360,15 @@ ok Docker
 # 30 ("all predefined address pools have been fully subnetted"): every app after that fails to install.
 # /24 networks from 172.16.0.0/12 (the range Docker uses anyway) leave room for thousands. docker0 keeps
 # its usual 172.17.0.1/16. Needs a restart of Docker, so on a machine with running containers it asks.
-DJ=/etc/docker/daemon.json
-if ! $SUDO grep -q '"default-address-pools"' "$DJ" 2>/dev/null; then
+# A Mac's Docker keeps its settings in its own app; the end of the run says where (POOLS_TIP).
+DJ=/etc/docker/daemon.json POOLS_TIP=""
+if [ "$MAC" = 1 ]; then
+	[ "$($DOCKER info --format '{{json .DefaultAddressPools}}' 2>/dev/null)" != null ] || case "$(docker context show 2>/dev/null)" in
+	colima*) POOLS_TIP="colima stop, then colima start --edit, and in docker: {} add" ;;
+	orbstack) POOLS_TIP="OrbStack → Settings → Docker, add" ;;
+	*) POOLS_TIP="Docker Desktop → Settings → Docker Engine, add" ;;
+	esac
+elif ! $SUDO grep -q '"default-address-pools"' "$DJ" 2>/dev/null; then
 	cur=$($SUDO cat "$DJ" 2>/dev/null | tr -d ' \t\r\n')
 	new=""
 	case "$cur" in
@@ -325,7 +404,7 @@ print(json.dumps(d, indent=2))' "$(ps -o args= -C dockerd 2>/dev/null)" 2>/dev/n
 fi
 $DOCKER compose version >/dev/null 2>&1 || die "the Docker Compose plugin is missing (package docker-compose-plugin)."
 SOCK=/var/run/docker.sock
-[ -S "$SOCK" ] || die "no Docker socket at $SOCK (rootless Docker is not supported yet)."
+[ "$MAC" = 1 ] || [ -S "$SOCK" ] || die "no Docker socket at $SOCK (rootless Docker is not supported yet)."
 
 # ---- settings: keep what .env has, flags win ----
 mkdir -p "$DIR"
@@ -334,17 +413,26 @@ ENV="$DIR/.env"
 get() { [ -f "$ENV" ] && sed -n "s/^$1=//p" "$ENV" | tail -n1 || true; }
 [ -n "$DOMAIN" ] || DOMAIN=$(get POCKET_DOMAIN)
 [ -n "$EMAIL" ] || EMAIL=$(get POCKET_EMAIL)
-[ -n "$HOST" ] || HOST=$(get POCKET_HOST)
+HOME_IP=""
+# A Mac moves between networks: its address is looked up afresh on every run (unless --host), and
+# POCKET_HOME_IP tells the installer agent, which inside Docker's VM only sees the VM's address.
+[ -n "$HOST" ] || [ "$MAC" = 1 ] || HOST=$(get POCKET_HOST)
 [ -n "$PORT" ] || PORT=$(get CORE_PORT)
 [ -n "$NOTIFY" ] || NOTIFY=$(get NOTIFY_URL)
 [ -n "$PORT" ] || PORT=8179
 TOKEN=$(get INSTALLER_TOKEN)
 [ -n "$TOKEN" ] || TOKEN=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
-if [ -z "$HOST" ]; then
+if [ -z "$HOST" ] && [ "$MAC" = 1 ]; then
+	HOST=$(ipconfig getifaddr "$(route -n get 1.1.1.1 2>/dev/null | awk '/interface:/ {print $2}')" 2>/dev/null || true)
+	[ -n "$HOST" ] || HOST=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+	[ -n "$HOST" ] || HOST=$(get POCKET_HOST)
+	[ -n "$HOST" ] || die "could not tell this Mac's address on your network; pass --host."
+elif [ -z "$HOST" ]; then
 	HOST=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')
 	[ -n "$HOST" ] || HOST=$(hostname -I 2>/dev/null | awk '{print $1}')
 	[ -n "$HOST" ] || die "could not tell this machine's address; pass --host."
 fi
+[ "$MAC" = 0 ] || HOME_IP=$HOST
 TZ_NAME=$(timedatectl show -p Timezone --value 2>/dev/null || true)
 [ -n "$TZ_NAME" ] || TZ_NAME=$(cat /etc/timezone 2>/dev/null || true)
 [ -n "$TZ_NAME" ] || TZ_NAME=$(readlink /etc/localtime 2>/dev/null | sed -n 's#.*zoneinfo/##p')
@@ -352,7 +440,8 @@ TZ_NAME=$(timedatectl show -p Timezone --value 2>/dev/null || true)
 
 # A VPS: the address this machine goes out from is a public one, not a home network's. Pocket's
 # apps must not be open to the internet there: with Tailscale, only the tailnet reaches them.
-SRC=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')
+SRC=""
+[ "$MAC" = 1 ] || SRC=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')
 PUBLIC=1
 case "$SRC" in 10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[01].* | "") PUBLIC=0 ;; esac
 [ -n "$NAME_ON" ] || NAME_ON=$(get POCKET_NAME_ON)
@@ -399,7 +488,11 @@ else
 	fi
 fi
 PUID=$(id -u) PGID=$(id -g)
-DOCKER_GID=$(stat -c %g "$SOCK")
+if [ "$MAC" = 1 ]; then # the socket the containers see is the one in Docker's VM
+	DOCKER_GID=$($DOCKER run --rm --entrypoint stat -v "$SOCK:$SOCK" "ghcr.io/abjelosevic88/pocket-homelab-core-installer:$VERSION" -c %g "$SOCK" 2>/dev/null) || DOCKER_GID=0
+else
+	DOCKER_GID=$(stat -c %g "$SOCK")
+fi
 
 # ---- apps to install right away (--bundle, --apps; a new install only) ----
 # Only a Core without data is new: its registration key is chosen here and pinned for the first
@@ -446,7 +539,11 @@ if [ -n "$APPS" ]; then
 	[ -z "$APPS" ] || REGKEY="pcreg_$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
 fi
 if [ "$TAILNET" != 1 ] && { [ "$ADDRESS" = pocket ] || [ "$ADDRESS" = cloudflare ]; }; then
-	busy=$(ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E '[:.](80|443)$' || true)
+	if [ "$MAC" = 1 ]; then
+		busy=$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk '{print $9}' | grep -E '[:.](80|443)$' | sort -u || true)
+	else
+		busy=$(ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E '[:.](80|443)$' || true)
+	fi
 	[ -z "$busy" ] || [ "$NAME" != "" ] || die "ports 80/443 are taken on this machine ($(printf '%s' "$busy" | tr '\n' ' ')); a name with a padlock needs them for Caddy"
 fi
 
@@ -463,6 +560,7 @@ cat >"$ENV" <<EOF
 POCKET_VERSION=$VERSION
 POCKET_DIR=$DIR
 POCKET_HOST=$HOST
+POCKET_HOME_IP=$HOME_IP
 POCKET_DOMAIN=$DOMAIN
 POCKET_EMAIL=$EMAIL
 POCKET_ADDRESS=$NAME
@@ -620,6 +718,13 @@ else
 EOF
 fi
 
+if [ "$MAC" = 1 ]; then
+	# Unix sockets don't work through a Mac's folder sharing into Docker's VM: the agent's sockets
+	# live in a volume inside the VM instead (this Mac reaches them through Core's container).
+	sedi 's#- \./installer:/run/pocket-installer#- installer:/run/pocket-installer#' "$DIR/docker-compose.yml"
+	printf '\nvolumes:\n  installer: # the installer agent'"'"'s sockets (a Mac: inside Docker'"'"'s VM)\n' >>"$DIR/docker-compose.yml"
+fi
+
 if [ -n "$DOMAIN" ] && [ ! -f "$CADDYFILE" ]; then
 	{
 		[ -n "$EMAIL" ] && printf '{\n\temail %s\n}\n\n' "$EMAIL"
@@ -663,6 +768,10 @@ wait_core() {
 }
 wait_core
 ok "Pocket Core $VERSION"
+if [ "$MAC" = 1 ] && [ -z "$NAME" ] && ! curl -fsS -m 5 "http://$HOST:$PORT/healthz" >/dev/null 2>&1; then
+	say "  Pocket answers on this Mac (http://localhost:$PORT) but not on http://$HOST:$PORT, so phones and other"
+	say "  computers can't reach it yet: let Docker's ports onto your network (and through the Mac's firewall)."
+fi
 
 # ---- a firewall that keeps Docker's containers off the internet ----
 # A hand-made nftables firewall with a forward (or input) policy of drop stops every container here:
@@ -727,23 +836,23 @@ check_firewall() {
 	fi
 }
 
-check_firewall
+[ "$MAC" = 1 ] || check_firewall # a Mac: Docker's VM has its own way out
 
 # The installer agent's two sockets: installs (bearer token) and the address/Tailscale service.
 agent() { # agent PATH [JSON]
 	if [ $# -gt 1 ]; then
-		curl -fsS --unix-socket "$DIR/installer/installer.sock" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data "$2" "http://agent$1"
+		sock_curl installer.sock -fsS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data "$2" "http://agent$1"
 	else
-		curl -fsS --unix-socket "$DIR/installer/installer.sock" -H "Authorization: Bearer $TOKEN" "http://agent$1"
+		sock_curl installer.sock -fsS -H "Authorization: Bearer $TOKEN" "http://agent$1"
 	fi
 }
 address() { # address METHOD PATH [JSON]: answers JSON, {"error": …} when refused
-	curl -sS --unix-socket "$DIR/installer/address.sock" -X "$1" -H 'Content-Type: application/json' ${3:+--data} ${3:+"$3"} "http://agent$2"
+	sock_curl address.sock -sS -X "$1" -H 'Content-Type: application/json' ${3:+--data} ${3:+"$3"} "http://agent$2"
 }
 field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" | head -n1; } # field NAME < json
 wait_agent() {
 	i=0
-	until agent /v1/status >/dev/null 2>&1 && { [ -z "$ADDR_SOCK" ] || [ -S "$DIR/installer/address.sock" ]; }; do
+	until agent /v1/status >/dev/null 2>&1 && { [ -z "$ADDR_SOCK" ] || sock_ok address.sock; }; do
 		i=$((i + 1))
 		[ $i -lt 30 ] || die "the installer agent did not start; see: cd $DIR && $DOCKER compose logs installer"
 		sleep 2
@@ -781,7 +890,7 @@ if [ -n "$APPS" ]; then
 		fi
 	done
 	# Drop the pin: Core keeps the key it was given, and rotating it in Settings now sticks.
-	sed -i 's/^REGISTRATION_KEY=.*/REGISTRATION_KEY=/' "$ENV"
+	sedi 's/^REGISTRATION_KEY=.*/REGISTRATION_KEY=/' "$ENV"
 	$DOCKER compose up -d core >>"$LOG" 2>&1
 	wait_core
 fi
@@ -829,10 +938,10 @@ if [ "$TAILNET" = 1 ] || [ -n "$TS_KEY" ]; then
 		if [ "$PRIVATE" = 1 ]; then
 			# Without a name, Pocket's own addresses are the tailnet's now.
 			HOST=$TS_IP
-			sed -i "s/^POCKET_HOST=.*/POCKET_HOST=$TS_IP/" "$ENV"
+			sedi "s/^POCKET_HOST=.*/POCKET_HOST=$TS_IP/" "$ENV"
 			if [ -z "$(get POCKET_ADDRESS)" ]; then
 				CORE_URL="http://$TS_IP:$PORT"
-				sed -i "s#^BASE_URL=.*#BASE_URL=$CORE_URL#; s#^INSTALLER_PUBLIC_URL=.*#INSTALLER_PUBLIC_URL=http://$TS_IP:{port}#" "$ENV"
+				sedi "s#^BASE_URL=.*#BASE_URL=$CORE_URL#; s#^INSTALLER_PUBLIC_URL=.*#INSTALLER_PUBLIC_URL=http://$TS_IP:{port}#" "$ENV"
 				$DOCKER compose up -d core installer >>"$LOG" 2>&1
 				wait_core
 				wait_agent
@@ -888,4 +997,6 @@ fi
 [ -n "$DOMAIN" ] && say "  (core.$DOMAIN must point here with ports 80/443 open before you can sign in.)"
 say
 [ "$DOCKER" = docker ] || say "  Tip: log out and back in once, so Docker works without sudo."
+[ -z "$POOLS_TIP" ] || [ "$NEW" = 0 ] || say "  Tip: Docker on this Mac makes networks for about 30 apps. For more: $POOLS_TIP
+       \"default-address-pools\": [{ \"base\": \"172.16.0.0/12\", \"size\": 24 }]"
 say "  Update: run this command again · Files: $DIR · Log: $LOG"
