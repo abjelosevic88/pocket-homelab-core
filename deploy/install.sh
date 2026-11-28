@@ -31,8 +31,9 @@
 #   --address plain        this network's addresses (the default until a name is chosen)
 #   --cloudflare-token T --cloudflare-domain example.com [--cloudflare-name pocket]
 #                          your own domain on Cloudflare: Pocket at core.pocket.example.com
-#   --bundle LIST          app bundles to install: essentials, office, developer, media, family,
-#                          money, health (comma separated; pockethomelab.com/box/bundles)
+#   --bundle LIST          app bundles to install: flagship (the 20 daily drivers), essentials,
+#                          office, developer, media, family, money, health (comma separated;
+#                          pockethomelab.com/box/bundles)
 #   --apps LIST            single apps to install as well, as slugs (notes,tasks; pockethomelab.com/apps)
 #   --admin-email E        the email you will create your Core account with; the apps make it
 #                          their admin (asked for when bundles or apps are given)
@@ -409,10 +410,12 @@ NEW=1
 if [ -n "$BUNDLES" ]; then
 	json=$(curl -fsSL "$BUNDLES_URL") || die "could not fetch the bundles ($BUNDLES_URL)"
 	for b in $(printf '%s' "$BUNDLES" | tr ',' ' '); do
-		printf '%s' "$json" | grep -q "\"id\": *\"$b\"" || die "no bundle '$b' (there are: $(printf '%s' "$json" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | tr '\n' ' '))"
+		printf '%s' "$json" | grep -q "\"id\": *\"$b\"\|^ *\"$b\": *\[" || die "no bundle '$b' (there are: flagship $(printf '%s' "$json" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | tr '\n' ' '))"
 	done
-	# bundles.json has each bundle's "id" a line before its "apps": [...] (pocket-homelab-box).
+	# bundles.json has each bundle's "id" a line before its "apps": [...], and the flagship apps
+	# (Tier 1, the 20 daily drivers) on one line "flagship": [...] (pocket-homelab-box).
 	from=$(printf '%s\n' "$json" | awk -v want=",$BUNDLES," '
+		/^ *"flagship": *\[/ && index(want, ",flagship,") { s = $0; sub(/.*\[/, "", s); sub(/\].*/, "", s); gsub(/[" ]/, "", s); print s }
 		/"id":/ { cur = $0; sub(/.*"id": *"/, "", cur); sub(/".*/, "", cur) }
 		/"apps":/ && cur != "" && index(want, "," cur ",") { s = $0; sub(/.*\[/, "", s); sub(/\].*/, "", s); gsub(/[" ]/, "", s); print s }')
 	APPS="${APPS:+$APPS,}$(printf '%s' "$from" | tr '\n' ',')"
