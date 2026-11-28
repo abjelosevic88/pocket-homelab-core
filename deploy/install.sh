@@ -96,7 +96,7 @@ while [ $# -gt 0 ]; do
 	--uninstall) UNINSTALL=1; shift ;;
 	--keep-data) KEEP_DATA=1; shift ;;
 	-y | --yes) YES=1; shift ;;
-	-h | --help) sed -n '2,51p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
+	-h | --help) sed -n '2,52p' "$0" 2>/dev/null || say "See https://pockethomelab.com/docs"; exit 0 ;;
 	*) die "unknown option $1 (see --help)" ;;
 	esac
 done
