@@ -201,6 +201,12 @@ func (s *Server) handleRegisterApp(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			cl = &store.OIDCClient{ClientID: "pocket-" + app.Slug}
 			newSecret = !m.OIDC.Public
+		} else if byToken == nil && !m.OIDC.Public {
+			// Re-registered with the registration key: the app never got (or lost) the answer that
+			// carried its token, and the client secret came in that same answer. Without a new one
+			// every sign-in to it fails with invalid_client (seen on a slow first boot with 100 apps
+			// registering at once, where the first answer outlived the app's wait).
+			newSecret = true
 		}
 		cl.Name, cl.RedirectURIs, cl.AppID = app.Name, m.OIDC.RedirectURIs, app.ID
 		secret, err := s.store.SaveOIDCClient(ctx, cl, newSecret)
